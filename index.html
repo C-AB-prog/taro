@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Таро-гид — карта дня и расклады</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Telegram WebApp JS (в Телеге подхватится, в браузере просто существует window.Telegram) -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header fade-in-1">
+      <div class="app-header-top">
+        <span class="app-logo">✦ TARO</span>
+        <span id="today-label" class="today-label"></span>
+      </div>
+      <div class="app-header-main">
+        <h1 class="app-title">Таро-гид</h1>
+        <p class="app-subtitle">
+          Карта дня бесплатно и платные расклады онлайн.
+        </p>
+      </div>
+      <div id="user-label" class="user-pill"></div>
+    </header>
+
+    <main class="app-main">
+      <!-- Карта дня -->
+      <section class="card card-of-day fade-in-2">
+        <div class="section-header">
+          <div>
+            <h2>Карта дня</h2>
+            <p class="section-subtitle">
+              Одна карта на сегодня, персонально под тебя.
+            </p>
+          </div>
+          <button id="refresh-btn" class="icon-btn" type="button" aria-label="Обновить карту">
+            ⟳
+          </button>
+        </div>
+
+        <div id="card-day-content" class="card-day-content">
+          <!-- сюда рендерится карта -->
+        </div>
+
+        <p class="card-day-note">
+          Карта рассчитывается один раз в сутки для каждого пользователя.
+        </p>
+      </section>
+
+      <!-- Расклады -->
+      <section class="card spreads-card fade-in-3">
+        <div class="section-header">
+          <div>
+            <h2>Платные расклады</h2>
+            <p class="section-subtitle">
+              Выбери тему — оплата через Продамус.
+            </p>
+          </div>
+        </div>
+
+        <div id="spreads-list" class="spreads-list">
+          <!-- сюда рендерятся расклады -->
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer fade-in-4">
+      <span>Демо-версия мини-приложения • Таро</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="cards-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
