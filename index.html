@@ -9,32 +9,60 @@
 </head>
 <body>
   <div id="app">
-    <header class="app-header fade-in-1">
+    <!-- Анимированный фон с магическими элементами -->
+    <div class="magic-background">
+      <div class="constellation"></div>
+      <div class="energy-orb orb-1"></div>
+      <div class="energy-orb orb-2"></div>
+      <div class="magic-runes"></div>
+    </div>
+
+    <header class="app-header">
+      <div class="header-crystal-border"></div>
+      
       <div class="app-header-top">
-        <span class="app-logo">✦ TARO</span>
+        <div class="logo-container">
+          <span class="app-logo">⌬ TARO</span>
+          <div class="crystal-dot"></div>
+        </div>
         <span id="today-label" class="today-label"></span>
       </div>
+      
       <div class="app-header-main">
-        <h1 class="app-title">Таро-гид</h1>
+        <div class="title-ornament left"></div>
+        <h1 class="app-title">Арканы Судьбы</h1>
+        <div class="title-ornament right"></div>
         <p class="app-subtitle">
-          Карта дня бесплатно и платные расклады онлайн.
+          Персональные предсказания через древние символы
         </p>
       </div>
-      <div id="user-label" class="user-pill"></div>
+
+      <div id="user-label" class="user-pill">
+        <div class="user-glow"></div>
+      </div>
     </header>
 
     <main class="app-main">
       <!-- Карта дня -->
-      <section class="card card-of-day fade-in-2">
+      <section class="card card-of-day">
+        <div class="card-crystal-corner tl"></div>
+        <div class="card-crystal-corner tr"></div>
+        <div class="card-crystal-corner bl"></div>
+        <div class="card-crystal-corner br"></div>
+
         <div class="section-header">
-          <div>
-            <h2>Карта дня</h2>
-            <p class="section-subtitle">
-              Одна карта на сегодня, персонально под тебя.
-            </p>
+          <div class="section-title-group">
+            <div class="section-icon">⌖</div>
+            <div>
+              <h2>Карта Дня</h2>
+              <p class="section-subtitle">
+                Сакральный символ на сегодняшний день
+              </p>
+            </div>
           </div>
-          <button id="refresh-btn" class="icon-btn" type="button" aria-label="Обновить карту">
-            ⟳
+          <button id="refresh-btn" class="crystal-btn" type="button" aria-label="Обновить карту">
+            <span class="btn-icon">⟳</span>
+            <div class="btn-glow"></div>
           </button>
         </div>
 
@@ -42,19 +70,31 @@
           <!-- сюда JS вставит карту -->
         </div>
 
+        <div class="card-divider">
+          <div class="divider-crystal"></div>
+        </div>
+
         <p class="card-day-note">
-          Карта рассчитывается один раз в сутки для каждого пользователя.
+          Энергия карты обновляется с восходом солнца
         </p>
       </section>
 
       <!-- Расклады -->
-      <section class="card spreads-card fade-in-3">
+      <section class="card spreads-card">
+        <div class="card-crystal-corner tl"></div>
+        <div class="card-crystal-corner tr"></div>
+        <div class="card-crystal-corner bl"></div>
+        <div class="card-crystal-corner br"></div>
+
         <div class="section-header">
-          <div>
-            <h2>Платные расклады</h2>
-            <p class="section-subtitle">
-              Выбери тему — оплата через Продамус.
-            </p>
+          <div class="section-title-group">
+            <div class="section-icon">⌬</div>
+            <div>
+              <h2>Расклады Таро</h2>
+              <p class="section-subtitle">
+                Глубокое погружение в вопросы судьбы
+              </p>
+            </div>
           </div>
         </div>
 
@@ -64,15 +104,19 @@
       </section>
     </main>
 
-    <footer class="app-footer fade-in-4">
-      <span>Демо-версия мини-приложения • Таро</span>
+    <footer class="app-footer">
+      <div class="footer-crystals">
+        <div class="footer-crystal"></div>
+        <div class="footer-crystal"></div>
+        <div class="footer-crystal"></div>
+      </div>
+      <span>Арканы Судьбы • Эзотерическое руководство</span>
     </footer>
-  </div>
+    </div>
 
-  <div id="toast" class="toast"></div>
+    <div id="toast" class="toast"></div>
 
-  <!-- Важно: сначала данные, потом логика, оба defer -->
-  <script src="cards-data.js" defer></script>
-  <script src="app.js" defer></script>
+    <script src="cards-data.js" defer></script>
+    <script src="app.js" defer></script>
 </body>
 </html>
