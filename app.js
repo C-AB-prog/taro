@@ -4,6 +4,10 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+// На всякий случай, чтобы не было ReferenceError, если cards-data.js не подгрузился
+window.TAROT_CARDS = window.TAROT_CARDS || [];
+window.TAROT_SPREADS = window.TAROT_SPREADS || [];
+
 const toastEl = $("#toast");
 function showToast(text) {
   if (!toastEl) return;
@@ -12,7 +16,7 @@ function showToast(text) {
   setTimeout(() => toastEl.classList.remove("visible"), 1900);
 }
 
-// Простейший хеш строки → число
+// Простенький хеш строки → число
 function hashString(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -32,7 +36,7 @@ function formatToday() {
   });
 }
 
-// Дата-ключ в формате YYYY-MM-DD
+// Ключ даты
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -71,7 +75,6 @@ function initTelegram() {
     appUserId = "anonymous";
   }
 
-  // Подпись пользователя в шапке
   const userLabel = $("#user-label");
   if (userLabel) {
     if (tgUser && (tgUser.first_name || tgUser.username)) {
@@ -91,7 +94,6 @@ function initTelegram() {
 
 // ===== Карта дня =====
 
-// Выбор карты дня на основе userId + даты
 function pickCardOfDay(userId) {
   if (!Array.isArray(TAROT_CARDS) || TAROT_CARDS.length === 0) return null;
   const base = String(userId || "anonymous") + "|" + todayKey();
@@ -100,7 +102,6 @@ function pickCardOfDay(userId) {
   return TAROT_CARDS[idx];
 }
 
-// Рендер карты дня
 function renderCardOfDay(options = { withShake: false }) {
   const container = $("#card-day-content");
   if (!container) return;
@@ -108,7 +109,7 @@ function renderCardOfDay(options = { withShake: false }) {
   const card = pickCardOfDay(appUserId);
   if (!card) {
     container.innerHTML =
-      "<p>Карты пока не настроены. Проверь массив TAROT_CARDS в cards-data.js.</p>";
+      "<p style='font-size:.8rem;opacity:.8'>Карты пока не настроены. Проверь массив TAROT_CARDS в cards-data.js.</p>";
     return;
   }
 
@@ -127,11 +128,7 @@ function renderCardOfDay(options = { withShake: false }) {
     <div class="card-info">
       <div class="card-name-row">
         <div class="card-name">${card.name}</div>
-        ${
-          card.roman
-            ? `<div class="card-roman">${card.roman}</div>`
-            : ""
-        }
+        ${card.roman ? `<div class="card-roman">${card.roman}</div>` : ""}
       </div>
       <div class="card-keyword">${card.keyword || ""}</div>
       <div class="card-desc">${card.description || ""}</div>
@@ -140,11 +137,10 @@ function renderCardOfDay(options = { withShake: false }) {
   `;
 
   if (options.withShake) {
-    // небольшая анимация при "обновлении"
     const wrap = container.closest(".card-of-day");
     if (wrap) {
       wrap.style.animation = "none";
-      void wrap.offsetWidth; // перезапустить
+      void wrap.offsetWidth; // перезапуск
       wrap.style.animation = "fadeInUp 0.45s ease-out";
     }
   }
@@ -171,4 +167,65 @@ function openProdamus(url, title) {
   }
 
   if (title) {
-    showToast(`Расклад «${title}» — откроется стр
+    showToast(`Расклад «${title}» — откроется страница оплаты.`);
+  }
+}
+
+function renderSpreads() {
+  const container = $("#spreads-list");
+  if (!container) return;
+
+  if (!Array.isArray(TAROT_SPREADS) || TAROT_SPREADS.length === 0) {
+    container.innerHTML =
+      "<p style='font-size:.8rem;opacity:.8'>Расклады ещё не добавлены. Проверь TAROT_SPREADS в cards-data.js.</p>";
+    return;
+  }
+
+  container.innerHTML = "";
+
+  TAROT_SPREADS.forEach((spread) => {
+    const item = document.createElement("article");
+    item.className = "spread-item";
+
+    item.innerHTML = `
+      <div class="spread-main">
+        <div class="spread-title">${spread.title}</div>
+        <div class="spread-desc">${spread.description || ""}</div>
+        <div class="spread-meta">
+          <span class="spread-price">${spread.priceLabel || ""}</span>
+          ${spread.tag ? `<span class="spread-chip">${spread.tag}</span>` : ""}
+        </div>
+      </div>
+      <div class="spread-actions">
+        <button class="btn-primary" type="button">
+          Купить
+        </button>
+      </div>
+    `;
+
+    const btn = item.querySelector("button");
+    btn.addEventListener("click", () =>
+      openProdamus(spread.prodamusUrl, spread.title)
+    );
+
+    container.appendChild(item);
+  });
+}
+
+// ===== init =====
+
+function initApp() {
+  initTelegram();
+  renderCardOfDay();
+  renderSpreads();
+
+  const refreshBtn = $("#refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      renderCardOfDay({ withShake: true });
+      showToast("Карта дня фиксирована на сегодня, это визуальное обновление 😊");
+    });
+  }
+}
+
+document.addEventListener("DOMContentLoaded", initApp);
