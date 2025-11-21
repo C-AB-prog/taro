@@ -12,14 +12,30 @@ body {
   height: 100%;
 }
 
+/* АНИМИРОВАННЫЙ ГРАДИЕНТНЫЙ ФОН */
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at top left, #3a2c6f 0, transparent 55%),
-    radial-gradient(circle at top right, #f9a36f 0, transparent 60%),
-    #070916;
   color: #f8f7ff;
   -webkit-font-smoothing: antialiased;
+
+  background:
+    radial-gradient(circle at 0% 0%, #3a2c6f 0, transparent 55%),
+    radial-gradient(circle at 100% 0%, #f9a36f 0, transparent 60%),
+    radial-gradient(circle at 50% 120%, #1b1f4b 0, #070916 60%);
+  background-size: 180% 180%;
+  animation: bgMove 24s ease-in-out infinite alternate;
+}
+
+@keyframes bgMove {
+  0% {
+    background-position: 0% 0%, 100% 0%, 50% 100%;
+  }
+  50% {
+    background-position: 20% 10%, 80% 0%, 50% 90%;
+  }
+  100% {
+    background-position: 0% 20%, 100% 10%, 50% 100%;
+  }
 }
 
 #app {
@@ -38,7 +54,7 @@ body {
   position: relative;
   padding: 10px 12px 8px;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(12, 14, 38, 0.9), rgba(38, 23, 64, 0.9));
+  background: linear-gradient(135deg, rgba(12, 14, 38, 0.94), rgba(38, 23, 64, 0.96));
   border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
   overflow: hidden;
@@ -49,9 +65,9 @@ body {
   position: absolute;
   inset: -80px;
   background:
-    radial-gradient(circle at 10% 0, rgba(255, 255, 255, 0.08) 0, transparent 55%),
-    radial-gradient(circle at 90% 0, rgba(255, 205, 160, 0.2) 0, transparent 50%);
-  opacity: 0.8;
+    radial-gradient(circle at 10% 0, rgba(255, 255, 255, 0.09) 0, transparent 55%),
+    radial-gradient(circle at 90% 0, rgba(255, 205, 160, 0.25) 0, transparent 55%);
+  opacity: 0.9;
   pointer-events: none;
 }
 
@@ -118,7 +134,7 @@ body {
   gap: 12px;
 }
 
-/* Карточки-секции */
+/* Карточки */
 
 .card {
   border-radius: 18px;
@@ -138,14 +154,11 @@ body {
   background: radial-gradient(circle at top center, rgba(255, 220, 180, 0.12), transparent 60%);
   opacity: 0;
   transition: opacity 0.35s ease;
+  pointer-events: none; /* важно, чтобы не блокировать клики */
 }
 
 .card:hover::before {
   opacity: 1;
-}
-
-.card-of-day {
-  min-height: 190px;
 }
 
 /* Заголовки секций */
@@ -178,7 +191,7 @@ button {
   padding: 4px 7px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(7, 11, 30, 0.85);
+  background: rgba(7, 11, 30, 0.9);
   color: #f8f7ff;
   font-size: 0.85rem;
   cursor: pointer;
@@ -232,6 +245,10 @@ button {
 
 /* Карта дня */
 
+.card-of-day {
+  min-height: 190px;
+}
+
 .card-day-content {
   margin-top: 10px;
   display: grid;
@@ -259,6 +276,7 @@ button {
     radial-gradient(circle at bottom right, rgba(255, 198, 152, 0.4) 0, transparent 60%);
   mix-blend-mode: screen;
   opacity: 0.3;
+  pointer-events: none;
 }
 
 .card-art {
@@ -328,15 +346,15 @@ button {
 }
 
 .spread-item {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   padding: 8px 9px;
   border-radius: 14px;
   background: radial-gradient(circle at left top, rgba(255, 255, 255, 0.05), transparent 60%),
-              rgba(6, 7, 20, 0.9);
+              rgba(6, 7, 20, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  position: relative;
   overflow: hidden;
 }
 
@@ -347,6 +365,7 @@ button {
   background: linear-gradient(120deg, rgba(255, 212, 122, 0.12), transparent 45%);
   opacity: 0;
   transition: opacity 0.2s ease;
+  pointer-events: none; /* чтобы не блокировать клики */
 }
 
 .spread-item:hover::before {
@@ -380,61 +399,3 @@ button {
 .spread-price {
   font-weight: 600;
 }
-
-.spread-chip {
-  margin-left: 6px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  font-size: 0.7rem;
-  opacity: 0.9;
-}
-
-.spread-actions {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-}
-
-/* Футер */
-
-.app-footer {
-  margin-top: 6px;
-  text-align: center;
-  font-size: 0.72rem;
-  opacity: 0.7;
-}
-
-/* Toast */
-
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%) translateY(20px);
-  padding: 7px 14px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  background: rgba(6, 8, 22, 0.96);
-  color: #f8f7ff;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.7);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.22s ease,
-    transform 0.22s ease;
-  z-index: 50;
-}
-
-.toast.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* Анимации появления */
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transf
