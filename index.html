@@ -2,14 +2,15 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Таро-гид — карта дня и расклады</title>
+  <title>Таро-гид — Карты Судьбы</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
   <div id="app">
-    <!-- Анимированный фон с магическими элементами -->
+    <!-- Анимированный фон -->
     <div class="magic-background">
       <div class="constellation"></div>
       <div class="energy-orb orb-1"></div>
@@ -17,32 +18,60 @@
       <div class="magic-runes"></div>
     </div>
 
-    <header class="app-header">
-      <div class="header-crystal-border"></div>
-      
-      <div class="app-header-top">
-        <div class="logo-container">
-          <span class="app-logo">⌬ TARO</span>
-          <div class="crystal-dot"></div>
+    <!-- Навигация -->
+    <nav class="app-nav">
+      <div class="nav-crystals">
+        <div class="nav-crystal"></div>
+        <div class="nav-crystal"></div>
+        <div class="nav-crystal"></div>
+      </div>
+      <div class="nav-items">
+        <button class="nav-item active" data-screen="home">
+          <i class="fas fa-crystal-ball"></i>
+          <span>Главная</span>
+        </button>
+        <button class="nav-item" data-screen="spreads">
+          <i class="fas fa-layer-group"></i>
+          <span>Расклады</span>
+        </button>
+        <button class="nav-item" data-screen="library">
+          <i class="fas fa-book-open"></i>
+          <span>Арканы</span>
+        </button>
+        <button class="nav-item" data-screen="profile">
+          <i class="fas fa-user-alt"></i>
+          <span>Профиль</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Экран 1: Главная -->
+    <main class="screen active" id="home-screen">
+      <header class="app-header">
+        <div class="header-crystal-border"></div>
+        
+        <div class="app-header-top">
+          <div class="logo-container">
+            <span class="app-logo">⌬ TARO</span>
+            <div class="crystal-dot"></div>
+          </div>
+          <span id="today-label" class="today-label"></span>
         </div>
-        <span id="today-label" class="today-label"></span>
-      </div>
-      
-      <div class="app-header-main">
-        <div class="title-ornament left"></div>
-        <h1 class="app-title">Арканы Судьбы</h1>
-        <div class="title-ornament right"></div>
-        <p class="app-subtitle">
-          Персональные предсказания через древние символы
-        </p>
-      </div>
+        
+        <div class="app-header-main">
+          <div class="title-ornament left"></div>
+          <h1 class="app-title">Арканы Судьбы</h1>
+          <div class="title-ornament right"></div>
+          <p class="app-subtitle">
+            Персональные предсказания через древние символы
+          </p>
+        </div>
 
-      <div id="user-label" class="user-pill">
-        <div class="user-glow"></div>
-      </div>
-    </header>
+        <div id="user-label" class="user-pill">
+          <div class="user-glow"></div>
+        </div>
+      </header>
 
-    <main class="app-main">
       <!-- Карта дня -->
       <section class="card card-of-day">
         <div class="card-crystal-corner tl"></div>
@@ -56,67 +85,297 @@
             <div>
               <h2>Карта Дня</h2>
               <p class="section-subtitle">
-                Сакральный символ на сегодняшний день
+                Ваш сакральный символ на сегодня
               </p>
             </div>
           </div>
-          <button id="refresh-btn" class="crystal-btn" type="button" aria-label="Обновить карту">
-            <span class="btn-icon">⟳</span>
+          <button id="refresh-btn" class="crystal-btn" type="button" aria-label="Обновить">
+            <i class="fas fa-redo-alt"></i>
             <div class="btn-glow"></div>
           </button>
         </div>
 
         <div id="card-day-content" class="card-day-content">
-          <!-- сюда JS вставит карту -->
+          <!-- динамический контент -->
         </div>
 
         <div class="card-divider">
           <div class="divider-crystal"></div>
         </div>
 
-        <p class="card-day-note">
-          Энергия карты обновляется с восходом солнца
-        </p>
-      </section>
-
-      <!-- Расклады -->
-      <section class="card spreads-card">
-        <div class="card-crystal-corner tl"></div>
-        <div class="card-crystal-corner tr"></div>
-        <div class="card-crystal-corner bl"></div>
-        <div class="card-crystal-corner br"></div>
-
-        <div class="section-header">
-          <div class="section-title-group">
-            <div class="section-icon">⌬</div>
-            <div>
-              <h2>Расклады Таро</h2>
-              <p class="section-subtitle">
-                Глубокое погружение в вопросы судьбы
-              </p>
+        <div class="card-day-footer">
+          <div class="card-stats">
+            <div class="stat-item">
+              <i class="fas fa-history"></i>
+              <span>Обновляется в 00:00</span>
+            </div>
+            <div class="stat-item">
+              <i class="fas fa-user-circle"></i>
+              <span>Персонально для вас</span>
             </div>
           </div>
+          <button class="btn-secondary" id="save-card-btn">
+            <i class="fas fa-bookmark"></i> Сохранить
+          </button>
         </div>
+      </section>
 
-        <div id="spreads-list" class="spreads-list">
-          <!-- сюда JS вставит расклады -->
+      <!-- Быстрые действия -->
+      <section class="quick-actions">
+        <h3 class="section-title">Быстрые действия</h3>
+        <div class="action-grid">
+          <button class="action-btn" id="daily-spread-btn">
+            <div class="action-icon">
+              <i class="fas fa-sun"></i>
+            </div>
+            <span>Расклад на день</span>
+          </button>
+          <button class="action-btn" id="ask-question-btn">
+            <div class="action-icon">
+              <i class="fas fa-question-circle"></i>
+            </div>
+            <span>Задать вопрос</span>
+          </button>
+          <button class="action-btn" id="history-btn">
+            <div class="action-icon">
+              <i class="fas fa-history"></i>
+            </div>
+            <span>История</span>
+          </button>
+          <button class="action-btn" id="favorites-btn">
+            <div class="action-icon">
+              <i class="fas fa-star"></i>
+            </div>
+            <span>Избранное</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Предложение дня -->
+      <section class="card daily-offer">
+        <div class="section-header">
+          <div class="section-title-group">
+            <div class="section-icon">⚡</div>
+            <div>
+              <h2>Предложение дня</h2>
+              <p class="section-subtitle">Специальный расклад со скидкой</p>
+            </div>
+          </div>
+          <span class="offer-badge">-20%</span>
+        </div>
+        <div class="offer-content">
+          <h3>«Путь к себе»</h3>
+          <p>Глубокий анализ внутреннего состояния и перспектив развития</p>
+          <div class="offer-price">
+            <span class="old-price">690 ₽</span>
+            <span class="new-price">550 ₽</span>
+          </div>
+          <button class="btn-primary offer-btn">
+            <i class="fas fa-bolt"></i> Получить предложение
+          </button>
         </div>
       </section>
     </main>
 
-    <footer class="app-footer">
-      <div class="footer-crystals">
-        <div class="footer-crystal"></div>
-        <div class="footer-crystal"></div>
-        <div class="footer-crystal"></div>
+    <!-- Экран 2: Расклады -->
+    <main class="screen" id="spreads-screen">
+      <div class="screen-header">
+        <h2><i class="fas fa-layer-group"></i> Расклады Таро</h2>
+        <p class="screen-subtitle">Выберите расклад для глубокого анализа</p>
       </div>
-      <span>Арканы Судьбы • Эзотерическое руководство</span>
-    </footer>
 
+      <div class="filters">
+        <button class="filter-btn active">Все</button>
+        <button class="filter-btn">Любовь</button>
+        <button class="filter-btn">Карьера</button>
+        <button class="filter-btn">Деньги</button>
+        <button class="filter-btn">Духовность</button>
+      </div>
+
+      <div id="spreads-list" class="spreads-grid">
+        <!-- динамический контент -->
+      </div>
+
+      <div class="spread-info-modal" id="spread-modal">
+        <div class="modal-content">
+          <button class="modal-close">&times;</button>
+          <h3 id="modal-title"></h3>
+          <div class="modal-body">
+            <p id="modal-description"></p>
+            <div class="modal-details">
+              <div class="detail-item">
+                <i class="fas fa-clock"></i>
+                <span>Время: <strong id="modal-time">10-15 мин</strong></span>
+              </div>
+              <div class="detail-item">
+                <i class="fas fa-cards"></i>
+                <span>Карт: <strong id="modal-cards">7</strong></span>
+              </div>
+              <div class="detail-item">
+                <i class="fas fa-file-alt"></i>
+                <span>Отчёт: <strong id="modal-report">PDF + аудио</strong></span>
+              </div>
+            </div>
+            <div class="modal-price">
+              <span id="modal-price"></span>
+              <button class="btn-primary" id="buy-now-btn">
+                <i class="fas fa-shopping-cart"></i> Купить сейчас
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Экран 3: Библиотека арканов -->
+    <main class="screen" id="library-screen">
+      <div class="screen-header">
+        <h2><i class="fas fa-book-open"></i> Библиотека Арканов</h2>
+        <p class="screen-subtitle">Изучите значения всех карт Таро</p>
+      </div>
+
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="card-search" placeholder="Поиск карты по названию или ключевому слову...">
+      </div>
+
+      <div class="deck-selector">
+        <button class="deck-btn active">Старшие Арканы</button>
+        <button class="deck-btn">Младшие Арканы</button>
+        <button class="deck-btn">Масти</button>
+      </div>
+
+      <div id="cards-library" class="cards-grid">
+        <!-- динамический контент -->
+      </div>
+
+      <div class="card-detail-modal" id="card-modal">
+        <div class="modal-content">
+          <button class="modal-close">&times;</button>
+          <div class="modal-header">
+            <img id="modal-card-image" src="" alt="">
+            <div class="modal-title-group">
+              <h3 id="modal-card-name"></h3>
+              <div class="modal-card-roman" id="modal-card-roman"></div>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="card-keyword" id="modal-card-keyword"></div>
+            <div class="card-description" id="modal-card-description"></div>
+            
+            <div class="card-meanings">
+              <div class="meaning-section">
+                <h4><i class="fas fa-sun"></i> Прямое положение</h4>
+                <p id="modal-upright"></p>
+              </div>
+              <div class="meaning-section">
+                <h4><i class="fas fa-moon"></i> Перевёрнутое положение</h4>
+                <p id="modal-reversed"></p>
+              </div>
+            </div>
+
+            <div class="card-advice">
+              <h4><i class="fas fa-lightbulb"></i> Совет карты</h4>
+              <p id="modal-advice"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Экран 4: Профиль -->
+    <main class="screen" id="profile-screen">
+      <div class="screen-header">
+        <h2><i class="fas fa-user-alt"></i> Ваш профиль</h2>
+        <p class="screen-subtitle">Управление настройками и историей</p>
+      </div>
+
+      <div class="profile-card">
+        <div class="profile-header">
+          <div class="profile-avatar">
+            <i class="fas fa-crystal-ball"></i>
+          </div>
+          <div class="profile-info">
+            <h3 id="profile-name">Гость</h3>
+            <p class="profile-status">Начинающий таролог</p>
+          </div>
+        </div>
+
+        <div class="profile-stats">
+          <div class="stat-box">
+            <div class="stat-value" id="stats-cards">0</div>
+            <div class="stat-label">Карт просмотрено</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="stats-spreads">0</div>
+            <div class="stat-label">Раскладов куплено</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="stats-days">1</div>
+            <div class="stat-label">Дней с нами</div>
+          </div>
+        </div>
+
+        <div class="profile-menu">
+          <div class="menu-item">
+            <i class="fas fa-history"></i>
+            <span>История раскладов</span>
+            <i class="fas fa-chevron-right"></i>
+          </div>
+          <div class="menu-item">
+            <i class="fas fa-bookmark"></i>
+            <span>Сохранённые карты</span>
+            <i class="fas fa-chevron-right"></i>
+          </div>
+          <div class="menu-item">
+            <i class="fas fa-bell"></i>
+            <span>Уведомления</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="notifications-toggle" checked>
+              <label for="notifications-toggle"></label>
+            </div>
+          </div>
+          <div class="menu-item">
+            <i class="fas fa-moon"></i>
+            <span>Тёмная тема</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="theme-toggle" checked>
+              <label for="theme-toggle"></label>
+            </div>
+          </div>
+          <div class="menu-item">
+            <i class="fas fa-question-circle"></i>
+            <span>Помощь и поддержка</span>
+            <i class="fas fa-chevron-right"></i>
+          </div>
+          <div class="menu-item">
+            <i class="fas fa-share-alt"></i>
+            <span>Поделиться приложением</span>
+            <i class="fas fa-chevron-right"></i>
+          </div>
+        </div>
+
+        <button class="btn-logout">
+          <i class="fas fa-sign-out-alt"></i> Выйти
+        </button>
+      </div>
+
+      <div class="app-version">
+        v1.0.0 • С любовью к таро
+      </div>
+    </main>
+
+    <!-- Общий тост -->
     <div id="toast" class="toast"></div>
 
-    <script src="cards-data.js" defer></script>
-    <script src="app.js" defer></script>
+    <!-- Загрузчик -->
+    <div class="loader" id="app-loader">
+      <div class="loader-crystal"></div>
+      <div class="loader-text">Загрузка энергий...</div>
+    </div>
   </div>
+
+  <script src="cards-data.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
