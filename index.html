@@ -2,302 +2,208 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Таро Гипноз • Карты Судьбы</title>
+  <title>ТАRO • ГИПНОЗ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="app">
-    <!-- Парящие частицы -->
-    <div class="particles-container">
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-    </div>
-
-    <!-- Магический фон -->
-    <div class="magic-background">
-      <div class="constellation"></div>
-      <div class="energy-orb orb-1"></div>
-      <div class="energy-orb orb-2"></div>
-      <div class="energy-orb orb-3"></div>
-      <div class="magic-runes"></div>
-      <div class="pulse-ring"></div>
-    </div>
-
-    <!-- Анимированный хедер -->
-    <header class="app-header animate__animated animate__fadeInDown">
-      <div class="header-glow"></div>
-      <div class="crystal-border">
-        <div class="crystal-shard shard-1"></div>
-        <div class="crystal-shard shard-2"></div>
-        <div class="crystal-shard shard-3"></div>
-        <div class="crystal-shard shard-4"></div>
-      </div>
-      
-      <div class="header-content">
-        <div class="logo-wrapper">
-          <div class="logo-crystal">
-            <div class="crystal-core"></div>
-            <div class="crystal-light"></div>
-          </div>
-          <h1 class="logo-text">
-            <span class="logo-main">TARO</span>
-            <span class="logo-sub">ГИПНОЗ</span>
-          </h1>
-          <div class="logo-sparkle"></div>
-        </div>
-
-        <div class="header-info">
-          <div class="user-card animate__animated animate__pulse animate__infinite animate__slower">
-            <div class="user-avatar">
-              <i class="fas fa-crystal-ball"></i>
+    <!-- Частицы -->
+    <div class="particles"></div>
+    
+    <!-- Главный контейнер -->
+    <div class="container">
+      <!-- Хедер -->
+      <header class="header">
+        <div class="header-top">
+          <div class="logo">
+            <div class="logo-icon">
+              <div class="crystal"></div>
+              <div class="crystal-shine"></div>
             </div>
-            <div class="user-info">
-              <div id="user-label" class="user-name"></div>
-              <div class="user-status">
-                <span class="status-dot"></span>
-                <span class="status-text">Онлайн</span>
-              </div>
+            <div class="logo-text">
+              <h1>ТАRO</h1>
+              <p class="logo-subtitle">ГИПНОЗ</p>
             </div>
           </div>
-
-          <div class="date-card animate__animated animate__fadeIn">
-            <div class="date-icon">
-              <i class="fas fa-calendar-star"></i>
-            </div>
-            <div class="date-info">
-              <div class="date-day" id="today-label"></div>
-              <div class="date-time" id="current-time"></div>
+          
+          <div class="user-status">
+            <div class="status-indicator">
+              <div class="status-dot online"></div>
+              <span class="status-text">Дмитрий Онлайн</span>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="header-nav">
-        <div class="nav-wave"></div>
-        <div class="nav-items">
+        <!-- Навигация -->
+        <nav class="navigation">
           <button class="nav-btn active" data-screen="home">
-            <div class="btn-orb"></div>
-            <i class="fas fa-home"></i>
+            <i class="fas fa-home-alt"></i>
             <span>Сакраум</span>
           </button>
           <button class="nav-btn" data-screen="spreads">
-            <div class="btn-orb"></div>
-            <i class="fas fa-layer-group"></i>
+            <i class="fas fa-cards"></i>
             <span>Расклады</span>
           </button>
           <button class="nav-btn" data-screen="library">
-            <div class="btn-orb"></div>
-            <i class="fas fa-book-sparkles"></i>
+            <i class="fas fa-book-tarot"></i>
             <span>Арканы</span>
           </button>
           <button class="nav-btn" data-screen="profile">
-            <div class="btn-orb"></div>
-            <i class="fas fa-user-astronaut"></i>
+            <i class="fas fa-user-secret"></i>
             <span>Кодекс</span>
           </button>
-        </div>
-      </div>
-    </header>
+        </nav>
+      </header>
 
-    <!-- Контент -->
-    <main class="app-content">
-      <!-- Экран Сакраум (Главная) -->
-      <section class="screen active" id="home-screen">
+      <!-- Контент -->
+      <main class="main-content">
         <!-- Карта дня -->
-        <div class="card-day-container animate__animated animate__fadeIn">
-          <div class="card-crystal-frame">
-            <div class="crystal-corner corner-tl"></div>
-            <div class="crystal-corner corner-tr"></div>
-            <div class="crystal-corner corner-bl"></div>
-            <div class="crystal-corner corner-br"></div>
-          </div>
-
-          <div class="card-day-header">
-            <div class="section-title mystic-title">
-              <div class="title-icon">
-                <i class="fas fa-eye"></i>
-                <div class="icon-aura"></div>
-              </div>
-              <div class="title-content">
-                <h2>Карта Дня</h2>
-                <p class="title-sub">Сакральный шифр вашей судьбы</p>
-              </div>
+        <section class="card-of-day" id="home-screen">
+          <div class="section-header">
+            <div class="section-icon">
+              <i class="fas fa-eye"></i>
             </div>
-            
-            <button id="refresh-card-btn" class="crystal-action-btn">
-              <div class="btn-sparkle"></div>
-              <i class="fas fa-sync-alt"></i>
-              <span class="btn-pulse"></span>
+            <div>
+              <h2>Карта Дня</h2>
+              <p class="section-subtitle">Сакральный шифр вашей судьбы</p>
+            </div>
+            <button class="refresh-btn" id="refresh-btn">
+              <i class="fas fa-redo"></i>
             </button>
           </div>
 
-          <div id="card-day-content" class="card-day-content">
-            <!-- Динамический контент -->
+          <div id="card-day-content" class="card-content">
+            <!-- Карта будет здесь -->
           </div>
 
-          <div class="card-day-footer">
+          <div class="card-footer">
             <div class="energy-indicator">
               <div class="energy-bar">
-                <div class="energy-fill animate__animated animate__pulse animate__infinite"></div>
+                <div class="energy-fill" style="width: 100%"></div>
               </div>
               <span class="energy-text">Энергия карты: 100%</span>
             </div>
             
-            <button class="mystic-btn" id="save-card-btn">
+            <button class="save-btn" id="save-card-btn">
               <i class="fas fa-bookmark"></i>
               <span>Закрепить в Кодексе</span>
-              <div class="btn-trail"></div>
             </button>
           </div>
-        </div>
+        </section>
 
         <!-- Магические действия -->
-        <div class="magic-actions animate__animated animate__fadeInUp">
-          <h3 class="actions-title">
-            <i class="fas fa-wand-sparkles"></i>
-            Магические Действия
-          </h3>
-          
+        <section class="magic-actions">
+          <div class="section-header">
+            <div class="section-icon">
+              <i class="fas fa-wand-sparkles"></i>
+            </div>
+            <div>
+              <h3>Магические Действия</h3>
+            </div>
+          </div>
+
           <div class="actions-grid">
             <div class="action-card" id="daily-spread-btn">
-              <div class="action-orb orb-sun">
+              <div class="action-icon sun">
                 <i class="fas fa-sun"></i>
-                <div class="orb-rings"></div>
               </div>
               <h4>Расклад Дня</h4>
               <p>Прогноз на 24 часа</p>
-              <div class="action-sparkle"></div>
             </div>
 
             <div class="action-card" id="question-btn">
-              <div class="action-orb orb-moon">
+              <div class="action-icon moon">
                 <i class="fas fa-moon"></i>
-                <div class="orb-rings"></div>
               </div>
               <h4>Спросить Вселенную</h4>
               <p>Прямой ответ</p>
-              <div class="action-sparkle"></div>
             </div>
 
             <div class="action-card" id="meditation-btn">
-              <div class="action-orb orb-star">
-                <i class="fas fa-star-and-crescent"></i>
-                <div class="orb-rings"></div>
+              <div class="action-icon star">
+                <i class="fas fa-star"></i>
               </div>
               <h4>Медитация</h4>
               <p>Настройка энергий</p>
-              <div class="action-sparkle"></div>
             </div>
 
             <div class="action-card" id="ritual-btn">
-              <div class="action-orb orb-crystal">
+              <div class="action-icon crystal">
                 <i class="fas fa-gem"></i>
-                <div class="orb-rings"></div>
               </div>
               <h4>Ритуал</h4>
               <p>Энергетическая чистка</p>
-              <div class="action-sparkle"></div>
             </div>
           </div>
-        </div>
 
-        <!-- Предложение дня -->
-        <div class="daily-offer animate__animated animate__fadeIn">
-          <div class="offer-glow"></div>
-          <div class="offer-content">
-            <div class="offer-badge">
-              <i class="fas fa-bolt"></i>
-              <span>МГНОВЕНИЕ СИЛЫ</span>
+          <!-- Колесо фортуны -->
+          <div class="fortune-wheel-container">
+            <div class="wheel-header">
+              <i class="fas fa-dharmachakra"></i>
+              <h4>Колесо Фортуны</h4>
             </div>
-            
-            <h3 class="offer-title">"Колесо Фортуны"</h3>
-            <p class="offer-desc">Полный анализ вашего кармического цикла</p>
-            
-            <div class="offer-price">
-              <div class="price-old">999 ₽</div>
-              <div class="price-new">
-                <span class="price-value">499 ₽</span>
-                <span class="price-discount">-50%</span>
+            <div class="wheel-wrapper">
+              <div class="fortune-wheel" id="fortune-wheel">
+                <!-- Колесо будет здесь -->
               </div>
+              <button class="spin-btn" id="spin-wheel-btn">
+                <i class="fas fa-play"></i>
+                <span>Крутить колесо</span>
+              </button>
             </div>
-
-            <div class="offer-timer">
-              <div class="timer-icon">
-                <i class="fas fa-hourglass-half"></i>
-              </div>
-              <div class="timer-text">Предложение истекает через: <span id="offer-timer">23:59:59</span></div>
-            </div>
-
-            <button class="mystic-btn primary" id="claim-offer-btn">
-              <i class="fas fa-bolt-lightning"></i>
-              <span>ПРИНЯТЬ ЭНЕРГИЮ</span>
-              <div class="btn-aura"></div>
-            </button>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Другие экраны (Расклады, Арканы, Кодекс) -->
-      <!-- Оставлю их структуру, но для краткости не показываю -->
-      <!-- Ты можешь добавить их по аналогии с предыдущей версией -->
-
-    </main>
-
-    <!-- Футер -->
-    <footer class="app-footer">
-      <div class="footer-crystals">
-        <div class="footer-crystal animate__animated animate__pulse animate__infinite"></div>
-        <div class="footer-crystal animate__animated animate__pulse animate__infinite animate__delay-1s"></div>
-        <div class="footer-crystal animate__animated animate__pulse animate__infinite animate__delay-2s"></div>
-      </div>
-      <div class="footer-text">
-        <span class="footer-magic">🌀</span>
-        <span>Таро Гипноз • Пробуждение Сакрального Сознания</span>
-        <span class="footer-magic">🌀</span>
-      </div>
-      <div class="footer-version">Версия 1.0 • Эон Гипноза</div>
-    </footer>
-
-    <!-- Тосты -->
-    <div id="toast" class="toast">
-      <div class="toast-orb"></div>
-      <div class="toast-content"></div>
+        <!-- Контакты -->
+        <section class="contacts">
+          <div class="contact-item">
+            <i class="fab fa-telegram"></i>
+            <div>
+              <h4>Telegram бот</h4>
+              <p>@tar0rasklad_bot</p>
+            </div>
+          </div>
+          <div class="contact-item">
+            <i class="fab fa-discord"></i>
+            <div>
+              <h4>Discord сообщество</h4>
+              <p>Присоединяйтесь</p>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
 
+    <!-- Тосты -->
+    <div id="toast" class="toast"></div>
+
     <!-- Лоадер -->
-    <div class="mystic-loader" id="app-loader">
-      <div class="loader-orbits">
-        <div class="orbit orbit-1"></div>
-        <div class="orbit orbit-2"></div>
-        <div class="orbit orbit-3"></div>
+    <div class="loader" id="app-loader">
+      <div class="loader-wheel">
+        <div class="wheel-spoke"></div>
+        <div class="wheel-spoke"></div>
+        <div class="wheel-spoke"></div>
+        <div class="wheel-center"></div>
       </div>
-      <div class="loader-core">
-        <div class="core-pulse"></div>
-        <i class="fas fa-crystal-ball"></i>
-      </div>
-      <div class="loader-text">
-        <span class="text-word">ИНИЦИАЛИЗАЦИЯ</span>
-        <span class="text-word">САКРАЛЬНОГО</span>
-        <span class="text-word">ПРОСТРАНСТВА</span>
-      </div>
+      <p>Загрузка энергий...</p>
     </div>
 
     <!-- Модальные окна -->
-    <div class="mystic-modal" id="card-modal">
-      <!-- Структура модального окна -->
+    <div class="modal" id="card-modal">
+      <div class="modal-content">
+        <button class="modal-close">&times;</button>
+        <!-- Контент модалки -->
+      </div>
     </div>
   </div>
 
   <script src="cards-data.js"></script>
   <script src="app.js"></script>
-  <script src="animations.js"></script>
 </body>
 </html>
