@@ -44,139 +44,238 @@
         <nav class="navigation">
           <button class="nav-btn active" data-screen="home">
             <i class="fas fa-home-alt"></i>
-            <span>Сакраум</span>
+            <span>Главная</span>
           </button>
           <button class="nav-btn" data-screen="spreads">
             <i class="fas fa-cards"></i>
             <span>Расклады</span>
           </button>
-          <button class="nav-btn" data-screen="library">
-            <i class="fas fa-book-tarot"></i>
-            <span>Арканы</span>
-          </button>
-          <button class="nav-btn" data-screen="profile">
-            <i class="fas fa-user-secret"></i>
-            <span>Кодекс</span>
+          <button class="nav-btn" data-screen="deck">
+            <i class="fas fa-layer-group"></i>
+            <span>Колода</span>
           </button>
         </nav>
       </header>
 
       <!-- Контент -->
       <main class="main-content">
-        <!-- Карта дня -->
-        <section class="card-of-day" id="home-screen">
-          <div class="section-header">
-            <div class="section-icon">
-              <i class="fas fa-eye"></i>
-            </div>
-            <div>
-              <h2>Карта Дня</h2>
-              <p class="section-subtitle">Сакральный шифр вашей судьбы</p>
-            </div>
-            <button class="refresh-btn" id="refresh-btn">
-              <i class="fas fa-redo"></i>
-            </button>
-          </div>
-
-          <div id="card-day-content" class="card-content">
-            <!-- Карта будет здесь -->
-          </div>
-
-          <div class="card-footer">
-            <div class="energy-indicator">
-              <div class="energy-bar">
-                <div class="energy-fill" style="width: 100%"></div>
+        <!-- Главный экран -->
+        <section class="screen active" id="home-screen">
+          <!-- Карта дня -->
+          <div class="card-of-day">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-eye"></i>
               </div>
-              <span class="energy-text">Энергия карты: 100%</span>
+              <div>
+                <h2>Карта Дня</h2>
+                <p class="section-subtitle">Сакральный шифр вашей судьбы</p>
+              </div>
+              <button class="refresh-btn" id="refresh-btn">
+                <i class="fas fa-redo"></i>
+              </button>
+            </div>
+
+            <div id="card-day-content" class="card-content">
+              <!-- Карта будет здесь -->
+            </div>
+
+            <div class="card-footer">
+              <div class="energy-indicator">
+                <div class="energy-bar">
+                  <div class="energy-fill" style="width: 100%"></div>
+                </div>
+                <span class="energy-text">Энергия карты: 100%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Магические действия -->
+          <section class="magic-actions">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-wand-sparkles"></i>
+              </div>
+              <div>
+                <h3>Магические Действия</h3>
+              </div>
+            </div>
+
+            <div class="actions-grid">
+              <div class="action-card" id="daily-spread-btn">
+                <div class="action-icon sun">
+                  <i class="fas fa-sun"></i>
+                </div>
+                <h4>Расклад Дня</h4>
+                <p>Прогноз на 24 часа</p>
+                <div class="action-price">★ 29</div>
+              </div>
+
+              <div class="action-card" id="question-btn">
+                <div class="action-icon moon">
+                  <i class="fas fa-moon"></i>
+                </div>
+                <h4>Спросить Вселенную</h4>
+                <p>Прямой ответ</p>
+                <div class="action-price">★ 15</div>
+              </div>
+
+              <div class="action-card" id="tarot-reading">
+                <div class="action-icon tarot">
+                  <i class="fas fa-cards"></i>
+                </div>
+                <h4>Расклад Таро</h4>
+                <p>Глубокий анализ</p>
+                <div class="action-price">★ 57</div>
+              </div>
+
+              <div class="action-card" id="fortune-telling">
+                <div class="action-icon fortune">
+                  <i class="fas fa-crystal-ball"></i>
+                </div>
+                <h4>Гадание</h4>
+                <p>Проблеск будущего</p>
+                <div class="action-price">★ 43</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Колесо фортуны -->
+          <div class="fortune-section">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-dharmachakra"></i>
+              </div>
+              <div>
+                <h3>Колесо Фортуны</h3>
+                <p class="section-subtitle">Испытайте удачу сегодня</p>
+              </div>
             </div>
             
-            <button class="save-btn" id="save-card-btn">
-              <i class="fas fa-bookmark"></i>
-              <span>Закрепить в Кодексе</span>
-            </button>
+            <div class="fortune-wheel-container">
+              <div class="wheel-wrapper">
+                <div class="fortune-wheel" id="fortune-wheel">
+                  <!-- Секции колеса -->
+                </div>
+                <div class="wheel-center">
+                  <div class="wheel-glow"></div>
+                  <i class="fas fa-star"></i>
+                </div>
+                <div class="wheel-pointer">
+                  <i class="fas fa-caret-down"></i>
+                </div>
+              </div>
+              
+              <button class="spin-btn" id="spin-wheel-btn">
+                <i class="fas fa-play"></i>
+                <span>Крутить колесо (★ 5)</span>
+                <div class="spin-glow"></div>
+              </button>
+              
+              <div class="wheel-result" id="wheel-result">
+                <!-- Результат будет здесь -->
+              </div>
+            </div>
           </div>
         </section>
 
-        <!-- Магические действия -->
-        <section class="magic-actions">
-          <div class="section-header">
-            <div class="section-icon">
-              <i class="fas fa-wand-sparkles"></i>
+        <!-- Экран раскладов -->
+        <section class="screen" id="spreads-screen">
+          <div class="spreads-container">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-cards"></i>
+              </div>
+              <div>
+                <h2>Расклады Таро</h2>
+                <p class="section-subtitle">Выберите расклад для анализа</p>
+              </div>
             </div>
-            <div>
-              <h3>Магические Действия</h3>
+
+            <div class="spreads-grid" id="spreads-grid">
+              <!-- Расклады будут здесь -->
             </div>
           </div>
+        </section>
 
-          <div class="actions-grid">
-            <div class="action-card" id="daily-spread-btn">
-              <div class="action-icon sun">
-                <i class="fas fa-sun"></i>
+        <!-- Экран колоды -->
+        <section class="screen" id="deck-screen">
+          <div class="deck-container">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-layer-group"></i>
               </div>
-              <h4>Расклад Дня</h4>
-              <p>Прогноз на 24 часа</p>
+              <div>
+                <h2>Колода Таро</h2>
+                <p class="section-subtitle">12 Старших Арканов</p>
+              </div>
             </div>
 
-            <div class="action-card" id="question-btn">
-              <div class="action-icon moon">
-                <i class="fas fa-moon"></i>
-              </div>
-              <h4>Спросить Вселенную</h4>
-              <p>Прямой ответ</p>
-            </div>
-
-            <div class="action-card" id="meditation-btn">
-              <div class="action-icon star">
-                <i class="fas fa-star"></i>
-              </div>
-              <h4>Медитация</h4>
-              <p>Настройка энергий</p>
-            </div>
-
-            <div class="action-card" id="ritual-btn">
-              <div class="action-icon crystal">
-                <i class="fas fa-gem"></i>
-              </div>
-              <h4>Ритуал</h4>
-              <p>Энергетическая чистка</p>
+            <div class="deck-grid" id="deck-grid">
+              <!-- Карты колоды будут здесь -->
             </div>
           </div>
+        </section>
 
-          <!-- Колесо фортуны -->
-          <div class="fortune-wheel-container">
-            <div class="wheel-header">
-              <i class="fas fa-dharmachakra"></i>
-              <h4>Колесо Фортуны</h4>
-            </div>
-            <div class="wheel-wrapper">
-              <div class="fortune-wheel" id="fortune-wheel">
-                <!-- Колесо будет здесь -->
+        <!-- Модальное окно вопроса -->
+        <div class="modal" id="question-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-question-circle"></i>
               </div>
-              <button class="spin-btn" id="spin-wheel-btn">
-                <i class="fas fa-play"></i>
-                <span>Крутить колесо</span>
+              <h3>Спросить Вселенную</h3>
+            </div>
+            
+            <div class="modal-body">
+              <div class="question-input-container">
+                <textarea 
+                  id="question-input" 
+                  placeholder="Задайте свой вопрос Вселенной..."
+                  maxlength="200"
+                  rows="3"></textarea>
+                <div class="char-counter">
+                  <span id="char-count">0</span>/200
+                </div>
+              </div>
+              
+              <div class="question-types">
+                <div class="question-type active" data-type="love">
+                  <i class="fas fa-heart"></i>
+                  <span>Любовь</span>
+                </div>
+                <div class="question-type" data-type="career">
+                  <i class="fas fa-briefcase"></i>
+                  <span>Карьера</span>
+                </div>
+                <div class="question-type" data-type="future">
+                  <i class="fas fa-eye"></i>
+                  <span>Будущее</span>
+                </div>
+                <div class="question-type" data-type="decision">
+                  <i class="fas fa-crossroads"></i>
+                  <span>Выбор</span>
+                </div>
+              </div>
+              
+              <button class="ask-btn" id="ask-question-btn">
+                <i class="fas fa-stars"></i>
+                <span>Спросить за ★ 15</span>
               </button>
             </div>
           </div>
-        </section>
+        </div>
 
-        <!-- Контакты -->
-        <section class="contacts">
-          <div class="contact-item">
-            <i class="fab fa-telegram"></i>
-            <div>
-              <h4>Telegram бот</h4>
-              <p>@tar0rasklad_bot</p>
+        <!-- Модальное окно карты -->
+        <div class="modal" id="card-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-body" id="card-modal-body">
+              <!-- Контент карты будет здесь -->
             </div>
           </div>
-          <div class="contact-item">
-            <i class="fab fa-discord"></i>
-            <div>
-              <h4>Discord сообщество</h4>
-              <p>Присоединяйтесь</p>
-            </div>
-          </div>
-        </section>
+        </div>
       </main>
     </div>
 
@@ -191,15 +290,7 @@
         <div class="wheel-spoke"></div>
         <div class="wheel-center"></div>
       </div>
-      <p>Загрузка энергий...</p>
-    </div>
-
-    <!-- Модальные окна -->
-    <div class="modal" id="card-modal">
-      <div class="modal-content">
-        <button class="modal-close">&times;</button>
-        <!-- Контент модалки -->
-      </div>
+      <p>Инициализация энергий...</p>
     </div>
   </div>
 
