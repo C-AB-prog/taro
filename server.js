@@ -1,4 +1,3 @@
-// server.js
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@neondatabase/serverless';
@@ -8,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // Статические файлы
-app.use(express.static('.'));
+app.use(express.static('public'));  // Папка с картинками и другими статичными ресурсами
 
 // Подключение к базе данных
 const db = createClient(process.env.DATABASE_URL);
