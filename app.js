@@ -1,527 +1,379 @@
-// ===== КОНФИГУРАЦИЯ =====
-const CONFIG = {
-  appName: 'Таро-гид',
-  version: '1.0.0',
-  defaultCardImage: 'cards/default-card.png'
-};
+// ===== ОСНОВНОЙ ФУНКЦИОНАЛ =====
 
-// ===== HELPERS =====
+// Утилиты
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-// State management
+// Состояние приложения
 const AppState = {
-  currentScreen: 'home',
   user: null,
+  currentCard: null,
   savedCards: [],
-  viewedCards: new Set(),
-  purchasedSpreads: [],
-  notifications: true,
-  darkMode: true
+  isLoading: false
 };
 
-// Toast system
-class Toast {
-  static show(message, type = 'info', duration = 3000) {
-    const toast = $('#toast');
-    if (!toast) return;
-
-    toast.textContent = message;
-    toast.className = 'toast';
-
-    switch (type) {
-      case 'success':
-        toast.style.borderLeft = '4px solid var(--success)';
-        break;
-      case 'error':
-        toast.style.borderLeft = '4px solid var(--danger)';
-        break;
-      case 'warning':
-        toast.style.borderLeft = '4px solid var(--warning)';
-        break;
-      default:
-        toast.style.borderLeft = '4px solid var(--primary)';
-    }
-
-    toast.classList.add('show');
+// Инициализация
+async function initApp() {
+  showLoader();
+  
+  try {
+    // Инициализация Telegram
+    initTelegram();
     
-    setTimeout(() => {
-      toast.classList.remove('show');
-    }, duration);
+    // Загрузка данных пользователя
+    loadUserData();
+    
+    // Загрузка и отображение карты дня
+    await loadCardOfDay();
+    
+    // Инициализация колеса фортуны
+    initFortuneWheel();
+    
+    // Инициализация кнопок
+    initButtons();
+    
+    // Инициализация навигации
+    initNavigation();
+    
+  } catch (error) {
+    console.error('Ошибка инициализации:', error);
+    showToast('Ошибка загрузки приложения', 'error');
+  } finally {
+    hideLoader();
   }
 }
 
-// Storage helpers
-class Storage {
-  static get(key, defaultValue = null) {
-    try {
-      const item = localStorage.getItem(`tarot_${key}`);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  }
-
-  static set(key, value) {
-    try {
-      localStorage.setItem(`tarot_${key}`, JSON.stringify(value));
-    } catch (e) {
-      console.error('Storage error:', e);
-    }
-  }
-
-  static remove(key) {
-    localStorage.removeItem(`tarot_${key}`);
-  }
-}
-
-// Hash function
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-// Date helpers
-function formatDate(date = new Date()) {
-  return date.toLocaleDateString('ru-RU', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  });
-}
-
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// ===== ИНИЦИАЛИЗАЦИЯ =====
+// Инициализация Telegram
 function initTelegram() {
   if (window.Telegram?.WebApp) {
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
-
+    
     const user = tg.initDataUnsafe?.user;
     if (user) {
       AppState.user = {
-        id: user.id,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        username: user.username,
-        photoUrl: user.photo_url
+        name: user.first_name || 'Пользователь',
+        username: user.username
       };
     }
   }
-
-  // Debug mode
-  const params = new URLSearchParams(window.location.search);
-  if (params.has('debug')) {
-    AppState.user = {
-      id: 'debug-' + Date.now(),
-      firstName: 'Тестовый',
-      lastName: 'Пользователь',
-      username: 'test_user'
-    };
-  }
-
-  updateUserDisplay();
-}
-
-function updateUserDisplay() {
-  const userLabel = $('#user-label');
-  const profileName = $('#profile-name');
   
-  if (AppState.user) {
-    const name = AppState.user.firstName || AppState.user.username || 'Пользователь';
-    if (userLabel) userLabel.textContent = `👤 ${name}`;
-    if (profileName) profileName.textContent = name;
+  // Для дебага
+  if (!AppState.user) {
+    AppState.user = { name: 'Дмитрий', username: 'dmitry_tarot' };
   }
 }
 
-// ===== УПРАВЛЕНИЕ ЭКРАНАМИ =====
-function switchScreen(screenId) {
-  // Hide all screens
-  $$('.screen').forEach(screen => {
-    screen.classList.remove('active');
-  });
-
-  // Update navigation
-  $$('.nav-item').forEach(item => {
-    item.classList.remove('active');
-  });
-
-  // Show target screen
-  const targetScreen = $(`#${screenId}-screen`);
-  const targetNav = $(`.nav-item[data-screen="${screenId}"]`);
-  
-  if (targetScreen) {
-    targetScreen.classList.add('active');
-    AppState.currentScreen = screenId;
-  }
-  
-  if (targetNav) {
-    targetNav.classList.add('active');
-  }
-
-  // Load screen-specific content
-  switch (screenId) {
-    case 'home':
-      renderCardOfDay();
-      break;
-    case 'spreads':
-      renderSpreads();
-      break;
-    case 'library':
-      renderCardsLibrary();
-      break;
-    case 'profile':
-      loadProfileData();
-      break;
-  }
-}
-
-// ===== КАРТА ДНЯ =====
-function getCardOfTheDay() {
-  if (!TAROT_CARDS?.length) return null;
-  
-  const seed = `${AppState.user?.id || 'anonymous'}|${getTodayKey()}`;
-  const hash = hashString(seed);
-  return TAROT_CARDS[hash % TAROT_CARDS.length];
-}
-
-function renderCardOfDay() {
+// Загрузка карты дня
+async function loadCardOfDay() {
   const container = $('#card-day-content');
-  if (!container) return;
-
-  const card = getCardOfTheDay();
-  if (!card) {
-    container.innerHTML = '<p class="error">Карты не загружены</p>';
-    return;
-  }
-
-  // Track viewed card
-  AppState.viewedCards.add(card.id);
-  Storage.set('viewedCards', Array.from(AppState.viewedCards));
-
+  if (!container || !window.TAROT_CARDS?.length) return;
+  
+  // Выбираем случайную карту (или по алгоритму дня)
+  const today = new Date().getDate();
+  const cardIndex = today % window.TAROT_CARDS.length;
+  const card = window.TAROT_CARDS[cardIndex];
+  
+  if (!card) return;
+  
+  AppState.currentCard = card;
+  
+  // Создаём HTML
   container.innerHTML = `
-    <div class="card-art-wrap">
-      <img src="${card.image || CONFIG.defaultCardImage}" 
-           alt="${card.name}" 
-           class="card-art"
-           loading="lazy">
-    </div>
-    <div class="card-info">
-      <div class="card-header">
-        <div class="card-name">${card.name}</div>
-        ${card.roman ? `<div class="card-roman">${card.roman}</div>` : ''}
+    <div class="card-display">
+      <div class="card-image-container">
+        <img src="${card.image}" 
+             alt="${card.name}" 
+             class="card-image loading"
+             onload="this.classList.remove('loading'); this.classList.add('loaded')"
+             onerror="this.src='cards/card-placeholder.png'">
       </div>
-      <div class="card-keyword">${card.keyword || ''}</div>
-      <div class="card-desc">${card.description || ''}</div>
-      <div class="card-date">
-        <i class="fas fa-calendar-alt"></i>
-        ${formatDate()}
+      <div class="card-info">
+        <div class="card-name-row">
+          <div class="card-name">${card.name}</div>
+          ${card.roman ? `<div class="card-roman">${card.roman}</div>` : ''}
+        </div>
+        <div class="card-keyword">${card.keyword || ''}</div>
+        <div class="card-description">${card.description || 'Описание карты'}</div>
+        <div class="card-date">
+          <i class="fas fa-calendar-alt"></i>
+          ${new Date().toLocaleDateString('ru-RU', { 
+            weekday: 'long', 
+            day: 'numeric', 
+            month: 'long' 
+          })}
+        </div>
       </div>
     </div>
   `;
-
-  // Update stats
-  updateStats();
 }
 
-// ===== РАСКЛАДЫ =====
-function renderSpreads() {
-  const container = $('#spreads-list');
-  if (!container || !TAROT_SPREADS?.length) return;
-
-  const categories = [...new Set(TAROT_SPREADS.map(s => s.category).filter(Boolean))];
+// Колесо фортуны
+function initFortuneWheel() {
+  const wheel = $('#fortune-wheel');
+  const spinBtn = $('#spin-wheel-btn');
   
-  let html = '';
+  if (!wheel || !spinBtn) return;
   
-  categories.forEach(category => {
-    const categorySpreads = TAROT_SPREADS.filter(s => s.category === category);
+  const fortunes = [
+    { text: 'Удача сегодня с тобой!', color: '#FF6B6B' },
+    { text: 'Новые возможности ждут', color: '#4ECDC4' },
+    { text: 'Время действовать', color: '#45B7D1' },
+    { text: 'Гармония в отношениях', color: '#96CEB4' },
+    { text: 'Творческий подъём', color: '#FECA57' },
+    { text: 'Любовь и страсть', color: '#FF9FF3' },
+    { text: 'Финансовый рост', color: '#54A0FF' },
+    { text: 'Духовное пробуждение', color: '#5F27CD' },
+    { text: 'Путешествие к мечте', color: '#00D2D3' },
+    { text: 'Сила и уверенность', color: '#FF9F43' },
+    { text: 'Перемены к лучшему', color: '#EE5A24' },
+    { text: 'Исполнение желаний', color: '#A3CB38' }
+  ];
+  
+  // Создаём секции колеса
+  wheel.innerHTML = '';
+  
+  spinBtn.addEventListener('click', () => {
+    if (wheel.classList.contains('spinning')) return;
     
-    html += `
-      <div class="spreads-category">
-        <h3 class="category-title">${category}</h3>
-        <div class="category-grid">
-          ${categorySpreads.map(spread => `
-            <div class="spread-item" data-id="${spread.id}">
-              <div class="spread-tag">${spread.tag || 'популярный'}</div>
-              <h4 class="spread-title">${spread.title}</h4>
-              <p class="spread-desc">${spread.description}</p>
-              <div class="spread-footer">
-                <div class="spread-price">${spread.priceLabel}</div>
-                <button class="btn-secondary spread-detail-btn">
-                  Подробнее
-                </button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  });
-
-  container.innerHTML = html;
-
-  // Add event listeners
-  $$('.spread-detail-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const spreadItem = e.target.closest('.spread-item');
-      const spreadId = spreadItem?.dataset.id;
-      if (spreadId) {
-        showSpreadModal(spreadId);
-      }
-    });
-  });
-}
-
-function showSpreadModal(spreadId) {
-  const spread = TAROT_SPREADS.find(s => s.id === spreadId);
-  if (!spread) return;
-
-  const modal = $('#spread-modal');
-  const title = $('#modal-title');
-  const desc = $('#modal-description');
-  const price = $('#modal-price');
-  const time = $('#modal-time');
-  const cards = $('#modal-cards');
-  const report = $('#modal-report');
-
-  if (modal && title && desc && price) {
-    title.textContent = spread.title;
-    desc.textContent = spread.description;
-    price.textContent = spread.priceLabel;
-    time.textContent = spread.time || '10-15 мин';
-    cards.textContent = spread.cards || '3-5';
-    report.textContent = spread.report || 'PDF + аудио';
-
-    modal.classList.add('active');
-
-    // Handle buy button
-    $('#buy-now-btn').onclick = () => {
-      purchaseSpread(spread);
-    };
-  }
-}
-
-function purchaseSpread(spread) {
-  if (!spread.prodamusUrl) {
-    Toast.show('Ссылка на оплату не настроена', 'error');
-    return;
-  }
-
-  // Track purchase
-  AppState.purchasedSpreads.push({
-    id: spread.id,
-    title: spread.title,
-    date: new Date().toISOString(),
-    price: spread.priceLabel
-  });
-  Storage.set('purchasedSpreads', AppState.purchasedSpreads);
-
-  // Open payment
-  if (window.Telegram?.WebApp?.openLink) {
-    window.Telegram.WebApp.openLink(spread.prodamusUrl);
-  } else {
-    window.open(spread.prodamusUrl, '_blank', 'noopener');
-  }
-
-  Toast.show(`Расклад "${spread.title}" — открывается оплата`, 'success');
-  $('#spread-modal').classList.remove('active');
-}
-
-// ===== БИБЛИОТЕКА КАРТ =====
-function renderCardsLibrary(searchTerm = '') {
-  const container = $('#cards-library');
-  if (!container || !TAROT_CARDS?.length) return;
-
-  const filteredCards = TAROT_CARDS.filter(card => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return card.name.toLowerCase().includes(search) ||
-           card.keyword?.toLowerCase().includes(search) ||
-           card.description?.toLowerCase().includes(search);
-  });
-
-  container.innerHTML = filteredCards.map(card => `
-    <div class="card-preview" data-id="${card.id}">
-      <img src="${card.image || CONFIG.defaultCardImage}" 
-           alt="${card.name}"
-           loading="lazy">
-      <div class="card-preview-name">
-        <div>${card.name}</div>
-        <small>${card.roman || ''}</small>
-      </div>
-    </div>
-  `).join('');
-
-  // Add click listeners
-  $$('.card-preview').forEach(preview => {
-    preview.addEventListener('click', () => {
-      const cardId = parseInt(preview.dataset.id);
-      showCardDetail(cardId);
-    });
-  });
-}
-
-function showCardDetail(cardId) {
-  const card = TAROT_CARDS.find(c => c.id === cardId);
-  if (!card) return;
-
-  const modal = $('#card-modal');
-  const image = $('#modal-card-image');
-  const name = $('#modal-card-name');
-  const roman = $('#modal-card-roman');
-  const keyword = $('#modal-card-keyword');
-  const desc = $('#modal-card-description');
-  const upright = $('#modal-upright');
-  const reversed = $('#modal-reversed');
-  const advice = $('#modal-advice');
-
-  if (modal && image && name) {
-    image.src = card.image || CONFIG.defaultCardImage;
-    image.alt = card.name;
-    name.textContent = card.name;
-    roman.textContent = card.roman || '';
-    keyword.textContent = card.keyword || '';
-    desc.textContent = card.description || '';
-    upright.textContent = card.upright || 'Информация не указана';
-    reversed.textContent = card.reversed || 'Информация не указана';
-    advice.textContent = card.advice || 'Слушайте свою интуицию';
-
-    modal.classList.add('active');
-  }
-}
-
-// ===== ПРОФИЛЬ =====
-function loadProfileData() {
-  // Load saved data
-  AppState.viewedCards = new Set(Storage.get('viewedCards', []));
-  AppState.savedCards = Storage.get('savedCards', []);
-  AppState.purchasedSpreads = Storage.get('purchasedSpreads', []);
-
-  // Update stats
-  updateStats();
-
-  // Update toggles
-  $('#notifications-toggle').checked = AppState.notifications;
-  $('#theme-toggle').checked = AppState.darkMode;
-}
-
-function updateStats() {
-  $('#stats-cards').textContent = AppState.viewedCards.size;
-  $('#stats-spreads').textContent = AppState.purchasedSpreads.length;
-  $('#stats-days').textContent = Math.max(1, AppState.purchasedSpreads.length * 3);
-}
-
-// ===== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ =====
-function initApp() {
-  // Show loader
-  const loader = $('#app-loader');
-  if (loader) {
+    wheel.classList.add('spinning');
+    spinBtn.disabled = true;
+    
+    // Случайное вращение
+    const spins = 5 + Math.random() * 3; // 5-8 полных оборотов
+    const extraDegrees = Math.floor(Math.random() * 360);
+    const totalRotation = spins * 360 + extraDegrees;
+    
+    wheel.style.transform = `rotate(${totalRotation}deg)`;
+    
+    // После вращения
     setTimeout(() => {
-      loader.style.display = 'none';
+      wheel.classList.remove('spinning');
+      spinBtn.disabled = false;
+      
+      // Определяем выигрышную секцию
+      const normalizedRotation = extraDegrees % 360;
+      const sectionIndex = Math.floor(normalizedRotation / 30);
+      const fortune = fortunes[sectionIndex];
+      
+      showToast(fortune.text, 'success');
+      
+      // Анимация выигрышной секции
+      highlightWheelSection(sectionIndex, fortune.color);
+      
+    }, 4000); // Время вращения
+  });
+}
+
+// Подсветка секции колеса
+function highlightWheelSection(index, color) {
+  const wheel = $('#fortune-wheel');
+  const sections = 12;
+  const degreePerSection = 360 / sections;
+  const startAngle = index * degreePerSection;
+  
+  wheel.style.background = `
+    conic-gradient(
+      from 0deg,
+      ${index === 0 ? color : '#FF6B6B'} 0deg ${degreePerSection}deg,
+      #4ECDC4 ${degreePerSection}deg ${degreePerSection * 2}deg,
+      #45B7D1 ${degreePerSection * 2}deg ${degreePerSection * 3}deg,
+      #96CEB4 ${degreePerSection * 3}deg ${degreePerSection * 4}deg,
+      #FECA57 ${degreePerSection * 4}deg ${degreePerSection * 5}deg,
+      #FF9FF3 ${degreePerSection * 5}deg ${degreePerSection * 6}deg,
+      #54A0FF ${degreePerSection * 6}deg ${degreePerSection * 7}deg,
+      #5F27CD ${degreePerSection * 7}deg ${degreePerSection * 8}deg,
+      #00D2D3 ${degreePerSection * 8}deg ${degreePerSection * 9}deg,
+      #FF9F43 ${degreePerSection * 9}deg ${degreePerSection * 10}deg,
+      #EE5A24 ${degreePerSection * 10}deg ${degreePerSection * 11}deg,
+      #A3CB38 ${degreePerSection * 11}deg 360deg
+    )
+  `;
+  
+  // Возвращаем обычные цвета через 2 секунды
+  setTimeout(() => {
+    wheel.style.background = '';
+  }, 2000);
+}
+
+// Инициализация кнопок
+function initButtons() {
+  // Кнопка обновления карты
+  $('#refresh-btn')?.addEventListener('click', async () => {
+    if (AppState.isLoading) return;
+    
+    AppState.isLoading = true;
+    $('#refresh-btn').classList.add('refreshing');
+    
+    await loadCardOfDay();
+    showToast('Карта дня обновлена', 'success');
+    
+    setTimeout(() => {
+      $('#refresh-btn').classList.remove('refreshing');
+      AppState.isLoading = false;
     }, 1000);
-  }
-
-  // Initialize
-  initTelegram();
-  loadProfileData();
-  renderCardOfDay();
-  renderSpreads();
-  renderCardsLibrary();
-
-  // Event listeners
-  $('#refresh-btn')?.addEventListener('click', () => {
-    renderCardOfDay();
-    Toast.show('Карта дня обновлена', 'info');
   });
-
+  
+  // Сохранение карты
   $('#save-card-btn')?.addEventListener('click', () => {
-    const card = getCardOfTheDay();
-    if (card) {
-      AppState.savedCards.push({
-        ...card,
-        savedDate: new Date().toISOString()
-      });
-      Storage.set('savedCards', AppState.savedCards);
-      Toast.show('Карта сохранена в избранное', 'success');
-    }
-  });
-
-  // Navigation
-  $$('.nav-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const screen = item.dataset.screen;
-      if (screen) {
-        switchScreen(screen);
-      }
+    if (!AppState.currentCard) return;
+    
+    AppState.savedCards.push({
+      ...AppState.currentCard,
+      savedAt: new Date()
     });
+    
+    localStorage.setItem('tarot_saved_cards', JSON.stringify(AppState.savedCards));
+    showToast('Карта сохранена в Кодексе', 'success');
+    
+    // Анимация кнопки
+    const btn = $('#save-card-btn');
+    btn.classList.add('saved');
+    setTimeout(() => btn.classList.remove('saved'), 1000);
   });
-
-  // Search
-  $('#card-search')?.addEventListener('input', (e) => {
-    renderCardsLibrary(e.target.value);
-  });
-
-  // Modal close buttons
-  $$('.modal-close').forEach(btn => {
-    btn.addEventListener('click', () => {
-      btn.closest('.modal').classList.remove('active');
-    });
-  });
-
-  // Close modals on background click
-  $$('.modal').forEach(modal => {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('active');
-      }
-    });
-  });
-
-  // Quick actions
+  
+  // Магические действия
   $('#daily-spread-btn')?.addEventListener('click', () => {
-    switchScreen('spreads');
-    Toast.show('Выберите расклад для анализа дня', 'info');
+    showToast('Расклад дня скоро появится!', 'info');
   });
-
-  $('#ask-question-btn')?.addEventListener('click', () => {
+  
+  $('#question-btn')?.addEventListener('click', () => {
     const question = prompt('Задайте свой вопрос Вселенной:');
     if (question) {
-      Toast.show('Вопрос отправлен. Ищите ответ в картах.', 'success');
+      const answers = [
+        'Да', 'Нет', 'Возможно', 'Спроси позже',
+        'Знаки указывают на "да"', 'Не сейчас',
+        'Доверься интуиции', 'Время ещё не пришло'
+      ];
+      const answer = answers[Math.floor(Math.random() * answers.length)];
+      showToast(`Ответ Вселенной: ${answer}`, 'info');
     }
   });
-
-  // Toggles
-  $('#notifications-toggle')?.addEventListener('change', (e) => {
-    AppState.notifications = e.target.checked;
-    Storage.set('notifications', AppState.notifications);
+  
+  $('#meditation-btn')?.addEventListener('click', () => {
+    showToast('Начинаем медитацию...', 'info');
+    // Здесь можно добавить таймер медитации
   });
-
-  $('#theme-toggle')?.addEventListener('change', (e) => {
-    AppState.darkMode = e.target.checked;
-    document.body.classList.toggle('light-theme', !AppState.darkMode);
-    Storage.set('darkMode', AppState.darkMode);
+  
+  $('#ritual-btn')?.addEventListener('click', () => {
+    showToast('Ритуал начат. Энергии очищаются.', 'info');
   });
+  
+  // Контакты
+  $$('.contact-item').forEach(item => {
+    item.addEventListener('click', function() {
+      const text = this.querySelector('p').textContent;
+      showToast(`Ссылка: ${text}`, 'info');
+    });
+  });
+}
 
-  // Initialize theme
-  if (AppState.darkMode) {
-    document.body.classList.remove('light-theme');
-  } else {
-    document.body.classList.add('light-theme');
+// Инициализация навигации
+function initNavigation() {
+  $$('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const screen = this.dataset.screen;
+      
+      // Убираем активный класс у всех
+      $$('.nav-btn').forEach(b => b.classList.remove('active'));
+      $$('.screen').forEach(s => s.classList.remove('active'));
+      
+      // Добавляем активный класс текущему
+      this.classList.add('active');
+      
+      // Показываем соответствующий экран
+      if (screen === 'home') {
+        $('#home-screen').classList.add('active');
+      } else {
+        showToast(`Экран "${screen}" в разработке`, 'info');
+        // Для других экранов можно добавить логику позже
+      }
+    });
+  });
+}
+
+// Утилиты
+function showLoader() {
+  const loader = $('#app-loader');
+  if (loader) loader.style.display = 'flex';
+}
+
+function hideLoader() {
+  const loader = $('#app-loader');
+  if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => {
+      loader.style.display = 'none';
+      loader.style.opacity = '1';
+    }, 300);
+  }
+}
+
+function showToast(message, type = 'info') {
+  const toast = $('#toast');
+  if (!toast) return;
+  
+  // Стиль в зависимости от типа
+  toast.className = 'toast';
+  if (type === 'error') toast.style.background = 'var(--danger)';
+  else if (type === 'success') toast.style.background = 'var(--success)';
+  else toast.style.background = 'var(--primary)';
+  
+  toast.textContent = message;
+  toast.classList.add('show');
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+
+function loadUserData() {
+  const saved = localStorage.getItem('tarot_saved_cards');
+  if (saved) {
+    try {
+      AppState.savedCards = JSON.parse(saved);
+    } catch (e) {
+      console.error('Ошибка загрузки сохранённых карт:', e);
+    }
   }
 }
 
 // Запуск приложения
 document.addEventListener('DOMContentLoaded', initApp);
 
-// Экспорт для отладки
-window.AppState = AppState;
-window.Storage = Storage;
-window.Toast = Toast;
+// Добавляем CSS для состояний
+document.head.insertAdjacentHTML('beforeend', `
+  <style>
+    .refreshing {
+      animation: refreshSpin 1s linear infinite;
+    }
+    
+    @keyframes refreshSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    .saved i {
+      animation: saveBounce 0.5s ease;
+    }
+    
+    @keyframes saveBounce {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.3); }
+    }
+    
+    .nav-btn.active i {
+      animation: navIconPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes navIconPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
+    .fortune-wheel.spinning {
+      transition: transform 4s cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+  </style>
+`);
