@@ -90,12 +90,6 @@ body {
   margin-bottom: 24px;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .logo {
   display: flex;
   align-items: center;
@@ -145,77 +139,12 @@ body {
   background-clip: text;
 }
 
-/* .logo-subtitle оставляем на случай, если потом понадобится */
-
-.user-status {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  position: relative;
-}
-
-.status-dot.online::after {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
-  border-radius: 50%;
-  border: 2px solid var(--success);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 0; transform: scale(1.5); }
-}
-
-.status-text {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* ===== КНОПКА АРХИВА ===== */
-.archive-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.archive-btn:hover {
-  background: rgba(255, 255, 255, 0.28);
-  transform: translateY(-1px);
-}
+/* старый блок user-status можно оставить, но он не используется */
 
 /* ===== НАВИГАЦИЯ ===== */
 .navigation {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr); /* было 3, теперь 4 пункта меню */
   gap: 8px;
   padding: 0 8px;
   margin-top: 20px;
@@ -372,7 +301,6 @@ body {
 /* КОНТЕНТ КАРТЫ - ПОЛНЫЙ ЭКРАН */
 .card-content {
   margin: 24px 0;
-  cursor: pointer;
 }
 
 .card-display {
@@ -388,24 +316,19 @@ body {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
   transform-style: preserve-3d;
   perspective: 1000px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at top, rgba(255,255,255,0.8), rgba(248,245,255,1));
-  padding: 8px;
+  height: 280px;
 }
 
 .card-image {
   width: 100%;
-  height: auto;
-  max-height: 360px;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
   display: block;
-  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card-image:hover {
-  transform: scale(1.03) translateY(-4px);
+  transform: scale(1.05) rotateY(5deg);
 }
 
 .card-image-container::before {
@@ -610,6 +533,16 @@ body {
 .action-icon.moon {
   background: linear-gradient(135deg, #9370DB, #4B0082);
   color: #E6E6FA;
+}
+
+.action-icon.tarot {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+}
+
+.action-icon.fortune {
+  background: linear-gradient(135deg, #FF00FF, #8A2BE2);
+  color: white;
 }
 
 .action-card h4 {
@@ -868,17 +801,6 @@ body {
   margin-bottom: 12px;
 }
 
-.spread-header-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.spread-icon {
-  font-size: 16px;
-  color: var(--primary);
-}
-
 .spread-title {
   font-size: 18px;
   font-weight: 600;
@@ -917,6 +839,17 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ===== АРХИВ ===== */
+.archive-item {
+  cursor: default;
+}
+
+.archive-item:hover {
+  transform: none;
+  box-shadow: var(--shadow);
+  border-color: rgba(138, 43, 226, 0.1);
 }
 
 /* ===== КОЛОДА ===== */
@@ -1024,7 +957,7 @@ body {
   padding: 24px;
   max-width: 400px;
   width: 100%;
-  max-height: 90vh;
+  max-height: 80vh;
   overflow-y: auto;
   position: relative;
   border: 2px solid var(--primary);
@@ -1084,66 +1017,6 @@ body {
   color: var(--text);
 }
 
-/* ===== СТИЛИ АРХИВА ===== */
-
-.archive-item {
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  background: rgba(138, 43, 226, 0.03);
-}
-
-.archive-item-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 11px;
-}
-
-.archive-tag {
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.archive-tag-spread {
-  background: rgba(138, 43, 226, 0.12);
-  color: var(--primary);
-}
-
-.archive-tag-wheel {
-  background: rgba(255, 215, 0, 0.16);
-  color: var(--gold);
-}
-
-.archive-date {
-  color: var(--text-light);
-}
-
-.archive-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.archive-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-light);
-  margin-bottom: 4px;
-}
-
-.archive-desc {
-  font-size: 12px;
-  color: var(--text);
-  opacity: 0.92;
-}
-
-/* ===== ВВОД ВОПРОСА ===== */
 .question-input-container {
   margin-bottom: 20px;
 }
@@ -1324,6 +1197,10 @@ body {
     padding: 0;
   }
   
+  .card-image-container {
+    height: 240px;
+  }
+  
   .wheel-wrapper {
     width: 250px;
     height: 250px;
@@ -1371,11 +1248,11 @@ body {
 /* Улучшенная загрузка изображений */
 .card-image {
   opacity: 0;
+  transition: opacity 0.5s ease;
 }
 
 .card-image.loaded {
   opacity: 1;
-  transition: opacity 0.5s ease;
 }
 
 .deck-card-image {
