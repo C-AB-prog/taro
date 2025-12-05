@@ -1,17 +1,53 @@
-// ===== Утилиты =====
+// ===== УТИЛИТЫ =====
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 const STORAGE_KEY = 'tarot_app_state';
+const API_BASE = '/api'; // сюда потом повесишь Neon / Vercel
 
-// Состояние приложения
+// ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
 const AppState = {
   user: null,
   currentCard: null,
   questionType: 'love',
   archive: [],
   wheelLastSpin: null,
-  lastAnswers: {} // по категориям, чтобы не повторять подряд
+  lastWheelText: '',
+  lastAnswers: {} // по типам вопросов, чтобы не повторяться
+};
+
+let wheelTimerId = null;
+
+// ===== ОТВЕТЫ ДЛЯ "СПРОСИТЬ ВСЕЛЕННУЮ" =====
+const ANSWERS_BY_TYPE = {
+  love: [
+    'Ваши чувства взаимны, но важно говорить честно и открыто.',
+    'Связь между вами сильна, но ей не хватает внимания и заботы.',
+    'Эта история ещё не раскрыта до конца — не торопитесь с выводами.',
+    'Сейчас время полюбить прежде всего себя, а потом уже партнёра.',
+    'Отношения имеют потенциал, если вы оба готовы меняться.'
+  ],
+  career: [
+    'Перед вами открываются новые возможности, не бойтесь проявить инициативу.',
+    'Стабильность важнее резких движений — действуйте постепенно.',
+    'Настало время заявить о себе и своих достижениях.',
+    'Инвестиция в обучение сейчас принесёт серьёзные результаты позже.',
+    'Стоит пересмотреть окружение на работе — не все искренни.'
+  ],
+  future: [
+    'В ближайшее время ожидаются мягкие, но важные перемены.',
+    'Сценарий будущего ещё не зафиксирован — многое зависит от вашего выбора.',
+    'Вас ждёт период роста и расширения горизонтов.',
+    'После череды испытаний наступит спокойный и тёплый этап.',
+    'Одна неожиданная возможность сможет сильно изменить ваш путь.'
+  ],
+  decision: [
+    'Лучший выбор — тот, который оставляет чувство внутреннего спокойствия.',
+    'Интуиция уже знает ответ, попробуйте немного замолчать и услышать её.',
+    'Соберите ещё немного фактов, и решение проявится само.',
+    'Если приходится выбирать из двух зол — возможно, есть третий вариант.',
+    'Смелое решение сейчас избавит от долгого сожаления потом.'
+  ]
 };
 
 // ===== АНИМАЦИИ =====
@@ -95,8 +131,7 @@ class MysticAnimations {
   }
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-
+// ===== TELEGRAM =====
 function initTelegram() {
   if (window.Telegram?.WebApp) {
     const tg = window.Telegram.WebApp;
@@ -108,21 +143,18 @@ function initTelegram() {
       AppState.user = {
         id: user.id,
         name: user.first_name || 'Пользователь',
-        username: user.username
+        username: user.username || null
       };
     }
   }
 
+  // Для браузера без Telegram
   if (!AppState.user) {
     AppState.user = { id: 123, name: 'Дмитрий', username: 'dmitry_tarot' };
   }
-
-  const nameSpan = $('#status-username');
-  if (nameSpan && AppState.user?.name) {
-    nameSpan.textContent = `${AppState.user.name} онлайн`;
-  }
 }
 
+// ===== ЛОКАЛЬНОЕ СОСТОЯНИЕ =====
 function loadAppState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -130,6 +162,7 @@ function loadAppState() {
     const data = JSON.parse(raw);
     AppState.archive = Array.isArray(data.archive) ? data.archive : [];
     AppState.wheelLastSpin = data.wheelLastSpin || null;
+    AppState.lastWheelText = data.lastWheelText || '';
   } catch (e) {
     console.error('Ошибка чтения состояния:', e);
   }
@@ -139,19 +172,59 @@ function saveAppState() {
   try {
     const data = {
       archive: AppState.archive,
-      wheelLastSpin: AppState.wheelLastSpin
+      wheelLastSpin: AppState.wheelLastSpin,
+      lastWheelText: AppState.lastWheelText
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     console.error('Ошибка сохранения состояния:', e);
   }
+
+  // Синхронизация с БД (Neon) — когда будет готов backend
+  saveArchiveToServer().catch(() => {});
 }
 
+// ===== API ДЛЯ БД =====
+async function loadArchiveFromServer() {
+  if (!AppState.user?.id) return;
+  try {
+    const res = await fetch(`${API_BASE}/archive?userId=${encodeURIComponent(AppState.user.id)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data.archive)) AppState.archive = data.archive;
+    if (data.wheelLastSpin) AppState.wheelLastSpin = data.wheelLastSpin;
+    if (data.lastWheelText) AppState.lastWheelText = data.lastWheelText;
+  } catch (e) {
+    console.warn('Не удалось загрузить архив из БД, работаем с локальными данными');
+  }
+}
+
+async function saveArchiveToServer() {
+  if (!AppState.user?.id) return;
+  try {
+    await fetch(`${API_BASE}/archive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: AppState.user.id,
+        archive: AppState.archive,
+        wheelLastSpin: AppState.wheelLastSpin,
+        lastWheelText: AppState.lastWheelText
+      })
+    });
+  } catch (e) {
+    console.warn('Не удалось синхронизировать архив с БД');
+  }
+}
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
 async function initApp() {
   showLoader();
+
   try {
     initTelegram();
     loadAppState();
+    await loadArchiveFromServer();
 
     window.mysticAnimations = new MysticAnimations();
 
@@ -162,7 +235,7 @@ async function initApp() {
     initButtons();
     initNavigation();
     addAnimationStyles();
-    renderArchive(); // для экрана архива
+    renderArchive();
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
@@ -172,7 +245,6 @@ async function initApp() {
 }
 
 // ===== КАРТА ДНЯ =====
-
 async function loadCardOfDay() {
   const container = $('#card-day-content');
   if (!container || !window.TAROT_CARDS?.length) return;
@@ -214,13 +286,67 @@ async function loadCardOfDay() {
 }
 
 // ===== КОЛЕСО ФОРТУНЫ =====
+function getWheelRemainingMs() {
+  if (!AppState.wheelLastSpin) return 0;
+  const last = new Date(AppState.wheelLastSpin);
+  if (Number.isNaN(last.getTime())) return 0;
+  const now = new Date();
+  const diff = 24 * 60 * 60 * 1000 - (now - last);
+  return diff > 0 ? diff : 0;
+}
 
 function canSpinToday() {
-  if (!AppState.wheelLastSpin) return true;
-  const last = new Date(AppState.wheelLastSpin);
-  if (Number.isNaN(last.getTime())) return true;
-  const now = new Date();
-  return now - last >= 24 * 60 * 60 * 1000 || last.toDateString() !== now.toDateString();
+  return getWheelRemainingMs() <= 0;
+}
+
+function updateWheelUI() {
+  const spinBtn = $('#spin-wheel-btn');
+  const resultEl = $('#wheel-result');
+  if (!spinBtn || !resultEl) return;
+
+  if (wheelTimerId) {
+    clearInterval(wheelTimerId);
+    wheelTimerId = null;
+  }
+
+  const remaining = getWheelRemainingMs();
+
+  if (remaining <= 0) {
+    spinBtn.disabled = false;
+    spinBtn.innerHTML = `
+      <i class="fas fa-play"></i>
+      <span>Крутить колесо (1 раз в сутки)</span>
+      <div class="spin-glow"></div>
+    `;
+    if (AppState.lastWheelText) {
+      resultEl.innerHTML = AppState.lastWheelText;
+    } else {
+      resultEl.textContent = 'Колесо ещё не крутили сегодня';
+    }
+  } else {
+    spinBtn.disabled = true;
+    spinBtn.innerHTML = `
+      <i class="fas fa-ban"></i>
+      <span>До следующего кручения...</span>
+      <div class="spin-glow"></div>
+    `;
+
+    const setText = () => {
+      const ms = getWheelRemainingMs();
+      if (ms <= 0) {
+        updateWheelUI();
+        return;
+      }
+      const totalSeconds = Math.floor(ms / 1000);
+      const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSeconds % 60).padStart(2, '0');
+      resultEl.textContent = `Следующее вращение через ${h}:${m}:${s}`;
+    };
+
+    setText();
+    wheelTimerId = setInterval(setText, 1000);
+  }
 }
 
 function initFortuneWheel() {
@@ -229,7 +355,6 @@ function initFortuneWheel() {
   const resultEl = $('#wheel-result');
   if (!wheel || !spinBtn || !resultEl) return;
 
-  // визуальные секции
   wheel.innerHTML = '';
   for (let i = 0; i < 12; i++) {
     const section = document.createElement('div');
@@ -258,7 +383,7 @@ function initFortuneWheel() {
 
     wheel.classList.add('spinning');
     spinBtn.disabled = true;
-    spinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span>';
+    spinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span><div class="spin-glow"></div>';
     resultEl.textContent = 'Колесо вращается...';
 
     const spins = 5 + Math.floor(Math.random() * 4);
@@ -270,28 +395,32 @@ function initFortuneWheel() {
 
     setTimeout(() => {
       wheel.classList.remove('spinning');
-      spinBtn.disabled = false;
-      spinBtn.innerHTML = '<i class="fas fa-play"></i><span>Крутить колесо (1 раз в сутки)</span>';
 
       const cards = window.TAROT_CARDS;
       const card = cards[Math.floor(Math.random() * cards.length)];
 
-      resultEl.innerHTML = `
+      const textHtml = `
         <div>
           <div style="margin-bottom: 6px;">Колесо выбрало карту:</div>
           <div style="font-weight: 700;">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
         </div>
       `;
+      resultEl.innerHTML = textHtml;
+      AppState.lastWheelText = textHtml;
 
       showCardModal(card, { source: 'wheel' });
 
       const entry = {
         type: 'wheel',
         createdAt: new Date().toISOString(),
-        cardId: card.id,
-        cardName: card.name,
-        cardKeyword: card.keyword,
-        cardAdvice: card.advice
+        card: {
+          id: card.id,
+          name: card.name,
+          roman: card.roman,
+          keyword: card.keyword,
+          advice: card.advice,
+          image: card.image
+        }
       };
       AppState.archive.unshift(entry);
       AppState.wheelLastSpin = new Date().toISOString();
@@ -299,88 +428,86 @@ function initFortuneWheel() {
       renderArchiveIfOpen();
 
       showToast('Колесо сделало выбор ✨', 'success');
+      updateWheelUI();
     }, 3000);
   });
+
+  updateWheelUI();
 }
 
 // ===== РАСКЛАДЫ =====
-
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
 
-  // новые расклады по ТЗ
   const spreads = [
     {
       id: 'celtic-cross',
       title: 'Кельтский крест',
-      description: 'Один из самых известных раскладов из 10 карт. Показывает причины ситуации, её развитие и вероятный исход.',
+      description: 'Классический расклад на 10 карт: причины ситуации, скрытые влияния, развитие и вероятный исход.',
       price: 120,
-      cards: 10,
+      cardsCount: 10,
       time: '30–40 мин'
     },
     {
       id: 'love-daisy',
       title: 'Ромашка любви',
-      description: 'Расклад из 6 карт для понимания истинных чувств партнёра и потенциала отношений.',
+      description: '6 карт, чтобы увидеть истинные чувства, мотивы и перспективы отношений.',
       price: 80,
-      cards: 6,
-      time: '20–25 мин'
+      cardsCount: 6,
+      time: '15–20 мин'
     },
     {
       id: 'love-triangle',
       title: 'Любовный треугольник',
-      description: '9 карт для анализа двух потенциальных вариантов развития отношений и вашей роли в ситуации.',
+      description: '9 карт для анализа двух вариантов отношений и выбора лучшего пути.',
       price: 110,
-      cards: 9,
-      time: '25–35 мин'
+      cardsCount: 9,
+      time: '25–30 мин'
     },
     {
       id: 'time-frames',
       title: 'Временные рамки',
-      description: '4 карты, каждая отражает период: месяц, 3 месяца, полгода и год развития отношений.',
+      description: '4 карты: ближайший месяц, 3 месяца, полгода и год развития ситуации.',
       price: 70,
-      cards: 4,
-      time: '15–20 мин'
+      cardsCount: 4,
+      time: '10–15 мин'
     },
     {
       id: 'four-elements',
       title: 'Четыре элемента',
-      description: '4 карты, показывающие материальную сторону, эмоции, страсть и интеллектуальную связь.',
+      description: 'Материальная сторона, эмоции, страсть и интеллектуальная связь в отношениях.',
       price: 75,
-      cards: 4,
+      cardsCount: 4,
       time: '15–20 мин'
     },
     {
-      id: 'destiny-pendulum',
+      id: 'fate-pendulum',
       title: 'Маятник судьбы',
       description: '5 карт: текущее положение, основной путь, альтернативный путь, ключевые события и итог.',
-      price: 85,
-      cards: 5,
+      price: 90,
+      cardsCount: 5,
       time: '20–25 мин'
     },
     {
-      id: 'karma-relationships',
+      id: 'relationship-karma',
       title: 'Карма отношений',
-      description: '7 карт, освещающих кармическую задачу союза, уроки прошлого, препятствия, ресурсы и итог.',
-      price: 95,
-      cards: 7,
-      time: '25–30 мин'
+      description: '7 карт о кармических задачах, уроках прошлого, препятствиях и возможностях союза.',
+      price: 100,
+      cardsCount: 7,
+      time: '20–30 мин'
     }
   ];
 
   container.innerHTML = spreads.map(spread => `
     <div class="spread-item" data-id="${spread.id}">
       <div class="spread-header">
-        <div class="spread-header-main">
-          <i class="fas fa-star spread-icon"></i>
-          <div class="spread-title">${spread.title}</div>
-        </div>
+        <div class="spread-title">${spread.title}</div>
         <div class="spread-price">${spread.price}</div>
       </div>
       <div class="spread-description">${spread.description}</div>
       <div class="spread-meta">
-        <span><i class="fas fa-cards"></i> ${spread.cards} карт</span>
+        <span><i class="fas fa-cards-blank"></i> ${spread.cardsCount} карт</span>
         <span><i class="fas fa-clock"></i> ${spread.time}</span>
       </div>
     </div>
@@ -388,8 +515,8 @@ function initSpreads() {
 
   $$('.spread-item').forEach(item => {
     item.addEventListener('click', () => {
-      const spreadId = item.dataset.id;
-      const spread = spreads.find(s => s.id === spreadId);
+      const id = item.dataset.id;
+      const spread = spreads.find(s => s.id === id);
       if (!spread) return;
 
       if (!window.TAROT_CARDS || !window.TAROT_CARDS.length) {
@@ -397,87 +524,101 @@ function initSpreads() {
         return;
       }
 
-      const cardsToDraw = Math.min(spread.cards, window.TAROT_CARDS.length);
-      const pool = [...window.TAROT_CARDS];
-      const drawn = [];
+      const ok = confirm(`Купить расклад «${spread.title}» за ${spread.price} ★?\nОплата звёздами будет подключена позже, сейчас просто посмотрим результат.`);
+      if (!ok) return;
 
-      for (let i = 0; i < cardsToDraw; i++) {
-        const index = Math.floor(Math.random() * pool.length);
-        drawn.push(pool.splice(index, 1)[0]);
-      }
-
-      showSpreadResultModal(spread, drawn);
-
-      const entry = {
-        type: 'spread',
-        createdAt: new Date().toISOString(),
-        spreadId: spread.id,
-        title: spread.title,
-        cards: drawn.map(c => c.name),
-        price: spread.price,
-        description: spread.description
-      };
-      AppState.archive.unshift(entry);
+      const result = performSpread(spread);
+      AppState.archive.unshift(result);
       saveAppState();
       renderArchiveIfOpen();
-
-      showToast(`Расклад "${spread.title}" выполнен`, 'success');
+      showSpreadResultModal(result);
+      showToast(`Расклад «${spread.title}» добавлен в архив`, 'success');
     });
   });
 }
 
-function showSpreadResultModal(spread, cards) {
+function performSpread(spread) {
+  const allCards = window.TAROT_CARDS || [];
+  const cardsCopy = [...allCards];
+  const used = [];
+
+  const count = Math.min(spread.cardsCount, cardsCopy.length);
+
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor(Math.random() * cardsCopy.length);
+    const card = cardsCopy.splice(idx, 1)[0];
+    used.push({
+      id: card.id,
+      name: card.name,
+      roman: card.roman,
+      keyword: card.keyword,
+      description: card.description,
+      advice: card.advice,
+      image: card.image
+    });
+  }
+
+  return {
+    type: 'spread',
+    spreadId: spread.id,
+    title: spread.title,
+    createdAt: new Date().toISOString(),
+    cards: used
+  };
+}
+
+function showSpreadResultModal(result) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
   if (!modal || !body) return;
 
-  const cardsHtml = cards.map((card, idx) => {
-    const hasRealImage = typeof card.id === 'number' && card.id <= 11 && card.image;
-    const header = `<div style="font-weight:600;margin-bottom:4px;">${idx + 1}. ${card.name}${card.roman ? ` (${card.roman})` : ''}</div>`;
-    const keyword = card.keyword ? `<div style="font-size:13px;color:var(--secondary);margin-bottom:4px;">${card.keyword}</div>` : '';
-    const desc = card.description ? `<div style="font-size:13px;margin-bottom:4px;">${card.description}</div>` : '';
-    const advice = card.advice ? `<div style="font-size:12px;color:var(--text-light);"><i class="fas fa-lightbulb"></i> ${card.advice}</div>` : '';
+  const dateStr = new Date(result.createdAt).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 
-    if (hasRealImage) {
-      return `
-        <div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;">
-          <img src="${card.image}" alt="${card.name}"
-               style="width:70px;height:105px;object-fit:cover;border-radius:10px;flex-shrink:0;"
-               onerror="this.style.display='none'">
-          <div style="flex:1;">
-            ${header}
-            ${keyword}
-            ${desc}
-            ${advice}
+  const cardsHtml = result.cards.map((card, index) => {
+    const hasImage = typeof card.id === 'number' && card.id < 12;
+    return `
+      <div style="margin-bottom: 18px; text-align:left;">
+        <div style="font-size:13px; color:var(--text-light); margin-bottom:4px;">
+          Карта ${index + 1}
+        </div>
+        <div style="display:flex; gap:12px; align-items:flex-start;">
+          ${hasImage ? `
+            <img src="${card.image}" 
+                 alt="${card.name}" 
+                 style="width:70px; height:110px; object-fit:cover; border-radius:10px;"
+                 onerror="this.style.display='none'">
+          ` : ''}
+          <div>
+            <div style="font-weight:600; color:var(--primary); margin-bottom:4px;">
+              ${card.name}${card.roman ? ` (${card.roman})` : ''}
+            </div>
+            <div style="font-size:13px; color:var(--secondary); margin-bottom:6px;">
+              ${card.keyword || ''}
+            </div>
+            <div style="font-size:13px; color:var(--text); margin-bottom:6px;">
+              ${card.description || ''}
+            </div>
+            <div style="font-size:12px; color:var(--text-light);">
+              Совет: ${card.advice || 'Совет будет добавлен позже.'}
+            </div>
           </div>
         </div>
-      `;
-    }
-
-    return `
-      <div style="margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgba(138,43,226,0.04);border:1px solid rgba(138,43,226,0.15);">
-        ${header}
-        ${keyword}
-        ${desc}
-        ${advice}
       </div>
     `;
   }).join('');
 
   body.innerHTML = `
-    <div style="text-align: center;margin-bottom:16px;">
-      <div class="modal-icon" style="margin-bottom:12px;">
-        <i class="fas fa-cards"></i>
+    <div style="text-align:left;">
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
+      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+        ${dateStr}
       </div>
-      <h3 style="font-size:20px;margin-bottom:4px;color:var(--primary);">${spread.title}</h3>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">
-        ${spread.description}
-      </div>
-      <div style="font-size:12px;color:var(--text-light);">
-        ${spread.cards} карт · ★ ${spread.price}
-      </div>
-    </div>
-    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px;">
       ${cardsHtml}
     </div>
   `;
@@ -485,8 +626,7 @@ function showSpreadResultModal(spread, cards) {
   openModal(modal);
 }
 
-// ===== КОЛОДА / ОДНА КАРТА =====
-
+// ===== КОЛОДА =====
 function initDeck() {
   const container = $('#deck-grid');
   if (!container || !window.TAROT_CARDS?.length) return;
@@ -516,155 +656,91 @@ function initDeck() {
   });
 }
 
+// ===== МОДАЛКА КАРТЫ / ОТВЕТА =====
 function showCardModal(card, options = {}) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
   if (!modal || !body) return;
 
   body.innerHTML = `
-    <div style="text-align: center;">
-      ${card.image && card.id <= 11 ? `
-        <img src="${card.image}" 
-             alt="${card.name}" 
-             style="width: 200px; height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;"
-             onerror="this.style.display='none'">
-      ` : ''}
-      <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 8px;">${card.name}</h3>
-      ${card.roman ? `<div style="color: var(--text-light); font-size: 16px; margin-bottom: 12px;">${card.roman}</div>` : ''}
-      <div style="background: var(--primary); color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-bottom: 16px;">
+    <div style="text-align:center;">
+      <img src="${card.image}" 
+           alt="${card.name}" 
+           style="width:200px; height:300px; object-fit:cover; border-radius:12px; margin-bottom:20px;"
+           onerror="this.style.display='none'">
+      <h3 style="font-size:24px; color:var(--primary); margin-bottom:8px;">${card.name}</h3>
+      ${card.roman ? `<div style="color: var(--text-light); font-size:16px; margin-bottom:12px;">${card.roman}</div>` : ''}
+      <div style="background: var(--primary); color:white; padding:8px 16px; border-radius:20px; display:inline-block; margin-bottom:16px;">
         ${card.keyword || ''}
       </div>
-      <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${card.description || ''}</p>
-    </div>
-
-    <div style="margin-top: 10px; text-align: left;">
-      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Прямое значение</h4>
-      <p style="font-size: 13px; margin-bottom: 10px;">${card.upright || '—'}</p>
-
-      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Перевёрнутое</h4>
-      <p style="font-size: 13px; margin-bottom: 10px;">${card.reversed || '—'}</p>
-
-      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Совет карты</h4>
-      <p style="font-size: 13px; margin-bottom: 4px;">${card.advice || '—'}</p>
+      <p style="color:var(--text); line-height:1.6; margin-bottom:16px;">${card.description || ''}</p>
+      <div style="font-size:14px; color:var(--text-light);">
+        <i class="fas fa-lightbulb"></i> Совет: ${card.advice || 'Совет будет добавлен позже.'}
+      </div>
     </div>
   `;
 
   openModal(modal);
 }
 
-// ===== СПРОСИТЬ ВСЕЛЕННУЮ =====
+function showAnswerModal(question, answer, typeLabel) {
+  const modal = $('#card-modal');
+  const body = $('#card-modal-body');
+  if (!modal || !body) return;
 
-const QUESTION_ANSWERS = {
-  love: [
-    'В любви для вас открывается новое пространство близости и доверия — важно позволить себе быть честным в чувствах.',
-    'Сейчас отношения проходят проверку на искренность: всё, что построено на иллюзиях, будет мягко уходить.',
-    'Партнёр отражает ваше отношение к себе: чем больше уважения к себе, тем здоровее становится связь.',
-    'В ближайшее время возможно важное откровенный разговор, который расставит акценты и снимет сомнения.',
-    'Чувства есть, но им нужно больше времени и пространства, без давления и контроля.',
-    'Если вы одиноки, вы выходите из старого сценария любви и становитесь готовы к новому формату отношений.',
-    'Не цепляйтесь за прошлое — оно забирает энергию, которая нужна для живых встреч здесь и сейчас.',
-    'Важнее сейчас не “быть с кем-то”, а не предавать свои внутренние ценности ради отношений.'
-  ],
-  career: [
-    'В профессиональной сфере у вас начинается период роста — важно заметить шанс, а не отмахнуться от него.',
-    'Вы подходите к точке выбора: продолжать по старой траектории или рискнуть и выйти на новый уровень.',
-    'Ваши навыки реально стоят дороже, чем вы о себе думаете — пора корректировать самооценку и запросы.',
-    'В ближайшие месяцы возможны новые предложения или проект, который потребует ответственности, но даст рывок.',
-    'Сейчас лучше вкладываться в образование и развитие компетенций — это быстро окупится.',
-    'Не стоит соглашаться на условия, которые обнуляют ваш ресурс и время, даже если кажется, что “так надо”.',
-    'Коллеги или партнёры могут стать поддержкой, если вы перестанете всё тянуть в одиночку.',
-    'Всё, что не даёт роста и смысла, будет постепенно отпадать, освобождая место для более подходящей работы.'
-  ],
-  future: [
-    'Будущее выстраивается через несколько мягких, но важных поворотов — не одним резким событием.',
-    'Ситуация вокруг вас ещё формируется, поэтому часть неопределённости — нормальна и временная.',
-    'В ближайшее время вы получите знак или встречу, которые помогут поменять взгляд на свои планы.',
-    'Часть старых целей потеряет актуальность, и это нормально — вы меняетесь, вместе с этим меняется и маршрут.',
-    'Вам важно сейчас держать фокус не на страхах, а на том, что реально вдохновляет и наполняет.',
-    'События будут развиваться быстрее, если вы перестанете оттягивать важные решения.',
-    'Будущее не жёстко прописано: ваши ежедневные маленькие действия уже сейчас переписывают сценарий.',
-    'Вы будете ощущать всё больше внутренней опоры, даже если внешние обстоятельства не идеальны.'
-  ],
-  decision: [
-    'Выбор стоит делать в пользу варианта, где больше свободы и живости, а не только формальной стабильности.',
-    'Если в одном из вариантов вы постоянно “сжимаетесь” — тело уже даёт подсказку, что это не ваш путь.',
-    'Оба пути могут привести к результату, но один из них гораздо ближе к вашим истинным ценностям.',
-    'Сначала разрешите себе честно признаться, чего вы боитесь — после этого решение станет яснее.',
-    'Если ответ не приходит — возможно, сейчас рано делать окончательный шаг, нужно ещё немного информации.',
-    'Представьте, что вам уже 5 лет спустя: какой выбор вызывает ощущение спокойствия, а не сожаления?',
-    'Интуиция уже подсказывает вам направление, просто ум пока занят поиском гарантий и перестраховкой.',
-    'Ни один выбор не будет “идеальным”, но один из них даёт ощущение роста, а другой — застоя.'
-  ]
-};
+  const typeText = {
+    love: 'Любовь и отношения',
+    career: 'Карьера и дело',
+    future: 'Будущее',
+    decision: 'Выбор и решения'
+  }[typeLabel] || 'Ответ Вселенной';
 
-const EXTRA_PHRASES = [
-  'Обратите внимание на повторяющиеся знаки и совпадения вокруг — они усиливают ответ.',
-  'Главное сейчас — не торопить события и дать себе время прожить свои чувства.',
-  'Вселенная мягко подталкивает вас к более честному выбору по отношению к себе.',
-  'Сохраняйте уважение к собственным границам — это ключ к правильному решению.',
-  'Запишите свои мысли на бумаге: так вы быстрее увидите ясный ответ.'
-];
+  body.innerHTML = `
+    <div style="text-align:center; padding:20px;">
+      <div class="modal-icon" style="margin:0 auto 20px;">
+        <i class="fas fa-stars"></i>
+      </div>
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${typeText}</h3>
+      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+        Ваш вопрос:
+      </div>
+      <div style="background:rgba(138,43,226,0.06); padding:12px; border-radius:12px; margin-bottom:20px; font-style:italic;">
+        "${question}"
+      </div>
+      <div style="font-size:18px; color:var(--primary); font-weight:600; margin-bottom:16px;">
+        ${answer}
+      </div>
+      <div style="font-size:14px; color:var(--text-light);">
+        <i class="fas fa-lightbulb"></i> Дальнейшая трактовка зависит от контекста ситуации.
+      </div>
+    </div>
+  `;
 
-function askQuestion() {
-  const input = $('#question-input');
-  if (!input) return;
-
-  const question = input.value.trim();
-  if (!question) {
-    showToast('Введите ваш вопрос', 'error');
-    return;
-  }
-  if (question.length < 5) {
-    showToast('Вопрос должен быть не менее 5 символов', 'error');
-    return;
-  }
-
-  $('#question-modal').classList.remove('active');
-  showToast('🌀 Вселенная слышит ваш вопрос...', 'info');
-
-  setTimeout(() => {
-    const type = AppState.questionType || 'love';
-    const list = QUESTION_ANSWERS[type] || QUESTION_ANSWERS.love;
-    if (!list || !list.length) return;
-
-    let index = Math.floor(Math.random() * list.length);
-    const lastIndex = AppState.lastAnswers[type];
-    if (list.length > 1 && index === lastIndex) {
-      index = (index + 1) % list.length;
-    }
-    AppState.lastAnswers[type] = index;
-
-    const baseAnswer = list[index];
-    const extra = EXTRA_PHRASES[Math.floor(Math.random() * EXTRA_PHRASES.length)];
-    const fullAnswer = `${baseAnswer} ${extra}`;
-
-    showAnswerModal(question, fullAnswer);
-
-    input.value = '';
-    const charCount = $('#char-count');
-    if (charCount) charCount.textContent = '0';
-  }, 1500);
+  openModal(modal);
 }
 
-function showAnswerModal(question, answer) {
+function showYesNoModal(question, result) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
   if (!modal || !body) return;
 
   body.innerHTML = `
-    <div style="text-align: center; padding: 20px;">
-      <div class="modal-icon" style="margin: 0 auto 20px;">
-        <i class="fas fa-stars"></i>
+    <div style="text-align:center; padding:20px;">
+      <div class="modal-icon" style="margin:0 auto 20px;">
+        <i class="fas fa-scale-balanced"></i>
       </div>
-      <h3 style="font-size: 20px; color: var(--primary); margin-bottom: 16px;">Ответ Вселенной</h3>
-      
-      <div style="background: rgba(138, 43, 226, 0.1); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
-        <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
-        <div style="font-style: italic; color: var(--text);">"${question}"</div>
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">Ответ «Да / Нет»</h3>
+      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+        Ваш вопрос:
       </div>
-      
-      <div style="font-size: 16px; color: var(--primary); font-weight: 600; margin-bottom: 16px; text-align:left;">
-        ${answer}
+      <div style="background:rgba(138,43,226,0.06); padding:12px; border-radius:12px; margin-bottom:20px; font-style:italic;">
+        "${question}"
+      </div>
+      <div style="font-size:22px; font-weight:700; margin-bottom:8px;">
+        ${result.answer}
+      </div>
+      <div style="font-size:14px; color:var(--text-light);">
+        ${result.comment}
       </div>
     </div>
   `;
@@ -672,166 +748,35 @@ function showAnswerModal(question, answer) {
   openModal(modal);
 }
 
-// ===== ДА / НЕТ =====
+function openModal(modal) {
+  modal.classList.add('active');
+  const closeBtn = modal.querySelector('.modal-close');
 
-const YESNO_VARIANTS = [
-  { short: 'Да', text: 'Энергия ситуации складывается в вашу пользу — ответ ближе к «да».' },
-  { short: 'Скорее да', text: 'Пока всё движется в направлении положительного исхода, но важно поддерживать это своими действиями.' },
-  { short: 'Нет', text: 'Сейчас обстоятельства не поддерживают этот вариант — ответ ближе к «нет».' },
-  { short: 'Скорее нет', text: 'Слишком много сопротивления и преград, чтобы говорить о полном «да».' },
-  { short: 'Ответ пока скрыт', text: 'Ситуация ещё не сформировалась до конца — важно пересмотреть запрос или задать более точный вопрос.' }
-];
-
-function askYesNoQuestion() {
-  const input = $('#yesno-input');
-  if (!input) return;
-
-  const question = input.value.trim();
-  if (!question) {
-    showToast('Введите ваш вопрос', 'error');
-    return;
-  }
-  if (question.length < 3) {
-    showToast('Вопрос должен быть чуть более развёрнутым', 'error');
-    return;
+  if (closeBtn) {
+    closeBtn.onclick = () => modal.classList.remove('active');
   }
 
-  $('#yesno-modal').classList.remove('active');
-  showToast('🔍 Формируется ответ Да / Нет...', 'info');
-
-  setTimeout(() => {
-    const variant = YESNO_VARIANTS[Math.floor(Math.random() * YESNO_VARIANTS.length)];
-    const modal = $('#card-modal');
-    const body = $('#card-modal-body');
-    if (!modal || !body) return;
-
-    body.innerHTML = `
-      <div style="text-align:center;padding:20px;">
-        <div class="modal-icon" style="margin:0 auto 20px;">
-          <i class="fas fa-scale-balanced"></i>
-        </div>
-        <h3 style="font-size:20px;color:var(--primary);margin-bottom:16px;">Ответ Да / Нет</h3>
-        <div style="background: rgba(138, 43, 226, 0.1); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
-          <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
-          <div style="font-style: italic; color: var(--text);">"${question}"</div>
-        </div>
-        <div style="font-size:28px;font-weight:700;margin-bottom:8px;">${variant.short}</div>
-        <div style="font-size:14px;color:var(--text);">${variant.text}</div>
-      </div>
-    `;
-
-    openModal(modal);
-
-    input.value = '';
-    const cc = $('#yesno-char-count');
-    if (cc) cc.textContent = '0';
-  }, 1000);
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.remove('active');
+  };
 }
 
-// ===== АРХИВ =====
-
-function renderArchive() {
-  const targets = ['archive-list', 'archive-screen-list'];
-
-  targets.forEach(id => {
-    const list = document.getElementById(id);
-    if (!list) return;
-
-    if (!AppState.archive || !AppState.archive.length) {
-      list.innerHTML = `
-        <p style="text-align: center; color: var(--text-light);">
-          Пока нет сохранённых раскладов и результатов колеса.
-        </p>
-      `;
-      return;
-    }
-
-    const items = [...AppState.archive].sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-    );
-
-    list.innerHTML = items.map(item => {
-      const date = new Date(item.createdAt).toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      if (item.type === 'spread') {
-        return `
-          <div class="archive-item">
-            <div class="archive-item-top">
-              <span class="archive-tag archive-tag-spread">Расклад</span>
-              <span class="archive-date">${date}</span>
-            </div>
-            <div class="archive-title">${item.title || 'Расклад'}</div>
-            <div class="archive-meta">
-              <span>${item.cards?.length || '?'} карт</span>
-              <span>${item.price ? `★ ${item.price}` : ''}</span>
-            </div>
-            ${item.description ? `<p class="archive-desc">${item.description}</p>` : ''}
-          </div>
-        `;
-      }
-
-      if (item.type === 'wheel') {
-        return `
-          <div class="archive-item">
-            <div class="archive-item-top">
-              <span class="archive-tag archive-tag-wheel">Колесо фортуны</span>
-              <span class="archive-date">${date}</span>
-            </div>
-            <div class="archive-title">Карта: ${item.cardName || 'неизвестно'}</div>
-            <div class="archive-meta">
-              <span>Результат вращения</span>
-              <span>${item.cardKeyword || ''}</span>
-            </div>
-            ${item.cardAdvice ? `<p class="archive-desc"><i class="fas fa-lightbulb"></i> ${item.cardAdvice}</p>` : ''}
-          </div>
-        `;
-      }
-
-      return '';
-    }).join('');
-  });
-}
-
-function openArchiveModal() {
-  const modal = $('#archive-modal');
-  if (!modal) return;
-  renderArchive();
-  openModal(modal);
-}
-
-function renderArchiveIfOpen() {
-  const modal = $('#archive-modal');
-  const screen = $('#archive-screen');
-  if ((modal && modal.classList.contains('active')) ||
-      (screen && screen.classList.contains('active'))) {
-    renderArchive();
-  }
-}
-
-// ===== КНОПКИ / НАВИГАЦИЯ =====
-
+// ===== КНОПКИ =====
 function initButtons() {
   $('#refresh-btn')?.addEventListener('click', async () => {
-    if (AppState.isLoading) return;
-    AppState.isLoading = true;
-    const btn = $('#refresh-btn');
-    btn.classList.add('refreshing');
-    await loadCardOfDay();
-    showToast('Карта дня обновлена', 'success');
-    setTimeout(() => {
-      btn.classList.remove('refreshing');
-      AppState.isLoading = false;
-    }, 1000);
-  });
+    if (!AppState.isLoading) {
+      AppState.isLoading = true;
+      const btn = $('#refresh-btn');
+      btn.classList.add('refreshing');
 
-  $('#card-day-content')?.addEventListener('click', () => {
-    if (AppState.currentCard) showCardModal(AppState.currentCard, { source: 'day' });
+      await loadCardOfDay();
+      showToast('Карта дня обновлена', 'success');
+
+      setTimeout(() => {
+        btn.classList.remove('refreshing');
+        AppState.isLoading = false;
+      }, 800);
+    }
   });
 
   $('#question-btn')?.addEventListener('click', () => {
@@ -839,11 +784,7 @@ function initButtons() {
   });
 
   $('#yes-no-btn')?.addEventListener('click', () => {
-    openYesNoModal();
-  });
-
-  $('#archive-btn')?.addEventListener('click', () => {
-    openArchiveModal();
+    handleYesNo();
   });
 
   $$('.question-type').forEach(type => {
@@ -855,21 +796,13 @@ function initButtons() {
   });
 
   $('#ask-question-btn')?.addEventListener('click', askQuestion);
-  $('#ask-yesno-btn')?.addEventListener('click', askYesNoQuestion);
 
   const questionInput = $('#question-input');
   const charCount = $('#char-count');
+
   if (questionInput && charCount) {
     questionInput.addEventListener('input', function () {
       charCount.textContent = this.value.length;
-    });
-  }
-
-  const yesnoInput = $('#yesno-input');
-  const yesnoCharCount = $('#yesno-char-count');
-  if (yesnoInput && yesnoCharCount) {
-    yesnoInput.addEventListener('input', function () {
-      yesnoCharCount.textContent = this.value.length;
     });
   }
 }
@@ -877,34 +810,93 @@ function initButtons() {
 function openQuestionModal() {
   const modal = $('#question-modal');
   if (!modal) return;
-  openModal(modal);
-}
-
-function openYesNoModal() {
-  const modal = $('#yesno-modal');
-  if (!modal) return;
-  openModal(modal);
-}
-
-function openModal(modal) {
   modal.classList.add('active');
+
   const closeBtn = modal.querySelector('.modal-close');
-  if (closeBtn) {
-    closeBtn.onclick = () => modal.classList.remove('active');
-  }
+  if (closeBtn) closeBtn.onclick = () => modal.classList.remove('active');
+
   modal.onclick = (e) => {
     if (e.target === modal) modal.classList.remove('active');
   };
 }
 
+function askQuestion() {
+  const input = $('#question-input');
+  if (!input) return;
+
+  const question = input.value.trim();
+  if (!question) {
+    showToast('Введите ваш вопрос', 'error');
+    return;
+  }
+
+  if (question.length < 5) {
+    showToast('Вопрос должен быть не менее 5 символов', 'error');
+    return;
+  }
+
+  const type = AppState.questionType || 'love';
+  const pool = ANSWERS_BY_TYPE[type] || ANSWERS_BY_TYPE.love;
+  if (!pool || !pool.length) {
+    showToast('Ответы для этой категории пока не настроены', 'error');
+    return;
+  }
+
+  let idx = Math.floor(Math.random() * pool.length);
+  const lastIdx = AppState.lastAnswers[type];
+  if (pool.length > 1 && idx === lastIdx) {
+    idx = (idx + 1) % pool.length;
+  }
+  AppState.lastAnswers[type] = idx;
+
+  const answer = pool[idx];
+
+  $('#question-modal')?.classList.remove('active');
+  showToast('Вселенная формулирует ответ...', 'info');
+
+  setTimeout(() => {
+    showAnswerModal(question, answer, type);
+  }, 800);
+
+  input.value = '';
+  $('#char-count').textContent = '0';
+}
+
+function handleYesNo() {
+  const question = prompt('Задайте вопрос, на который можно ответить «да» или «нет»:');
+  if (!question || !question.trim()) {
+    return;
+  }
+
+  if (question.trim().length < 3) {
+    showToast('Вопрос слишком короткий', 'error');
+    return;
+  }
+
+  const variants = [
+    { answer: 'ДА', comment: 'Энергии благоприятны, но действуйте осознанно.' },
+    { answer: 'НЕТ', comment: 'Сейчас лучше повременить и пересмотреть план.' },
+    { answer: 'СКОРЕЕ ДА', comment: 'Шансы высоки, но есть нюансы, на которые стоит обратить внимание.' },
+    { answer: 'СКОРЕЕ НЕТ', comment: 'Условия пока не созрели, попробуйте изменить подход.' }
+  ];
+
+  const choice = variants[Math.floor(Math.random() * variants.length)];
+  showYesNoModal(question.trim(), choice);
+}
+
+// ===== НАВИГАЦИЯ =====
 function initNavigation() {
   $$('.nav-btn').forEach(btn => {
     btn.addEventListener('click', function () {
       const screen = this.dataset.screen;
+
       $$('.nav-btn').forEach(b => b.classList.remove('active'));
       $$('.screen').forEach(s => s.classList.remove('active'));
+
       this.classList.add('active');
-      $(`#${screen}-screen`).classList.add('active');
+      const el = $(`#${screen}-screen`);
+      if (el) el.classList.add('active');
+
       if (screen === 'archive') {
         renderArchive();
       }
@@ -912,8 +904,80 @@ function initNavigation() {
   });
 }
 
-// ===== АНИМАЦИОННЫЙ CSS =====
+// ===== АРХИВ =====
+function renderArchive() {
+  const container = $('#archive-list');
+  if (!container) return;
 
+  if (!AppState.archive.length) {
+    container.innerHTML = `<p class="section-subtitle">Пока здесь пусто. Сделайте расклад или прокрутите колесо фортуны.</p>`;
+    return;
+  }
+
+  container.innerHTML = AppState.archive.map((entry, index) => {
+    const date = new Date(entry.createdAt);
+    const dateStr = date.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    if (entry.type === 'spread') {
+      return `
+        <div class="archive-item" data-index="${index}">
+          <div class="archive-item-header">
+            <div class="archive-item-title">${entry.title}</div>
+            <div class="archive-item-type">Расклад</div>
+          </div>
+          <div class="archive-item-meta">
+            ${dateStr} • ${entry.cards?.length || 0} карт
+          </div>
+        </div>
+      `;
+    }
+
+    if (entry.type === 'wheel') {
+      return `
+        <div class="archive-item" data-index="${index}">
+          <div class="archive-item-header">
+            <div class="archive-item-title">Колесо фортуны — ${entry.card?.name || 'карта'}</div>
+            <div class="archive-item-type">Колесо</div>
+          </div>
+          <div class="archive-item-meta">
+            ${dateStr}
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
+  }).join('');
+
+  $$('.archive-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const idx = parseInt(item.dataset.index, 10);
+      const entry = AppState.archive[idx];
+      if (!entry) return;
+
+      if (entry.type === 'spread') {
+        showSpreadResultModal(entry);
+      } else if (entry.type === 'wheel' && entry.card) {
+        showCardModal(entry.card, { source: 'wheel-archive' });
+      }
+    });
+  });
+}
+
+function renderArchiveIfOpen() {
+  const archiveScreen = $('#archive-screen');
+  if (archiveScreen && archiveScreen.classList.contains('active')) {
+    renderArchive();
+  }
+}
+
+// ===== ДОП. СТИЛИ АНИМАЦИЙ =====
 function addAnimationStyles() {
   const style = document.createElement('style');
   style.textContent = `
@@ -953,38 +1017,42 @@ function addAnimationStyles() {
   document.head.appendChild(style);
 }
 
-// ===== ВСПОМОГАТЕЛЬНОЕ =====
-
+// ===== ЛОАДЕР / ТОСТЫ =====
 function showLoader() {
   const loader = $('#app-loader');
-  if (loader) loader.style.display = 'flex';
+  if (loader) {
+    loader.style.display = 'flex';
+  }
 }
 
 function hideLoader() {
   const loader = $('#app-loader');
-  if (!loader) return;
-  loader.style.opacity = '0';
-  setTimeout(() => {
-    loader.style.display = 'none';
-    loader.style.opacity = '1';
-  }, 300);
+  if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => {
+      loader.style.display = 'none';
+      loader.style.opacity = '1';
+    }, 300);
+  }
 }
 
 function showToast(message, type = 'info') {
   const toast = $('#toast');
   if (!toast) return;
 
-  toast.style.background =
-    type === 'error' ? 'var(--danger)' :
-    type === 'success' ? 'var(--success)' :
-    'var(--primary)';
+  toast.style.background = type === 'error' ? 'var(--danger)'
+    : type === 'success' ? 'var(--success)'
+    : 'var(--primary)';
 
   toast.textContent = message;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
 }
 
-// Запуск
+// ===== ЗАПУСК =====
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
