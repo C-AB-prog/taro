@@ -1,55 +1,35 @@
-// ===== УТИЛИТЫ =====
+// ===== УТИЛИТЫ И КОНСТАНТЫ =====
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const STORAGE_KEY = 'tarot_app_state';
-const API_BASE = '/api'; // сюда потом повесишь Neon / Vercel
+const API_BASE = '/api'; // сюда повесишь Vercel + Neon
+
+// цены сервисов (внутриигровые звёзды)
+const YES_NO_PRICE = 25;
+const QUESTION_PRICE = 35;
+
+// Пакеты покупки звёзд (tgStars — звёзды Telegram, amount — внутриигровые ★)
+const STAR_PACKS = [
+  { id: 'pack_99',  tgStars: 99,  amount: 150 },
+  { id: 'pack_199', tgStars: 199, amount: 350 },
+  { id: 'pack_399', tgStars: 399, amount: 800 },
+  { id: 'pack_899', tgStars: 899, amount: 1000 }
+];
 
 // ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
 const AppState = {
   user: null,
+  stars: 0,
   currentCard: null,
   questionType: 'love',
   archive: [],
   wheelLastSpin: null,
   lastWheelText: '',
   lastAnswers: {},
-  isLoading: false
+  isNewUser: false
 };
 
 let wheelTimerId = null;
-
-// ===== ОТВЕТЫ ДЛЯ "СПРОСИТЬ ВСЕЛЕННУЮ" =====
-const ANSWERS_BY_TYPE = {
-  love: [
-    'Ваши чувства взаимны, но важно говорить честно и открыто.',
-    'Связь между вами сильна, но ей не хватает внимания и заботы.',
-    'Эта история ещё не раскрыта до конца — не торопитесь с выводами.',
-    'Сейчас время полюбить прежде всего себя, а потом уже партнёра.',
-    'Отношения имеют потенциал, если вы оба готовы меняться.'
-  ],
-  career: [
-    'Перед вами открываются новые возможности, не бойтесь проявить инициативу.',
-    'Стабильность важнее резких движений — действуйте постепенно.',
-    'Настало время заявить о себе и своих достижениях.',
-    'Инвестиция в обучение сейчас принесёт серьёзные результаты позже.',
-    'Стоит пересмотреть окружение на работе — не все искренни.'
-  ],
-  future: [
-    'В ближайшее время ожидаются мягкие, но важные перемены.',
-    'Сценарий будущего ещё не зафиксирован — многое зависит от вашего выбора.',
-    'Вас ждёт период роста и расширения горизонтов.',
-    'После череды испытаний наступит спокойный и тёплый этап.',
-    'Одна неожиданная возможность сможет сильно изменить ваш путь.'
-  ],
-  decision: [
-    'Лучший выбор — тот, который оставляет чувство внутреннего спокойствия.',
-    'Интуиция уже знает ответ, попробуйте немного замолчать и услышать её.',
-    'Соберите ещё немного фактов, и решение проявится само.',
-    'Если приходится выбирать из двух зол — возможно, есть третий вариант.',
-    'Смелое решение сейчас избавит от долгого сожаления потом.'
-  ]
-};
 
 // ===== АНИМАЦИИ =====
 class MysticAnimations {
@@ -149,83 +129,75 @@ function initTelegram() {
     }
   }
 
-  // Для браузера без Telegram
+  // Для тестов в браузере без Telegram
   if (!AppState.user) {
     AppState.user = { id: 123, name: 'Дмитрий', username: 'dmitry_tarot' };
   }
 }
 
-// ===== ЛОКАЛЬНОЕ СОСТОЯНИЕ =====
-function loadAppState() {
+// ===== API СОСТОЯНИЯ (БД / NEON) =====
+async function loadStateFromServer() {
+  if (!AppState.user?.id) return;
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
+    const res = await fetch(`${API_BASE}/state?userId=${encodeURIComponent(AppState.user.id)}`);
+    if (!res.ok) {
+      // Новый пользователь
+      AppState.stars = 150;
+      AppState.archive = [];
+      AppState.wheelLastSpin = null;
+      AppState.lastWheelText = '';
+      AppState.isNewUser = true;
+      return;
+    }
+
+    const data = await res.json();
+    AppState.stars = typeof data.stars === 'number' ? data.stars : 150;
     AppState.archive = Array.isArray(data.archive) ? data.archive : [];
     AppState.wheelLastSpin = data.wheelLastSpin || null;
     AppState.lastWheelText = data.lastWheelText || '';
+
+    if (data.stars == null) {
+      AppState.isNewUser = true;
+      AppState.stars = 150;
+    }
   } catch (e) {
-    console.error('Ошибка чтения состояния:', e);
+    console.warn('Не удалось загрузить состояние с сервера, работаем в памяти', e);
+    AppState.stars = 150;
+    AppState.archive = [];
+    AppState.wheelLastSpin = null;
+    AppState.lastWheelText = '';
+    AppState.isNewUser = true;
   }
 }
 
-function saveAppState() {
-  try {
-    const data = {
-      archive: AppState.archive,
-      wheelLastSpin: AppState.wheelLastSpin,
-      lastWheelText: AppState.lastWheelText
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error('Ошибка сохранения состояния:', e);
-  }
-
-  // Синхронизация с БД (Neon) — когда будет готов backend
-  saveArchiveToServer().catch(() => {});
-}
-
-// ===== API ДЛЯ БД =====
-async function loadArchiveFromServer() {
+async function saveStateToServer() {
   if (!AppState.user?.id) return;
-  try {
-    const res = await fetch(`${API_BASE}/archive?userId=${encodeURIComponent(AppState.user.id)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (Array.isArray(data.archive)) AppState.archive = data.archive;
-    if (data.wheelLastSpin) AppState.wheelLastSpin = data.wheelLastSpin;
-    if (data.lastWheelText) AppState.lastWheelText = data.lastWheelText;
-  } catch (e) {
-    console.warn('Не удалось загрузить архив из БД, работаем с локальными данными');
-  }
-}
 
-async function saveArchiveToServer() {
-  if (!AppState.user?.id) return;
   try {
-    await fetch(`${API_BASE}/archive`, {
+    await fetch(`${API_BASE}/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: AppState.user.id,
+        stars: AppState.stars,
         archive: AppState.archive,
         wheelLastSpin: AppState.wheelLastSpin,
         lastWheelText: AppState.lastWheelText
       })
     });
   } catch (e) {
-    console.warn('Не удалось синхронизировать архив с БД');
+    console.warn('Не удалось сохранить состояние на сервере', e);
   }
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
+// ===== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ =====
 async function initApp() {
   showLoader();
 
   try {
     initTelegram();
-    loadAppState();
-    await loadArchiveFromServer();
+    await loadStateFromServer();
 
     window.mysticAnimations = new MysticAnimations();
 
@@ -235,14 +207,27 @@ async function initApp() {
     initDeck();
     initButtons();
     initNavigation();
+    initStarShop();
     addAnimationStyles();
+    updateStarsUI();
     renderArchive();
+
+    if (AppState.isNewUser) {
+      showToast('На ваш баланс начислено 150 ★', 'success');
+    }
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
   } finally {
     hideLoader();
   }
+}
+
+// ===== БАЛАНС =====
+function updateStarsUI() {
+  const el = $('#stars-indicator');
+  if (!el) return;
+  el.innerHTML = `<i class="fas fa-star"></i> ${AppState.stars} ★`;
 }
 
 // ===== КАРТА ДНЯ =====
@@ -394,7 +379,7 @@ function initFortuneWheel() {
     wheel.style.transition = 'transform 3s cubic-bezier(0.2, 0.8, 0.3, 1)';
     wheel.style.transform = `rotate(${totalRotation}deg)`;
 
-    setTimeout(() => {
+    setTimeout(async () => {
       wheel.classList.remove('spinning');
 
       const cards = window.TAROT_CARDS;
@@ -425,7 +410,7 @@ function initFortuneWheel() {
       };
       AppState.archive.unshift(entry);
       AppState.wheelLastSpin = new Date().toISOString();
-      saveAppState();
+      await saveStateToServer();
       renderArchiveIfOpen();
 
       showToast('Колесо сделало выбор ✨', 'success');
@@ -477,7 +462,7 @@ function initSpreads() {
     {
       id: 'four-elements',
       title: 'Четыре элемента',
-      description: 'Материальная сторона, эмоции, страсть и интеллектуальная связь в отношениях.',
+      description: 'Материальное, эмоции, страсть и интеллектуальная связь в отношениях.',
       price: 75,
       cardsCount: 4,
       time: '15–20 мин'
@@ -515,7 +500,7 @@ function initSpreads() {
   `).join('');
 
   $$('.spread-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       const id = item.dataset.id;
       const spread = spreads.find(s => s.id === id);
       if (!spread) return;
@@ -525,12 +510,20 @@ function initSpreads() {
         return;
       }
 
-      const ok = confirm(`Купить расклад «${spread.title}» за ${spread.price} ★?\nОплата звёздами будет подключена позже, сейчас просто посмотрим результат.`);
+      if (AppState.stars < spread.price) {
+        showToast(`Недостаточно звёзд. Нужно ${spread.price} ★. Пополните баланс в магазине.`, 'error');
+        return;
+      }
+
+      const ok = confirm(`Купить расклад «${spread.title}» за ${spread.price} ★?`);
       if (!ok) return;
+
+      AppState.stars -= spread.price;
+      updateStarsUI();
 
       const result = performSpread(spread);
       AppState.archive.unshift(result);
-      saveAppState();
+      await saveStateToServer();
       renderArchiveIfOpen();
       showSpreadResultModal(result);
       showToast(`Расклад «${spread.title}» добавлен в архив`, 'success');
@@ -550,7 +543,7 @@ function performSpread(spread) {
     const card = cardsCopy.splice(idx, 1)[0];
 
     used.push({
-      cardId: card.id,                  // отдельно сохраняем id
+      cardId: card.id,
       id: card.id,
       name: card.name,
       roman: card.roman,
@@ -584,7 +577,6 @@ function showSpreadResultModal(result) {
   });
 
   const cardsHtml = (result.cards || []).map((entryCard, index) => {
-    // страховка от старого формата записей
     let fullCard = entryCard || {};
 
     if (window.TAROT_CARDS) {
@@ -685,7 +677,7 @@ function initDeck() {
   });
 }
 
-// ===== МОДАЛКИ КАРТ / ОТВЕТОВ =====
+// ===== МОДАЛКИ =====
 function showCardModal(card, options = {}) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -790,22 +782,15 @@ function openModal(modal) {
   };
 }
 
-// ===== КНОПКИ =====
+// ===== КНОПКИ И ЛОГИКА ВОПРОСОВ =====
 function initButtons() {
   $('#refresh-btn')?.addEventListener('click', async () => {
-    if (!AppState.isLoading) {
-      AppState.isLoading = true;
-      const btn = $('#refresh-btn');
-      btn.classList.add('refreshing');
-
-      await loadCardOfDay();
-      showToast('Карта дня обновлена', 'success');
-
-      setTimeout(() => {
-        btn.classList.remove('refreshing');
-        AppState.isLoading = false;
-      }, 800);
-    }
+    const btn = $('#refresh-btn');
+    if (!btn) return;
+    btn.classList.add('refreshing');
+    await loadCardOfDay();
+    showToast('Карта дня обновлена', 'success');
+    setTimeout(() => btn.classList.remove('refreshing'), 800);
   });
 
   $('#question-btn')?.addEventListener('click', () => {
@@ -849,7 +834,38 @@ function openQuestionModal() {
   };
 }
 
-function askQuestion() {
+const ANSWERS_BY_TYPE = {
+  love: [
+    'Ваши чувства взаимны, но важно говорить честно и открыто.',
+    'Связь между вами сильна, но ей не хватает внимания и заботы.',
+    'Эта история ещё не раскрыта до конца — не торопитесь с выводами.',
+    'Сейчас время полюбить прежде всего себя, а потом уже партнёра.',
+    'Отношения имеют потенциал, если вы оба готовы меняться.'
+  ],
+  career: [
+    'Перед вами открываются новые возможности, не бойтесь проявить инициативу.',
+    'Стабильность важнее резких движений — действуйте постепенно.',
+    'Настало время заявить о себе и своих достижениях.',
+    'Инвестиция в обучение сейчас принесёт серьёзные результаты позже.',
+    'Стоит пересмотреть окружение на работе — не все искренни.'
+  ],
+  future: [
+    'В ближайшее время ожидаются мягкие, но важные перемены.',
+    'Сценарий будущего ещё не зафиксирован — многое зависит от вашего выбора.',
+    'Вас ждёт период роста и расширения горизонтов.',
+    'После череды испытаний наступит спокойный и тёплый этап.',
+    'Одна неожиданная возможность сможет сильно изменить ваш путь.'
+  ],
+  decision: [
+    'Лучший выбор — тот, который оставляет чувство внутреннего спокойствия.',
+    'Интуиция уже знает ответ, попробуйте немного замолчать и услышать её.',
+    'Соберите ещё немного фактов, и решение проявится само.',
+    'Если приходится выбирать из двух зол — возможно, есть третий вариант.',
+    'Смелое решение сейчас избавит от долгого сожаления потом.'
+  ]
+};
+
+async function askQuestion() {
   const input = $('#question-input');
   if (!input) return;
 
@@ -861,6 +877,11 @@ function askQuestion() {
 
   if (question.length < 5) {
     showToast('Вопрос должен быть не менее 5 символов', 'error');
+    return;
+  }
+
+  if (AppState.stars < QUESTION_PRICE) {
+    showToast(`Недостаточно звёзд. Нужно ${QUESTION_PRICE} ★.`, 'error');
     return;
   }
 
@@ -878,6 +899,10 @@ function askQuestion() {
   }
   AppState.lastAnswers[type] = idx;
 
+  AppState.stars -= QUESTION_PRICE;
+  updateStarsUI();
+  await saveStateToServer();
+
   const answer = pool[idx];
 
   $('#question-modal')?.classList.remove('active');
@@ -891,7 +916,7 @@ function askQuestion() {
   $('#char-count').textContent = '0';
 }
 
-function handleYesNo() {
+async function handleYesNo() {
   const question = prompt('Задайте вопрос, на который можно ответить «да» или «нет»:');
   if (!question || !question.trim()) {
     return;
@@ -902,10 +927,19 @@ function handleYesNo() {
     return;
   }
 
+  if (AppState.stars < YES_NO_PRICE) {
+    showToast(`Недостаточно звёзд. Нужно ${YES_NO_PRICE} ★.`, 'error');
+    return;
+  }
+
+  AppState.stars -= YES_NO_PRICE;
+  updateStarsUI();
+  await saveStateToServer();
+
   const variants = [
-    { answer: 'ДА', comment: 'Энергии благоприятны, но действуйте осознанно.' },
-    { answer: 'НЕТ', comment: 'Сейчас лучше повременить и пересмотреть план.' },
-    { answer: 'СКОРЕЕ ДА', comment: 'Шансы высоки, но есть нюансы, на которые стоит обратить внимание.' },
+    { answer: 'ДА',         comment: 'Энергии благоприятны, но действуйте осознанно.' },
+    { answer: 'НЕТ',        comment: 'Сейчас лучше повременить и пересмотреть план.' },
+    { answer: 'СКОРЕЕ ДА',  comment: 'Шансы высоки, но есть нюансы, на которые стоит обратить внимание.' },
     { answer: 'СКОРЕЕ НЕТ', comment: 'Условия пока не созрели, попробуйте изменить подход.' }
   ];
 
@@ -1004,6 +1038,42 @@ function renderArchiveIfOpen() {
   if (archiveScreen && archiveScreen.classList.contains('active')) {
     renderArchive();
   }
+}
+
+// ===== МАГАЗИН ЗВЁЗД =====
+function initStarShop() {
+  const container = $('#stars-shop-grid');
+  if (!container) return;
+
+  container.innerHTML = STAR_PACKS.map(pack => `
+    <div class="action-card star-pack" data-id="${pack.id}">
+      <div class="action-icon tarot">
+        <i class="fas fa-coins"></i>
+      </div>
+      <h4>Пакет ${pack.amount} ★</h4>
+      <p>${pack.tgStars} звёзд Telegram → ${pack.amount} внутриигровых</p>
+      <div class="action-price">${pack.amount}</div>
+    </div>
+  `).join('');
+
+  $$('.star-pack').forEach(card => {
+    card.addEventListener('click', async () => {
+      const id = card.dataset.id;
+      const pack = STAR_PACKS.find(p => p.id === id);
+      if (!pack) return;
+
+      const ok = confirm(
+        `Купить пакет ${pack.amount} ★ за ${pack.tgStars} звёзд Telegram?\n` +
+        'Интеграция оплаты будет добавлена позже, сейчас звёзды начисляются для теста.'
+      );
+      if (!ok) return;
+
+      AppState.stars += pack.amount;
+      updateStarsUI();
+      await saveStateToServer();
+      showToast(`Начислено ${pack.amount} ★`, 'success');
+    });
+  });
 }
 
 // ===== ДОП. СТИЛИ АНИМАЦИЙ =====
