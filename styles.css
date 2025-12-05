@@ -145,13 +145,7 @@ body {
   background-clip: text;
 }
 
-.logo-subtitle {
-  font-size: 12px;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  opacity: 0.9;
-  margin-top: 2px;
-}
+/* .logo-subtitle оставляем на случай, если потом понадобится */
 
 .user-status {
   background: rgba(255, 255, 255, 0.1);
@@ -221,7 +215,7 @@ body {
 /* ===== НАВИГАЦИЯ ===== */
 .navigation {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   padding: 0 8px;
   margin-top: 20px;
@@ -618,16 +612,6 @@ body {
   color: #E6E6FA;
 }
 
-.action-icon.tarot {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: white;
-}
-
-.action-icon.fortune {
-  background: linear-gradient(135deg, #FF00FF, #8A2BE2);
-  color: white;
-}
-
 .action-card h4 {
   font-size: 15px;
   font-weight: 600;
@@ -882,6 +866,17 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 12px;
+}
+
+.spread-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spread-icon {
+  font-size: 16px;
+  color: var(--primary);
 }
 
 .spread-title {
