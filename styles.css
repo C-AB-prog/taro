@@ -85,7 +85,7 @@ body {
 
 .header-top {
   display: flex;
-  justify-content: space-between;
+  justify-content: center; /* центрируем логотип */
   align-items: center;
   margin-bottom: 24px;
 }
@@ -93,6 +93,7 @@ body {
 .logo {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 }
 
@@ -314,7 +315,7 @@ body {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
   transform-style: preserve-3d;
   perspective: 1000px;
-  height: auto;             /* важно: убрали фикс. высоту, чтобы карта была целиком */
+  height: auto; /* карта целиком */
 }
 
 .card-image {
