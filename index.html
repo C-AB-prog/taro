@@ -98,23 +98,21 @@
             </div>
 
             <div class="actions-grid">
-              <!-- Да / Нет -->
               <div class="action-card" id="yes-no-btn">
                 <div class="action-icon sun">
                   <i class="fas fa-scale-balanced"></i>
                 </div>
                 <h4>Да / Нет</h4>
-                <p>Чёткий ответ на ваш вопрос</p>
+                <p>Задайте вопрос, на который можно ответить да или нет</p>
                 <div class="action-price">★ 25</div>
               </div>
 
-              <!-- Спросить Вселенную -->
               <div class="action-card" id="question-btn">
                 <div class="action-icon moon">
                   <i class="fas fa-moon"></i>
                 </div>
                 <h4>Спросить Вселенную</h4>
-                <p>Категории: любовь, карьера и др.</p>
+                <p>Любовь, карьера, будущее и важные решения</p>
                 <div class="action-price">★ 35</div>
               </div>
             </div>
@@ -168,7 +166,7 @@
               </div>
               <div>
                 <h2>Расклады Таро</h2>
-                <p class="section-subtitle">Готовые схемы на отношения и судьбу</p>
+                <p class="section-subtitle">Выберите схему — результат сохранится в архиве</p>
               </div>
             </div>
 
@@ -187,7 +185,7 @@
               </div>
               <div>
                 <h2>Колода Таро</h2>
-                <p class="section-subtitle">12 Старших Арканов</p>
+                <p class="section-subtitle">12 Старших Арканов с оформлением • остальное позже</p>
               </div>
             </div>
 
@@ -206,14 +204,14 @@
               </div>
               <div>
                 <h2>Архив</h2>
-                <p class="section-subtitle">Купленные расклады, ответы и результаты колеса</p>
+                <p class="section-subtitle">Купленные расклады и результаты колеса</p>
               </div>
             </div>
-            <div id="archive-screen-list"></div>
+            <div id="archive-list" class="archive-list"></div>
           </div>
         </section>
 
-        <!-- Модальное окно "Спросить Вселенную" -->
+        <!-- Модальное окно вопроса -->
         <div class="modal" id="question-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
@@ -250,56 +248,25 @@
                   <span>Будущее</span>
                 </div>
                 <div class="question-type" data-type="decision">
-                  <i class="fas fa-crosshairs"></i>
-                  <span>Выбор</span>
+                  <i class="fas fa-scale-balanced"></i>
+                  <span>Решение</span>
                 </div>
               </div>
               
               <button class="ask-btn" id="ask-question-btn">
                 <i class="fas fa-stars"></i>
-                <span>Спросить за ★ 35</span>
+                <span>Спросить (★ 35)</span>
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Модальное окно Да/Нет -->
-        <div class="modal" id="yesno-modal">
-          <div class="modal-content">
-            <button class="modal-close">&times;</button>
-            <div class="modal-header">
-              <div class="modal-icon">
-                <i class="fas fa-scale-balanced"></i>
-              </div>
-              <h3>Вопрос Да / Нет</h3>
-            </div>
-
-            <div class="modal-body">
-              <div class="question-input-container">
-                <textarea 
-                  id="yesno-question-input" 
-                  placeholder="Задайте вопрос, на который можно ответить 'да' или 'нет'..."
-                  maxlength="200"
-                  rows="3"></textarea>
-                <div class="char-counter">
-                  <span id="yesno-char-count">0</span>/200
-                </div>
-              </div>
-
-              <button class="ask-btn" id="yesno-ask-btn">
-                <i class="fas fa-play"></i>
-                <span>Получить ответ за ★ 25</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Модальное окно карты / результатов -->
+        <!-- Модальное окно карты / ответов / раскладов -->
         <div class="modal" id="card-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
             <div class="modal-body" id="card-modal-body">
-              <!-- Контент будет здесь -->
+              <!-- Контент карты будет здесь -->
             </div>
           </div>
         </div>
