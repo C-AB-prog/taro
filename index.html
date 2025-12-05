@@ -28,7 +28,7 @@
             </div>
             <div class="logo-text">
               <h1>ТАRO</h1>
-              <p class="logo-subtitle">ГИПНОЗ</p>
+              <!-- подзаголовок убран по просьбе -->
             </div>
           </div>
           
@@ -41,7 +41,7 @@
             <div class="user-status">
               <div class="status-indicator">
                 <div class="status-dot online"></div>
-                <span class="status-text" id="status-username">Дмитрий онлайн</span>
+                <span class="status-text" id="status-username">Пользователь онлайн</span>
               </div>
             </div>
           </div>
@@ -60,6 +60,10 @@
           <button class="nav-btn" data-screen="deck">
             <i class="fas fa-layer-group"></i>
             <span>Колода</span>
+          </button>
+          <button class="nav-btn" data-screen="archive">
+            <i class="fas fa-box-archive"></i>
+            <span>Архив</span>
           </button>
         </nav>
       </header>
@@ -109,40 +113,24 @@
             </div>
 
             <div class="actions-grid">
-              <div class="action-card" id="daily-spread-btn">
+              <!-- Да / Нет -->
+              <div class="action-card" id="yes-no-btn">
                 <div class="action-icon sun">
-                  <i class="fas fa-sun"></i>
+                  <i class="fas fa-scale-balanced"></i>
                 </div>
-                <h4>Расклад Дня</h4>
-                <p>Прогноз на 24 часа</p>
-                <div class="action-price">★ 29</div>
+                <h4>Да / Нет</h4>
+                <p>Чёткий ответ на ваш вопрос</p>
+                <div class="action-price">★ 25</div>
               </div>
 
+              <!-- Спросить Вселенную -->
               <div class="action-card" id="question-btn">
                 <div class="action-icon moon">
                   <i class="fas fa-moon"></i>
                 </div>
                 <h4>Спросить Вселенную</h4>
-                <p>Прямой ответ</p>
-                <div class="action-price">★ 15</div>
-              </div>
-
-              <div class="action-card" id="tarot-reading">
-                <div class="action-icon tarot">
-                  <i class="fas fa-cards"></i>
-                </div>
-                <h4>Расклад Таро</h4>
-                <p>Глубокий анализ</p>
-                <div class="action-price">★ 57</div>
-              </div>
-
-              <div class="action-card" id="fortune-telling">
-                <div class="action-icon fortune">
-                  <i class="fas fa-crystal-ball"></i>
-                </div>
-                <h4>Гадание</h4>
-                <p>Проблеск будущего</p>
-                <div class="action-price">★ 43</div>
+                <p>Категории: любовь, карьера и др.</p>
+                <div class="action-price">★ 35</div>
               </div>
             </div>
           </section>
@@ -155,7 +143,7 @@
               </div>
               <div>
                 <h3>Колесо Фортуны</h3>
-                <p class="section-subtitle">Бесплатный шанс 1 раз в сутки</p>
+                <p class="section-subtitle">Бесплатно, 1 раз в сутки • результат — карта из колоды</p>
               </div>
             </div>
             
@@ -195,7 +183,7 @@
               </div>
               <div>
                 <h2>Расклады Таро</h2>
-                <p class="section-subtitle">Выберите расклад для анализа</p>
+                <p class="section-subtitle">Готовые схемы на отношения и судьбу</p>
               </div>
             </div>
 
@@ -214,7 +202,7 @@
               </div>
               <div>
                 <h2>Колода Таро</h2>
-                <p class="section-subtitle">12 Старших Арканов</p>
+                <p class="section-subtitle">12 Старших Арканов (пока без младших)</p>
               </div>
             </div>
 
@@ -224,7 +212,23 @@
           </div>
         </section>
 
-        <!-- Модальное окно архива -->
+        <!-- Экран архива -->
+        <section class="screen" id="archive-screen">
+          <div class="spreads-container">
+            <div class="section-header">
+              <div class="section-icon">
+                <i class="fas fa-box-archive"></i>
+              </div>
+              <div>
+                <h2>Архив</h2>
+                <p class="section-subtitle">Купленные расклады и результаты колеса</p>
+              </div>
+            </div>
+            <div id="archive-screen-list"></div>
+          </div>
+        </section>
+
+        <!-- Модальное окно архива (кнопка в хедере) -->
         <div class="modal" id="archive-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
@@ -241,7 +245,7 @@
           </div>
         </div>
 
-        <!-- Модальное окно вопроса -->
+        <!-- Модальное окно вопроса (Спросить Вселенную) -->
         <div class="modal" id="question-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
@@ -278,14 +282,45 @@
                   <span>Будущее</span>
                 </div>
                 <div class="question-type" data-type="decision">
-                  <i class="fas fa-crossroads"></i>
+                  <i class="fas fa-crosshairs"></i>
                   <span>Выбор</span>
                 </div>
               </div>
               
               <button class="ask-btn" id="ask-question-btn">
                 <i class="fas fa-stars"></i>
-                <span>Спросить за ★ 15</span>
+                <span>Спросить за ★ 35</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Модальное окно вопроса Да / Нет -->
+        <div class="modal" id="yesno-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-scale-balanced"></i>
+              </div>
+              <h3>Вопрос Да / Нет</h3>
+            </div>
+            
+            <div class="modal-body">
+              <div class="question-input-container">
+                <textarea 
+                  id="yesno-input" 
+                  placeholder="Сформулируйте вопрос так, чтобы на него можно было ответить Да или Нет..."
+                  maxlength="200"
+                  rows="3"></textarea>
+                <div class="char-counter">
+                  <span id="yesno-char-count">0</span>/200
+                </div>
+              </div>
+              
+              <button class="ask-btn" id="ask-yesno-btn">
+                <i class="fas fa-question"></i>
+                <span>Спросить за ★ 25</span>
               </button>
             </div>
           </div>
