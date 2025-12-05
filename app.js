@@ -13,7 +13,8 @@ const AppState = {
   archive: [],
   wheelLastSpin: null,
   lastWheelText: '',
-  lastAnswers: {} // по типам вопросов, чтобы не повторяться
+  lastAnswers: {},
+  isLoading: false
 };
 
 let wheelTimerId = null;
@@ -547,7 +548,9 @@ function performSpread(spread) {
   for (let i = 0; i < count; i++) {
     const idx = Math.floor(Math.random() * cardsCopy.length);
     const card = cardsCopy.splice(idx, 1)[0];
+
     used.push({
+      cardId: card.id,                  // отдельно сохраняем id
       id: card.id,
       name: card.name,
       roman: card.roman,
@@ -580,8 +583,33 @@ function showSpreadResultModal(result) {
     minute: '2-digit'
   });
 
-  const cardsHtml = result.cards.map((card, index) => {
-    const hasImage = typeof card.id === 'number' && card.id < 12;
+  const cardsHtml = (result.cards || []).map((entryCard, index) => {
+    // страховка от старого формата записей
+    let fullCard = entryCard || {};
+
+    if (window.TAROT_CARDS) {
+      const id =
+        typeof entryCard === 'number'
+          ? entryCard
+          : typeof entryCard.cardId === 'number'
+          ? entryCard.cardId
+          : typeof entryCard.id === 'number'
+          ? entryCard.id
+          : null;
+
+      if (id !== null) {
+        const fromDeck = window.TAROT_CARDS.find(c => c.id === id);
+        if (fromDeck) {
+          fullCard = { ...fromDeck, ...entryCard };
+        }
+      }
+    }
+
+    const hasImage =
+      typeof fullCard.id === 'number' &&
+      fullCard.id < 12 &&
+      !!fullCard.image;
+
     return `
       <div style="margin-bottom: 18px; text-align:left;">
         <div style="font-size:13px; color:var(--text-light); margin-bottom:4px;">
@@ -589,23 +617,24 @@ function showSpreadResultModal(result) {
         </div>
         <div style="display:flex; gap:12px; align-items:flex-start;">
           ${hasImage ? `
-            <img src="${card.image}" 
-                 alt="${card.name}" 
+            <img src="${fullCard.image}" 
+                 alt="${fullCard.name || 'Карта'}" 
                  style="width:70px; height:110px; object-fit:cover; border-radius:10px;"
                  onerror="this.style.display='none'">
           ` : ''}
           <div>
             <div style="font-weight:600; color:var(--primary); margin-bottom:4px;">
-              ${card.name}${card.roman ? ` (${card.roman})` : ''}
+              ${fullCard.name || 'Карта'}
+              ${fullCard.roman ? ` (${fullCard.roman})` : ''}
             </div>
             <div style="font-size:13px; color:var(--secondary); margin-bottom:6px;">
-              ${card.keyword || ''}
+              ${fullCard.keyword || ''}
             </div>
             <div style="font-size:13px; color:var(--text); margin-bottom:6px;">
-              ${card.description || ''}
+              ${fullCard.description || ''}
             </div>
             <div style="font-size:12px; color:var(--text-light);">
-              Совет: ${card.advice || 'Совет будет добавлен позже.'}
+              Совет: ${fullCard.advice || 'Совет будет добавлен позже.'}
             </div>
           </div>
         </div>
@@ -656,7 +685,7 @@ function initDeck() {
   });
 }
 
-// ===== МОДАЛКА КАРТЫ / ОТВЕТА =====
+// ===== МОДАЛКИ КАРТ / ОТВЕТОВ =====
 function showCardModal(card, options = {}) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
