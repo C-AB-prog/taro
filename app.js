@@ -9,10 +9,33 @@ const AppState = {
   user: null,
   currentCard: null,
   savedCards: [],
+  archive: [],
   isLoading: false,
   userStars: 100, // Начальные звёзды
   questionType: 'love'
 };
+
+const API_BASE = '/api';
+
+async function apiRequest(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Ошибка сервера');
+    }
+    return data;
+  } catch (err) {
+    console.error('API error:', err);
+    showToast(err.message || 'Ошибка соединения с сервером', 'error');
+    throw err;
+  }
+}
 
 // ===== АНИМАЦИИ =====
 class MysticAnimations {
@@ -113,12 +136,12 @@ async function initApp() {
   try {
     // Инициализация Telegram
     initTelegram();
+
+    // Синхронизация с сервером
+    await syncUserWithServer();
     
     // Запуск анимаций
     window.mysticAnimations = new MysticAnimations();
-    
-    // Загрузка данных
-    loadUserData();
     
     // Загрузка карты дня
     await loadCardOfDay();
@@ -159,6 +182,7 @@ function initTelegram() {
     const user = tg.initDataUnsafe?.user;
     if (user) {
       AppState.user = {
+        id: user.id,
         name: user.first_name || 'Пользователь',
         username: user.username
       };
@@ -167,7 +191,34 @@ function initTelegram() {
   
   // Для дебага
   if (!AppState.user) {
-    AppState.user = { name: 'Дмитрий', username: 'dmitry_tarot' };
+    AppState.user = { id: 123, name: 'Дмитрий', username: 'dmitry_tarot' };
+  }
+
+  const nameSpan = $('#status-username');
+  if (nameSpan && AppState.user?.name) {
+    nameSpan.textContent = `${AppState.user.name} онлайн`;
+  }
+}
+
+// Синхронизация с сервером (Neon через API)
+async function syncUserWithServer() {
+  if (!AppState.user || !AppState.user.id) return;
+
+  try {
+    const data = await apiRequest('/user', {
+      telegramId: AppState.user.id,
+      username: AppState.user.username,
+      firstName: AppState.user.name
+    });
+
+    AppState.userStars = typeof data.stars === 'number' ? data.stars : AppState.userStars;
+    AppState.archive = Array.isArray(data.archive) ? data.archive : [];
+    updateStarsDisplay();
+    saveUserData();
+  } catch (e) {
+    console.warn('Не удалось синхронизировать с сервером, загрузка локальных данных');
+    loadUserData();
+    updateStarsDisplay();
   }
 }
 
@@ -254,16 +305,19 @@ function initFortuneWheel() {
   
   spinBtn.addEventListener('click', async () => {
     if (wheel.classList.contains('spinning')) return;
+
+    if (!AppState.user || !AppState.user.id) {
+      showToast('Пользователь не инициализирован', 'error');
+      return;
+    }
+
+    const cost = 5;
     
     // Проверка баланса
-    if (AppState.userStars < 5) {
+    if (AppState.userStars < cost) {
       showToast('Недостаточно звёзд. Минимум 5 ★', 'error');
       return;
     }
-    
-    // Списание звёзд
-    AppState.userStars -= 5;
-    updateStarsDisplay();
     
     // Блокируем кнопку
     wheel.classList.add('spinning');
@@ -280,7 +334,7 @@ function initFortuneWheel() {
     wheel.style.transform = `rotate(${totalRotation}deg)`;
     
     // После вращения
-    setTimeout(() => {
+    setTimeout(async () => {
       wheel.classList.remove('spinning');
       spinBtn.disabled = false;
       spinBtn.innerHTML = '<i class="fas fa-play"></i><span>Крутить колесо (★ 5)</span>';
@@ -299,16 +353,28 @@ function initFortuneWheel() {
           </div>
         </div>
       `;
-      
-      // Начисляем звёзды
-      AppState.userStars += fortune.stars;
-      updateStarsDisplay();
-      
-      // Сохраняем
-      saveUserData();
-      
-      // Показываем тост
-      showToast(`🎉 Вы выиграли +${fortune.stars} звёзд!`, 'success');
+
+      try {
+        const res = await apiRequest('/wheel', {
+          telegramId: AppState.user.id,
+          text: fortune.text,
+          starsWon: fortune.stars,
+          cost
+        });
+
+        AppState.userStars = res.stars;
+        updateStarsDisplay();
+
+        if (res.entry) {
+          AppState.archive.unshift(res.entry);
+        }
+        saveUserData();
+        renderArchiveIfOpen();
+
+        showToast(`🎉 Вы выиграли +${fortune.stars} звёзд!`, 'success');
+      } catch (e) {
+        // Ошибка уже показана в apiRequest
+      }
       
     }, 3000);
   });
@@ -384,21 +450,48 @@ function initSpreads() {
     </div>
   `).join('');
   
-  // Обработка кликов на расклады
+  // Обработка кликов на расклады с оплатой через API
   $$('.spread-item').forEach(item => {
-    item.addEventListener('click', function() {
+    item.addEventListener('click', async function() {
       const price = parseInt(this.querySelector('.spread-price').textContent);
       const title = this.querySelector('.spread-title').textContent;
-      
-      if (AppState.userStars >= price) {
-        if (confirm(`Купить расклад "${title}" за ${price} ★?`)) {
-          AppState.userStars -= price;
-          updateStarsDisplay();
-          saveUserData();
-          showToast(`Расклад "${title}" куплен!`, 'success');
-        }
-      } else {
+      const spreadId = this.dataset.id;
+      const spreadData = spreads.find(s => s.id === spreadId);
+
+      if (!AppState.user || !AppState.user.id) {
+        showToast('Пользователь не инициализирован', 'error');
+        return;
+      }
+
+      if (AppState.userStars < price) {
         showToast(`Недостаточно звёзд. Нужно ${price} ★`, 'error');
+        return;
+      }
+
+      if (!confirm(`Купить расклад "${title}" за ${price} ★?`)) return;
+
+      try {
+        const res = await apiRequest('/spread', {
+          telegramId: AppState.user.id,
+          spreadId,
+          title,
+          price,
+          cards: spreadData?.cards,
+          description: spreadData?.description
+        });
+
+        AppState.userStars = res.stars;
+        updateStarsDisplay();
+
+        if (res.entry) {
+          AppState.archive.unshift(res.entry);
+        }
+        saveUserData();
+        renderArchiveIfOpen();
+
+        showToast(`Расклад "${title}" куплен и добавлен в Архив!`, 'success');
+      } catch (e) {
+        // Ошибка уже показана в apiRequest
       }
     });
   });
@@ -438,7 +531,7 @@ function initDeck() {
   });
 }
 
-// Показать модальное окно карты
+// Показать модальное окно карты (полностью)
 function showCardModal(card) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -458,17 +551,26 @@ function showCardModal(card) {
       </div>
       <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${card.description || ''}</p>
     </div>
+
+    <div style="margin-top: 10px; text-align: left;">
+      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Прямое значение</h4>
+      <p style="font-size: 13px; margin-bottom: 10px;">${card.upright || '—'}</p>
+
+      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Перевёрнутое</h4>
+      <p style="font-size: 13px; margin-bottom: 10px;">${card.reversed || '—'}</p>
+
+      <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Совет карты</h4>
+      <p style="font-size: 13px; margin-bottom: 4px;">${card.advice || '—'}</p>
+    </div>
   `;
   
   modal.classList.add('active');
   
-  // Закрытие модалки
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
     closeBtn.onclick = () => modal.classList.remove('active');
   }
   
-  // Закрытие по клику на фон
   modal.onclick = (e) => {
     if (e.target === modal) {
       modal.classList.remove('active');
@@ -494,10 +596,22 @@ function initButtons() {
       AppState.isLoading = false;
     }, 1000);
   });
+
+  // Открытие карты дня в полный экран
+  $('#card-day-content')?.addEventListener('click', () => {
+    if (AppState.currentCard) {
+      showCardModal(AppState.currentCard);
+    }
+  });
   
   // Открытие модалки вопроса
   $('#question-btn')?.addEventListener('click', () => {
     openQuestionModal();
+  });
+
+  // Открытие архива
+  $('#archive-btn')?.addEventListener('click', () => {
+    openArchiveModal();
   });
   
   // Обработка типов вопросов
@@ -579,7 +693,7 @@ function askQuestion() {
     return;
   }
   
-  // Списание звёзд
+  // Списание звёзд только локально (это "софт" фича, не в БД)
   AppState.userStars -= price;
   updateStarsDisplay();
   saveUserData();
@@ -675,6 +789,98 @@ function showAnswerModal(question, answer) {
   };
 }
 
+// Рендер архива
+function renderArchive() {
+  const list = $('#archive-list');
+  if (!list) return;
+
+  if (!AppState.archive || !AppState.archive.length) {
+    list.innerHTML = `
+      <p style="text-align: center; color: var(--text-light);">
+        Пока нет сохранённых раскладов и результатов колеса.
+      </p>
+    `;
+    return;
+  }
+
+  const items = [...AppState.archive].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+
+  list.innerHTML = items.map(item => {
+    const date = new Date(item.createdAt || item.created_at).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    if (item.type === 'spread') {
+      return `
+        <div class="archive-item">
+          <div class="archive-item-top">
+            <span class="archive-tag archive-tag-spread">Расклад</span>
+            <span class="archive-date">${date}</span>
+          </div>
+          <div class="archive-title">${item.title || 'Расклад'}</div>
+          <div class="archive-meta">
+            <span>${item.cards || '?'} карт</span>
+            <span>${item.price ? `−${item.price} ★` : ''}</span>
+          </div>
+          ${item.description ? `<p class="archive-desc">${item.description}</p>` : ''}
+        </div>
+      `;
+    }
+
+    if (item.type === 'wheel') {
+      return `
+        <div class="archive-item">
+          <div class="archive-item-top">
+            <span class="archive-tag archive-tag-wheel">Колесо фортуны</span>
+            <span class="archive-date">${date}</span>
+          </div>
+          <div class="archive-title">${item.text || item.title || 'Результат колеса'}</div>
+          <div class="archive-meta">
+            <span>Результат вращения</span>
+            <span>${typeof item.starsWon === 'number' ? `+${item.starsWon} ★` : ''}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
+  }).join('');
+}
+
+// Открытие архива
+function openArchiveModal() {
+  const modal = $('#archive-modal');
+  if (!modal) return;
+
+  renderArchive();
+  modal.classList.add('active');
+
+  const closeBtn = modal.querySelector('.modal-close');
+  if (closeBtn) {
+    closeBtn.onclick = () => modal.classList.remove('active');
+  }
+
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
+  };
+}
+
+// Обновление архива, если он открыт
+function renderArchiveIfOpen() {
+  const modal = $('#archive-modal');
+  if (modal && modal.classList.contains('active')) {
+    renderArchive();
+  }
+}
+
 // Навигация
 function initNavigation() {
   $$('.nav-btn').forEach(btn => {
@@ -696,29 +902,34 @@ function initNavigation() {
 
 // Обновление отображения звёзд
 function updateStarsDisplay() {
-  // Можно добавить отображение звёзд в хедере
+  const starsEl = $('#status-stars');
+  if (starsEl) {
+    starsEl.textContent = `★ ${AppState.userStars}`;
+  }
   console.log('Баланс звёзд:', AppState.userStars);
 }
 
-// Загрузка данных пользователя
+// Загрузка данных пользователя (fallback)
 function loadUserData() {
   const saved = localStorage.getItem('tarot_user_data');
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      AppState.userStars = data.stars || 100;
-      AppState.savedCards = data.savedCards || [];
+      AppState.userStars = typeof data.stars === 'number' ? data.stars : 100;
+      AppState.savedCards = Array.isArray(data.savedCards) ? data.savedCards : [];
+      AppState.archive = Array.isArray(data.archive) ? data.archive : [];
     } catch (e) {
       console.error('Ошибка загрузки данных:', e);
     }
   }
 }
 
-// Сохранение данных пользователя
+// Сохранение данных пользователя (локальный backup)
 function saveUserData() {
   const data = {
     stars: AppState.userStars,
-    savedCards: AppState.savedCards
+    savedCards: AppState.savedCards,
+    archive: AppState.archive
   };
   
   try {
