@@ -32,10 +32,18 @@
             </div>
           </div>
           
-          <div class="user-status">
-            <div class="status-indicator">
-              <div class="status-dot online"></div>
-              <span class="status-text">Дмитрий Онлайн</span>
+          <div class="header-right">
+            <!-- Кнопка архива -->
+            <button class="archive-btn" id="archive-btn" title="Архив">
+              <i class="fas fa-box-archive"></i>
+            </button>
+
+            <div class="user-status">
+              <div class="status-indicator">
+                <div class="status-dot online"></div>
+                <span class="status-text" id="status-username">Дмитрий онлайн</span>
+              </div>
+              <div class="status-stars" id="status-stars">★ 0</div>
             </div>
           </div>
         </div>
@@ -216,6 +224,23 @@
             </div>
           </div>
         </section>
+
+        <!-- Модальное окно архива -->
+        <div class="modal" id="archive-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-box-archive"></i>
+              </div>
+              <h3>Архив</h3>
+              <p class="section-subtitle">Купленные расклады и результаты колеса фортуны</p>
+            </div>
+            <div class="modal-body">
+              <div id="archive-list"></div>
+            </div>
+          </div>
+        </div>
 
         <!-- Модальное окно вопроса -->
         <div class="modal" id="question-modal">
