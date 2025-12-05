@@ -90,6 +90,12 @@ body {
   margin-bottom: 24px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -189,6 +195,35 @@ body {
 .status-text {
   font-size: 14px;
   font-weight: 500;
+}
+
+.status-stars {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold);
+  text-align: right;
+}
+
+/* ===== КНОПКА АРХИВА ===== */
+.archive-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.archive-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
 }
 
 /* ===== НАВИГАЦИЯ ===== */
@@ -1055,6 +1090,66 @@ body {
   color: var(--text);
 }
 
+/* ===== СТИЛИ АРХИВА ===== */
+
+.archive-item {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: rgba(138, 43, 226, 0.03);
+}
+
+.archive-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.archive-tag {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.archive-tag-spread {
+  background: rgba(138, 43, 226, 0.12);
+  color: var(--primary);
+}
+
+.archive-tag-wheel {
+  background: rgba(255, 215, 0, 0.16);
+  color: var(--gold);
+}
+
+.archive-date {
+  color: var(--text-light);
+}
+
+.archive-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.archive-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.archive-desc {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.92;
+}
+
+/* ===== ВВОД ВОПРОСА ===== */
 .question-input-container {
   margin-bottom: 20px;
 }
