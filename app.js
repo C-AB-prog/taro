@@ -83,7 +83,7 @@ const CARD_META = {
   }
 };
 
-// Расклады
+// ===== РАСКЛАДЫ =====
 const TAROT_SPREADS = [
   {
     id: 'celtic-cross',
@@ -149,7 +149,6 @@ class MysticAnimations {
     this.initButtonEffects();
   }
 
-  // Частицы в фоне
   initParticles() {
     const container = $('.particles');
     if (!container) return;
@@ -172,9 +171,7 @@ class MysticAnimations {
     }
   }
 
-  // Анимации карт
   initCardAnimations() {
-    // Анимация при наведении на карту
     document.addEventListener('mouseover', (e) => {
       const card = e.target.closest('.card-image-container, .deck-card');
       if (card) {
@@ -192,24 +189,20 @@ class MysticAnimations {
     });
   }
 
-  // Эффекты кнопок
   initButtonEffects() {
     const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card');
-    
-    buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        this.createRippleEffect(e);
-      });
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', (e) => this.createRippleEffect(e));
     });
   }
 
   createRippleEffect(event) {
     const btn = event.currentTarget;
     const ripple = document.createElement('span');
-    
+
     const diameter = Math.max(btn.clientWidth, btn.clientHeight);
     const radius = diameter / 2;
-    
+
     ripple.style.cssText = `
       position: absolute;
       border-radius: 50%;
@@ -222,11 +215,11 @@ class MysticAnimations {
       left: ${event.clientX - btn.getBoundingClientRect().left - radius}px;
       top: ${event.clientY - btn.getBoundingClientRect().top - radius}px;
     `;
-    
+
     btn.style.position = 'relative';
     btn.style.overflow = 'hidden';
     btn.appendChild(ripple);
-    
+
     setTimeout(() => ripple.remove(), 600);
   }
 }
@@ -242,9 +235,10 @@ function buildSpreadSummary(spread, cards) {
   const vibes = [];
 
   cards.forEach((entry) => {
-    const id = typeof entry.cardId === 'number'
-      ? entry.cardId
-      : typeof entry.id === 'number'
+    const id =
+      typeof entry.cardId === 'number'
+        ? entry.cardId
+        : typeof entry.id === 'number'
         ? entry.id
         : null;
 
@@ -252,7 +246,7 @@ function buildSpreadSummary(spread, cards) {
     if (!meta) return;
 
     totalScore += meta.score;
-    meta.tags.forEach(tag => {
+    meta.tags.forEach((tag) => {
       tagCounter[tag] = (tagCounter[tag] || 0) + 1;
     });
     vibes.push(meta.vibe);
@@ -326,7 +320,8 @@ async function loadUserStateFromServer() {
   }
 
   try {
-    const res = await fetch(`/api/state?userId=${encodeURIComponent(String(userId))}`);
+    const res = await fetch('/api/state?userId=' + encodeURIComponent(String(userId)));
+
     if (res.status === 404) {
       AppState.userStars = NEW_USER_STARS;
       AppState.archive = [];
@@ -336,9 +331,7 @@ async function loadUserStateFromServer() {
       return;
     }
 
-    if (!res.ok) {
-      throw new Error('Failed to load state');
-    }
+    if (!res.ok) throw new Error('Failed to load state');
 
     const data = await res.json();
 
@@ -381,46 +374,25 @@ async function saveUserStateToServer() {
 }
 
 // ===== ОСНОВНЫЕ ФУНКЦИИ =====
-
-// Инициализация
 async function initApp() {
   showLoader();
-  
-  try {
-    // Инициализация Telegram
-    initTelegram();
 
-    // Скрываем/перенастраиваем "Дмитрий онлайн"
+  try {
+    initTelegram();
     cleanupHeaderStatus();
 
-    // Запуск анимаций
     window.mysticAnimations = new MysticAnimations();
-    
-    // Загрузка состояния пользователя из БД
+
     await loadUserStateFromServer();
     updateStarsDisplay();
-    
-    // Загрузка карты дня
+
     await loadCardOfDay();
-    
-    // Инициализация колеса фортуны
     initFortuneWheel();
-    
-    // Инициализация раскладов
     initSpreads();
-    
-    // Инициализация колоды
     initDeck();
-    
-    // Инициализация кнопок
     initButtons();
-    
-    // Инициализация навигации
     initNavigation();
-    
-    // Добавляем CSS для анимаций
     addAnimationStyles();
-    
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
@@ -429,61 +401,56 @@ async function initApp() {
   }
 }
 
-// Инициализация Telegram
+// Telegram
 function initTelegram() {
-  if (window.Telegram?.WebApp) {
+  if (window.Telegram && window.Telegram.WebApp) {
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
-    
-    const user = tg.initDataUnsafe?.user;
+
+    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
     if (user) {
       AppState.user = {
         name: user.first_name || 'Пользователь',
-        username: user.username || '',
+        username: user.username || ''
       };
-      AppState.userId = user.id; // важно для синхронизации
+      AppState.userId = user.id;
     }
   }
-  
-  // Для дебага вне Telegram
+
+  // Дебаг вне Telegram
   if (!AppState.userId) {
     AppState.user = { name: 'Гость', username: 'debug_user' };
     AppState.userId = 'debug-user-1';
   }
 }
 
-// Перенастройка хедера (убираем "Дмитрий онлайн" и показываем баланс)
+// Хедер
 function cleanupHeaderStatus() {
   const statusText = document.querySelector('.status-text');
   const statusDot = document.querySelector('.status-dot');
-  if (statusDot) {
-    statusDot.classList.remove('online');
-  }
-  if (statusText) {
-    statusText.textContent = 'Баланс: ...';
-  }
+  if (statusDot) statusDot.classList.remove('online');
+  if (statusText) statusText.textContent = 'Баланс: ...';
 }
 
-// Загрузка карты дня
+// Карта дня
 async function loadCardOfDay() {
   const container = $('#card-day-content');
-  if (!container || !window.TAROT_CARDS?.length) return;
-  
+  if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
+
   const today = new Date();
   const day = today.getDate();
   const cardIndex = day % Math.min(window.TAROT_CARDS.length, 12);
   const card = window.TAROT_CARDS[cardIndex];
-  
   if (!card) return;
-  
+
   AppState.currentCard = card;
-  
+
   container.innerHTML = `
     <div class="card-display">
       <div class="card-image-container">
-        <img src="${card.image}" 
-             alt="${card.name}" 
+        <img src="${card.image}"
+             alt="${card.name}"
              class="card-image"
              onload="this.classList.add('loaded')"
              onerror="this.src='cards/card-back.png'">
@@ -497,10 +464,10 @@ async function loadCardOfDay() {
         <div class="card-description">${card.description || 'Описание карты'}</div>
         <div class="card-date">
           <i class="fas fa-calendar-alt"></i>
-          ${today.toLocaleDateString('ru-RU', { 
-            weekday: 'long', 
-            day: 'numeric', 
-            month: 'long' 
+          ${today.toLocaleDateString('ru-RU', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long'
           })}
         </div>
       </div>
@@ -508,15 +475,13 @@ async function loadCardOfDay() {
   `;
 }
 
-// Колесо фортуны (бесплатно раз в сутки, выдаёт карту + совет)
+// Колесо фортуны
 function initFortuneWheel() {
   const wheel = $('#fortune-wheel');
   const spinBtn = $('#spin-wheel-btn');
   const resultEl = $('#wheel-result');
-  
   if (!wheel || !spinBtn || !resultEl) return;
-  
-  // Создаём визуальные секции (чисто для анимации)
+
   wheel.innerHTML = '';
   for (let i = 0; i < 12; i++) {
     const section = document.createElement('div');
@@ -541,7 +506,9 @@ function initFortuneWheel() {
   const formatRemaining = () => {
     if (!AppState.lastWheelSpin) return '';
     const now = Date.now();
-    const next = AppState.lastWheelSpin.getTime() + WHEEL_COOLDOWN_HOURS * 60 * 60 * 1000;
+    const next =
+      AppState.lastWheelSpin.getTime() +
+      WHEEL_COOLDOWN_HOURS * 60 * 60 * 1000;
     const diffMs = next - now;
     if (diffMs <= 0) return 'доступно прямо сейчас';
 
@@ -557,14 +524,16 @@ function initFortuneWheel() {
   const updateWheelUI = () => {
     if (canSpinNow()) {
       spinBtn.disabled = false;
-      spinBtn.innerHTML = '<i class="fas fa-play"></i><span>Крутить колесо</span><div class="spin-glow"></div>';
+      spinBtn.innerHTML =
+        '<i class="fas fa-play"></i><span>Крутить колесо</span><div class="spin-glow"></div>';
       resultEl.innerHTML = AppState.lastWheelText
         ? AppState.lastWheelText
         : 'Колесо готово к вращению. В день доступна одна попытка.';
     } else {
       spinBtn.disabled = true;
       const timerText = formatRemaining();
-      const baseText = AppState.lastWheelText || 'Вы уже крутили колесо сегодня.';
+      const baseText =
+        AppState.lastWheelText || 'Вы уже крутили колесо сегодня.';
       resultEl.innerHTML = `
         <div style="text-align:center;">
           <div style="margin-bottom:8px;">${baseText}</div>
@@ -576,10 +545,7 @@ function initFortuneWheel() {
     }
   };
 
-  // Стартуем таймер обратного отсчёта
-  if (AppState.wheelTimerId) {
-    clearInterval(AppState.wheelTimerId);
-  }
+  if (AppState.wheelTimerId) clearInterval(AppState.wheelTimerId);
   AppState.wheelTimerId = setInterval(updateWheelUI, 1000);
   updateWheelUI();
 
@@ -590,28 +556,29 @@ function initFortuneWheel() {
     }
     if (wheel.classList.contains('spinning')) return;
 
-    // Запускаем анимацию
     wheel.classList.add('spinning');
     spinBtn.disabled = true;
-    spinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span>';
+    spinBtn.innerHTML =
+      '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span>';
 
     const spins = 5 + Math.floor(Math.random() * 4);
     const extraDegrees = Math.floor(Math.random() * 360);
     const totalRotation = spins * 360 + extraDegrees;
 
-    wheel.style.transition = 'transform 3s cubic-bezier(0.2, 0.8, 0.3, 1)';
+    wheel.style.transition =
+      'transform 3s cubic-bezier(0.2, 0.8, 0.3, 1)';
     wheel.style.transform = `rotate(${totalRotation}deg)`;
 
     setTimeout(async () => {
       wheel.classList.remove('spinning');
 
-      // Выбираем случайную карту из колоды
       const allCards = window.TAROT_CARDS || [];
       if (!allCards.length) {
         resultEl.textContent = 'Колода не найдена.';
         spinBtn.disabled = false;
         return;
       }
+
       const idx = Math.floor(Math.random() * Math.min(allCards.length, 12));
       const card = allCards[idx];
 
@@ -638,7 +605,6 @@ function initFortuneWheel() {
 
       AppState.lastWheelText = wheelTextHtml;
 
-      // Сохраняем в архив
       const entry = {
         type: 'wheel',
         createdAt: now.toISOString(),
@@ -662,12 +628,13 @@ function initFortuneWheel() {
   });
 }
 
-// Инициализация раскладов
+// Расклады
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
 
-  container.innerHTML = TAROT_SPREADS.map(spread => `
+  container.innerHTML = TAROT_SPREADS.map(
+    (spread) => `
     <div class="spread-item" data-id="${spread.id}">
       <div class="spread-header">
         <div class="spread-title">
@@ -682,33 +649,29 @@ function initSpreads() {
         <span><i class="fas fa-brain"></i> Общий анализ расклада включён</span>
       </div>
     </div>
-  `).join('');
+  `
+  ).join('');
 
-  $$('.spread-item').forEach(item => {
-    item.addEventListener('click', async function() {
-      const spreadId = this.dataset.id;
-      const spread = TAROT_SPREADS.find(s => s.id === spreadId);
+  $$('.spread-item').forEach((item) => {
+    item.addEventListener('click', async function () {
+      const spreadId = this.getAttribute('data-id');
+      const spread = TAROT_SPREADS.find((s) => s.id === spreadId);
       if (!spread) return;
 
       const price = spread.price;
       const title = spread.title;
 
       if (AppState.userStars < price) {
-        showToast(`Недостаточно звёзд. Нужно ${price} ★`, 'error');
+        showToast('Недостаточно звёзд. Нужно ' + price + ' ★', 'error');
         return;
       }
 
-      if (!confirm(`Купить расклад "${title}" за ${price} ★?`)) {
-        return;
-      }
+      if (!confirm(`Купить расклад "${title}" за ${price} ★?`)) return;
 
       AppState.userStars -= price;
       updateStarsDisplay();
 
-      // Делаем расклад
       const result = performSpread(spread);
-
-      // Сохраняем в архив (новые сверху)
       AppState.archive = [result, ...(AppState.archive || [])];
 
       await saveUserStateToServer();
@@ -722,7 +685,7 @@ function initSpreads() {
 // Генерация расклада
 function performSpread(spread) {
   const allCards = window.TAROT_CARDS || [];
-  const cardsCopy = [...allCards];
+  const cardsCopy = allCards.slice();
   const used = [];
 
   const count = Math.min(spread.cardsCount, cardsCopy.length);
@@ -755,7 +718,7 @@ function performSpread(spread) {
   };
 }
 
-// Показ результата расклада в модалке
+// Модалка результата расклада
 function showSpreadResultModal(result) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -769,7 +732,9 @@ function showSpreadResultModal(result) {
     minute: '2-digit'
   });
 
-  const cardsHtml = (result.cards || []).map((card, index) => `
+  const cardsHtml = (result.cards || [])
+    .map(
+      (card, index) => `
     <div style="
       border-radius: 14px;
       border: 1px solid var(--border);
@@ -780,26 +745,39 @@ function showSpreadResultModal(result) {
       align-items: flex-start;
       background: rgba(248,245,255,0.9);
     ">
-      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index + 1}.</div>
+      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index +
+        1}.</div>
       <div style="flex:1;">
         <div style="font-weight:600; color:var(--primary); margin-bottom:2px;">
           ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
-        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">${card.keyword || ''}</div>
-        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">${card.description || ''}</div>
-        <div style="font-size:11px; color:var(--text-light); font-style:italic;">Совет: ${card.advice || ''}</div>
+        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">${
+          card.keyword || ''
+        }</div>
+        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">${
+          card.description || ''
+        }</div>
+        <div style="font-size:11px; color:var(--text-light); font-style:italic;">Совет: ${
+          card.advice || ''
+        }</div>
       </div>
     </div>
-  `).join('');
+  `
+    )
+    .join('');
 
   body.innerHTML = `
     <div style="text-align:left;">
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${
+        result.title
+      }</h3>
       <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
         ${dateStr}
       </div>
 
-      ${result.summary ? `
+      ${
+        result.summary
+          ? `
         <div style="
           background:rgba(138,43,226,0.06);
           border-radius:12px;
@@ -810,7 +788,9 @@ function showSpreadResultModal(result) {
         ">
           <b>Общий вывод:</b> ${result.summary}
         </div>
-      ` : ''}
+      `
+          : ''
+      }
 
       ${cardsHtml}
     </div>
@@ -819,17 +799,19 @@ function showSpreadResultModal(result) {
   openModal(modal);
 }
 
-// Инициализация колоды
+// Колода
 function initDeck() {
   const container = $('#deck-grid');
-  if (!container || !window.TAROT_CARDS?.length) return;
-  
+  if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
+
   const cards = window.TAROT_CARDS.slice(0, 12);
-  
-  container.innerHTML = cards.map((card, index) => `
+
+  container.innerHTML = cards
+    .map(
+      (card, index) => `
     <div class="deck-card" data-id="${card.id}" style="--card-index: ${index};">
-      <img src="${card.image}" 
-           alt="${card.name}" 
+      <img src="${card.image}"
+           alt="${card.name}"
            class="deck-card-image"
            onload="this.classList.add('loaded')"
            onerror="this.src='cards/card-back.png'">
@@ -838,142 +820,137 @@ function initDeck() {
         <div class="deck-card-roman">${card.roman || ''}</div>
       </div>
     </div>
-  `).join('');
-  
-  $$('.deck-card').forEach(card => {
-    card.addEventListener('click', function() {
-      const cardId = parseInt(this.dataset.id, 10);
-      const cardData = window.TAROT_CARDS.find(c => c.id === cardId);
-      if (cardData) {
-        showCardModal(cardData);
-      }
+  `
+    )
+    .join('');
+
+  $$('.deck-card').forEach((cardEl) => {
+    cardEl.addEventListener('click', function () {
+      const cardId = parseInt(this.getAttribute('data-id'), 10);
+      const cardData = window.TAROT_CARDS.find((c) => c.id === cardId);
+      if (cardData) showCardModal(cardData);
     });
   });
 }
 
-// Показать модальное окно карты
+// Модалка отдельной карты
 function showCardModal(card) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
-  
   if (!modal || !body) return;
-  
+
   body.innerHTML = `
     <div style="text-align: center;">
-      <img src="${card.image}" 
-           alt="${card.name}" 
+      <img src="${card.image}"
+           alt="${card.name}"
            style="width: 200px; height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;"
            onerror="this.src='cards/card-back.png'">
       <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 8px;">${card.name}</h3>
-      ${card.roman ? `<div style="color: var(--text-light); font-size: 16px; margin-bottom: 12px;">${card.roman}</div>` : ''}
+      ${
+        card.roman
+          ? `<div style="color: var(--text-light); font-size: 16px; margin-bottom: 12px;">${card.roman}</div>`
+          : ''
+      }
       <div style="background: var(--primary); color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-bottom: 16px;">
         ${card.keyword || ''}
       </div>
-      <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${card.description || ''}</p>
+      <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${
+        card.description || ''
+      }</p>
       <div style="font-size: 14px; color: var(--text-light); font-style: italic;">
-        Совет: ${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}
+        Совет: ${
+          card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'
+        }
       </div>
     </div>
   `;
-  
+
   openModal(modal);
 }
 
-// Универсальное открытие модалки
 function openModal(modal) {
   modal.classList.add('active');
-  
+
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
     closeBtn.onclick = () => modal.classList.remove('active');
   }
-  
+
   modal.onclick = (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('active');
-    }
+    if (e.target === modal) modal.classList.remove('active');
   };
 }
 
-// Инициализация кнопок
+// Кнопки
 function initButtons() {
-  // Обновление карты дня
-  $('#refresh-btn')?.addEventListener('click', async () => {
-    if (AppState.isLoading) return;
-    
-    AppState.isLoading = true;
-    const btn = $('#refresh-btn');
-    btn.classList.add('refreshing');
-    
-    await loadCardOfDay();
-    showToast('Карта дня обновлена', 'success');
-    
-    setTimeout(() => {
-      btn.classList.remove('refreshing');
-      AppState.isLoading = false;
-    }, 1000);
-  });
-  
-  // Открытие модалки вопроса "Спросить Вселенную"
-  $('#question-btn')?.addEventListener('click', () => {
-    openQuestionModal();
-  });
-  
-  // Типы вопросов
-  $$('.question-type').forEach(type => {
-    type.addEventListener('click', function() {
-      $$('.question-type').forEach(t => t.classList.remove('active'));
+  const refreshBtn = $('#refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      if (AppState.isLoading) return;
+
+      AppState.isLoading = true;
+      refreshBtn.classList.add('refreshing');
+
+      await loadCardOfDay();
+      showToast('Карта дня обновлена', 'success');
+
+      setTimeout(() => {
+        refreshBtn.classList.remove('refreshing');
+        AppState.isLoading = false;
+      }, 1000);
+    });
+  }
+
+  const questionBtn = $('#question-btn');
+  if (questionBtn) {
+    questionBtn.addEventListener('click', () => openQuestionModal());
+  }
+
+  $$('.question-type').forEach((typeEl) => {
+    typeEl.addEventListener('click', function () {
+      $$('.question-type').forEach((t) => t.classList.remove('active'));
       this.classList.add('active');
-      AppState.questionType = this.dataset.type;
+      AppState.questionType = this.getAttribute('data-type');
     });
   });
-  
-  // Отправка вопроса
-  $('#ask-question-btn')?.addEventListener('click', askQuestion);
-  
-  // Счётчик символов
+
+  const askBtn = $('#ask-question-btn');
+  if (askBtn) {
+    askBtn.addEventListener('click', askQuestion);
+  }
+
   const questionInput = $('#question-input');
   const charCount = $('#char-count');
-  
   if (questionInput && charCount) {
-    questionInput.addEventListener('input', function() {
+    questionInput.addEventListener('input', function () {
       charCount.textContent = this.value.length;
     });
   }
-  
-  // Да/Нет — быстрый ответ (используем первую карточку "Расклад дня" как кнопку Да/Нет)
-  $('#daily-spread-btn')?.addEventListener('click', handleYesNoQuick);
-  
-  // Остальные действия пока в разработке — просто тосты
-  $('#tarot-reading')?.addEventListener('click', () => {
-    showToast('Функция в разработке', 'info');
-  });
-  
-  $('#fortune-telling')?.addEventListener('click', () => {
-    showToast('Функция в разработке', 'info');
-  });
+
+  const yesNoBtn = $('#daily-spread-btn'); // у тебя эта кнопка под Да/Нет
+  if (yesNoBtn) {
+    yesNoBtn.addEventListener('click', handleYesNoQuick);
+  }
 }
 
-// Открыть модалку вопроса
+// Модалка "Спросить вселенную"
 function openQuestionModal() {
   const modal = $('#question-modal');
   if (!modal) return;
-  
+
   modal.classList.add('active');
-  
+
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
     closeBtn.onclick = () => modal.classList.remove('active');
   }
-  
+
   modal.onclick = (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('active');
-    }
+    if (e.target === modal) modal.classList.remove('active');
   };
 }
 
-// Вопрос Да/Нет (быстрый)
+// Да/нет
 async function handleYesNoQuick() {
   const question = prompt('Задайте свой вопрос (Да/Нет):');
   if (!question || question.trim().length < 3) {
@@ -982,7 +959,7 @@ async function handleYesNoQuick() {
   }
 
   if (AppState.userStars < YES_NO_PRICE) {
-    showToast(`Недостаточно звёзд. Нужно ${YES_NO_PRICE} ★`, 'error');
+    showToast('Недостаточно звёзд. Нужно ' + YES_NO_PRICE + ' ★', 'error');
     return;
   }
 
@@ -998,7 +975,6 @@ async function handleYesNoQuick() {
   ];
   const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
 
-  // Сохраняем в архив как простой текстовый ответ
   const entry = {
     type: 'yesno',
     createdAt: new Date().toISOString(),
@@ -1012,35 +988,36 @@ async function handleYesNoQuick() {
   showAnswerModal(question, randomAnswer);
 }
 
-// Задать вопрос "Спросить Вселенную"
+// "Спросить вселенную"
 async function askQuestion() {
   const input = $('#question-input');
   if (!input) return;
-  
+
   const question = input.value.trim();
   if (!question) {
     showToast('Введите ваш вопрос', 'error');
     return;
   }
-  
   if (question.length < 5) {
     showToast('Вопрос должен быть не менее 5 символов', 'error');
     return;
   }
-  
+
   const price = ASK_UNIVERSE_PRICE;
   if (AppState.userStars < price) {
-    showToast(`Недостаточно звёзд. Нужно ${price} ★`, 'error');
+    showToast('Недостаточно звёзд. Нужно ' + price + ' ★', 'error');
     return;
   }
-  
+
   AppState.userStars -= price;
   updateStarsDisplay();
   await saveUserStateToServer();
-  
-  $('#question-modal').classList.remove('active');
+
+  const qm = $('#question-modal');
+  if (qm) qm.classList.remove('active');
+
   showToast('🌀 Вселенная слышит ваш вопрос...', 'info');
-  
+
   setTimeout(async () => {
     const answers = {
       love: [
@@ -1068,11 +1045,11 @@ async function askQuestion() {
         'Ситуация сама покажет приоритет, если вы позволите ей развиваться без давления.'
       ]
     };
-    
+
     const typeAnswers = answers[AppState.questionType] || answers.love;
-    const randomAnswer = typeAnswers[Math.floor(Math.random() * typeAnswers.length)];
-    
-    // Сохраняем в архив
+    const randomAnswer =
+      typeAnswers[Math.floor(Math.random() * typeAnswers.length)];
+
     const entry = {
       type: 'universe',
       createdAt: new Date().toISOString(),
@@ -1082,22 +1059,21 @@ async function askQuestion() {
     };
     AppState.archive = [entry, ...(AppState.archive || [])];
     await saveUserStateToServer();
-    
+
     showAnswerModal(question, randomAnswer);
-    
+
     input.value = '';
-    $('#char-count').textContent = '0';
-    
+    const cc = $('#char-count');
+    if (cc) cc.textContent = '0';
   }, 2000);
 }
 
-// Показать ответ
+// Модалка ответа
 function showAnswerModal(question, answer) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
-  
   if (!modal || !body) return;
-  
+
   body.innerHTML = `
     <div style="text-align: center; padding: 20px;">
       <div class="modal-icon" style="margin: 0 auto 20px;">
@@ -1119,70 +1095,52 @@ function showAnswerModal(question, answer) {
       </div>
     </div>
   `;
-  
+
   openModal(modal);
 }
 
 // Навигация
 function initNavigation() {
-  $$('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const screen = this.dataset.screen;
-      
-      $$('.nav-btn').forEach(b => b.classList.remove('active'));
-      $$('.screen').forEach(s => s.classList.remove('active'));
-      
+  $$('.nav-btn').forEach((btn) => {
+    btn.addEventListener('click', function () {
+      const screen = this.getAttribute('data-screen');
+
+      $$('.nav-btn').forEach((b) => b.classList.remove('active'));
+      $$('.screen').forEach((s) => s.classList.remove('active'));
+
       this.classList.add('active');
-      
-      const target = document.querySelector(`#${screen}-screen`);
-      if (target) {
-        target.classList.add('active');
-      }
+
+      const target = document.querySelector('#' + screen + '-screen');
+      if (target) target.classList.add('active');
     });
   });
 }
 
-// Обновление отображения звёзд
+// Баланс в хедере
 function updateStarsDisplay() {
   const statusText = document.querySelector('.status-text');
   if (statusText) {
-    statusText.textContent = `Баланс: ${AppState.userStars} ★`;
+    statusText.textContent = 'Баланс: ' + AppState.userStars + ' ★';
   }
 }
 
-// Добавление CSS для анимаций
+// Анимации CSS
 function addAnimationStyles() {
   const style = document.createElement('style');
   style.textContent = `
     @keyframes floatParticle {
-      0% {
-        transform: translateY(0) translateX(0);
-        opacity: 0;
-      }
-      10% {
-        opacity: 0.1;
-      }
-      90% {
-        opacity: 0.1;
-      }
-      100% {
-        transform: translateY(-100vh) translateX(20px);
-        opacity: 0;
-      }
+      0% { transform: translateY(0) translateX(0); opacity: 0; }
+      10% { opacity: 0.1; }
+      90% { opacity: 0.1; }
+      100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
     }
-    
     @keyframes ripple {
-      to {
-        transform: scale(4);
-        opacity: 0;
-      }
+      to { transform: scale(4); opacity: 0; }
     }
-    
     @keyframes refreshSpin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
-    
     .refreshing {
       animation: refreshSpin 1s linear infinite;
     }
@@ -1191,12 +1149,9 @@ function addAnimationStyles() {
 }
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-
 function showLoader() {
   const loader = $('#app-loader');
-  if (loader) {
-    loader.style.display = 'flex';
-  }
+  if (loader) loader.style.display = 'flex';
 }
 
 function hideLoader() {
@@ -1213,21 +1168,25 @@ function hideLoader() {
 function showToast(message, type = 'info') {
   const toast = $('#toast');
   if (!toast) return;
-  
-  toast.style.background = type === 'error' ? 'var(--danger)' : 
-                          type === 'success' ? 'var(--success)' : 
-                          'var(--primary)';
-  
+
+  toast.style.background =
+    type === 'error'
+      ? 'var(--danger)'
+      : type === 'success'
+      ? 'var(--success)'
+      : 'var(--primary)';
+
   toast.textContent = message;
   toast.classList.add('show');
-  
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, 3000);
+
+  setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// Запуск приложения
+// Старт
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
+
+  // Страховка: даже если что-то упадёт, через 8 секунд лоадер уйдёт
+  setTimeout(hideLoader, 8000);
 });
