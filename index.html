@@ -23,21 +23,22 @@
         <div class="header-top">
           <div class="logo">
             <div class="logo-icon">
-              <!-- оставляем форму, но без вращения в стилях -->
               <div class="crystal"></div>
               <div class="crystal-shine"></div>
             </div>
             <div class="logo-text">
               <h1>ТАRO</h1>
-              <!-- без надписи "ГИПНОЗ" -->
               <p class="logo-subtitle"></p>
             </div>
           </div>
           
           <div class="user-status">
             <div class="status-indicator">
-              <div class="status-dot"></div>
-              <span class="status-text">Баланс: 0 ★</span>
+              <i class="fas fa-star status-star-icon"></i>
+              <span class="status-text"><span id="stars-amount">0</span> ★</span>
+              <button class="status-plus-btn" id="open-shop-btn">
+                <i class="fas fa-plus"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -114,7 +115,7 @@
                 </div>
                 <h4>Да / Нет</h4>
                 <p>Быстрый ответ на вопрос</p>
-                <div class="action-price">★ 25</div>
+                <div class="action-price">25</div>
               </div>
 
               <div class="action-card" id="question-btn">
@@ -123,13 +124,13 @@
                 </div>
                 <h4>Спросить Вселенную</h4>
                 <p>Ответ с трактовкой</p>
-                <div class="action-price">★ 35</div>
+                <div class="action-price">35</div>
               </div>
             </div>
           </section>
 
           <!-- Магазин звёзд -->
-          <section class="magic-actions">
+          <section class="magic-actions" id="shop-section">
             <div class="section-header">
               <div class="section-icon">
                 <i class="fas fa-star"></i>
@@ -147,7 +148,7 @@
                 </div>
                 <h4>150 звёзд</h4>
                 <p>Пакет за 99 звёзд Telegram</p>
-                <div class="action-price">★ 150</div>
+                <div class="action-price">150</div>
               </div>
 
               <div class="action-card star-pack" data-stars="350">
@@ -156,7 +157,7 @@
                 </div>
                 <h4>350 звёзд</h4>
                 <p>Пакет за 199 звёзд Telegram</p>
-                <div class="action-price">★ 350</div>
+                <div class="action-price">350</div>
               </div>
 
               <div class="action-card star-pack" data-stars="800">
@@ -165,7 +166,7 @@
                 </div>
                 <h4>800 звёзд</h4>
                 <p>Пакет за 399 звёзд Telegram</p>
-                <div class="action-price">★ 800</div>
+                <div class="action-price">800</div>
               </div>
 
               <div class="action-card star-pack" data-stars="1000">
@@ -174,7 +175,7 @@
                 </div>
                 <h4>1000 звёзд</h4>
                 <p>Пакет за 899 звёзд Telegram</p>
-                <div class="action-price">★ 1000</div>
+                <div class="action-price">1000</div>
               </div>
             </div>
           </section>
@@ -275,7 +276,7 @@
           </div>
         </section>
 
-        <!-- Модальное окно вопроса -->
+        <!-- Модальное окно "Спросить Вселенную" -->
         <div class="modal" id="question-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
@@ -325,7 +326,56 @@
           </div>
         </div>
 
-        <!-- Модальное окно карты / ответов / раскладов -->
+        <!-- Модальное окно Да/Нет -->
+        <div class="modal" id="yesno-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-check"></i>
+              </div>
+              <h3>Да / Нет</h3>
+            </div>
+            <div class="modal-body">
+              <div class="question-input-container">
+                <textarea 
+                  id="yesno-input" 
+                  placeholder="Задайте свой вопрос (Да/Нет)..."
+                  maxlength="200"
+                  rows="3"></textarea>
+                <div class="char-counter">
+                  <span id="yesno-char-count">0</span>/200
+                </div>
+              </div>
+              <button class="ask-btn" id="yesno-submit-btn">
+                <i class="fas fa-check-circle"></i>
+                <span>Спросить за ★ 25</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Модальное окно подтверждения покупки -->
+        <div class="modal" id="confirm-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-circle-question"></i>
+              </div>
+              <h3 id="confirm-title">Подтверждение</h3>
+            </div>
+            <div class="modal-body">
+              <p id="confirm-message" style="font-size:14px; color:var(--text); margin-bottom:10px;"></p>
+              <div class="modal-actions">
+                <button class="btn-secondary" id="confirm-cancel-btn">Отмена</button>
+                <button class="btn-primary" id="confirm-ok-btn">ОК</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Модальное окно карты / архива / ответа -->
         <div class="modal" id="card-modal">
           <div class="modal-content">
             <button class="modal-close">&times;</button>
