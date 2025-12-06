@@ -1,75 +1,130 @@
 // api/state.js
-import { Pool } from 'pg';
+const { neon } = require('@neondatabase/serverless');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // для Neon
-});
+const sql = neon(process.env.DATABASE_URL);
 
-export default async function handler(req, res) {
-  const { method } = req;
+function buildArchiveData(item) {
+  return {
+    cards: item.cards || [],
+    question: item.question || null,
+    answer: item.answer || null,
+    summary: item.summary || null,
+    card: item.card || null
+  };
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  let userId =
+    req.method === 'GET' ? req.query.userId : req.body && req.body.userId;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
 
   try {
-    if (method === 'GET') {
-      const userId = req.query.userId;
-      if (!userId) {
-        return res.status(400).json({ error: 'userId is required' });
-      }
+    if (req.method === 'GET') {
+      const userResult = await sql`
+        SELECT telegram_id, stars, last_wheel_spin, last_wheel_text
+        FROM users
+        WHERE telegram_id = ${userId}
+      `;
 
-      const { rows } = await pool.query(
-        `SELECT user_id, stars, archive, wheel_last_spin, last_wheel_text
-         FROM user_state
-         WHERE user_id = $1`,
-        [String(userId)]
-      );
-
-      if (!rows.length) {
-        // фронт как раз ждёт 404 для нового юзера
+      if (userResult.rows.length === 0) {
         return res.status(404).json({ error: 'not_found' });
       }
 
-      const row = rows[0];
+      const user = userResult.rows[0];
+
+      const archiveResult = await sql`
+        SELECT id, type, spread_id, title, data, created_at
+        FROM archive_entries
+        WHERE telegram_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT 200
+      `;
+
+      const archive = archiveResult.rows.map((row) => {
+        const data = row.data || {};
+        return {
+          id: row.id,
+          type: row.type,
+          spreadId: row.spread_id,
+          title: row.title,
+          createdAt: row.created_at,
+          cards: data.cards || [],
+          question: data.question || null,
+          answer: data.answer || null,
+          summary: data.summary || null,
+          card: data.card || null
+        };
+      });
+
       return res.status(200).json({
-        userId: row.user_id,
-        stars: row.stars,
-        archive: row.archive || [],
-        wheelLastSpin: row.wheel_last_spin,
-        lastWheelText: row.last_wheel_text || ''
+        stars: user.stars,
+        wheelLastSpin: user.last_wheel_spin,
+        lastWheelText: user.last_wheel_text,
+        archive
       });
     }
 
-    if (method === 'POST') {
-      const { userId, stars, archive, wheelLastSpin, lastWheelText } = req.body || {};
-      if (!userId) {
-        return res.status(400).json({ error: 'userId is required' });
-      }
+    if (req.method === 'POST') {
+      const body = req.body || {};
+      const stars =
+        typeof body.stars === 'number' && !Number.isNaN(body.stars)
+          ? body.stars
+          : 0;
+      const archive = Array.isArray(body.archive) ? body.archive : [];
+      const wheelLastSpin = body.wheelLastSpin || null;
+      const lastWheelText = body.lastWheelText || null;
 
-      await pool.query(
-        `INSERT INTO user_state (user_id, stars, archive, wheel_last_spin, last_wheel_text, created_at, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4, $5, now(), now())
-         ON CONFLICT (user_id)
-         DO UPDATE SET
-           stars = EXCLUDED.stars,
-           archive = EXCLUDED.archive,
-           wheel_last_spin = EXCLUDED.wheel_last_spin,
-           last_wheel_text = EXCLUDED.last_wheel_text,
-           updated_at = now()`,
-        [
-          String(userId),
-          typeof stars === 'number' ? stars : 150,
-          JSON.stringify(archive || []),
-          wheelLastSpin || null,
-          lastWheelText || ''
-        ]
-      );
+      await sql`
+        INSERT INTO users (telegram_id, stars, last_wheel_spin, last_wheel_text)
+        VALUES (${userId}, ${stars}, ${wheelLastSpin}, ${lastWheelText})
+        ON CONFLICT (telegram_id)
+        DO UPDATE SET
+          stars = EXCLUDED.stars,
+          last_wheel_spin = EXCLUDED.last_wheel_spin,
+          last_wheel_text = EXCLUDED.last_wheel_text,
+          updated_at = NOW()
+      `;
+
+      await sql`DELETE FROM archive_entries WHERE telegram_id = ${userId}`;
+
+      for (const item of archive) {
+        const createdAt = item.createdAt
+          ? new Date(item.createdAt)
+          : new Date();
+        const data = buildArchiveData(item);
+
+        await sql`
+          INSERT INTO archive_entries
+            (telegram_id, type, spread_id, title, data, created_at)
+          VALUES (
+            ${userId},
+            ${item.type},
+            ${item.spreadId || null},
+            ${item.title || null},
+            ${data},
+            ${createdAt}
+          )
+        `;
+      }
 
       return res.status(200).json({ ok: true });
     }
 
-    res.setHeader('Allow', ['GET', 'POST']);
-    return res.status(405).end(`Method ${method} Not Allowed`);
+    res.setHeader('Allow', ['GET', POST, 'OPTIONS']);
+    return res.status(405).end('Method Not Allowed');
   } catch (err) {
-    console.error('API /state error:', err);
-    return res.status(500).json({ error: 'internal_error' });
+    console.error('STATE API ERROR', err);
+    return res
+      .status(500)
+      .json({ error: 'server_error', details: String(err) });
   }
-}
+};
