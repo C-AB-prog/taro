@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>ТАRO •</title>
+  <title>ТАRO</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="styles.css" />
@@ -22,25 +22,34 @@
       <header class="header">
         <div class="header-top">
           <div class="logo">
+            <div class="logo-icon">
+              <!-- оставляем форму, но без вращения в стилях -->
+              <div class="crystal"></div>
+              <div class="crystal-shine"></div>
+            </div>
             <div class="logo-text">
               <h1>ТАRO</h1>
+              <!-- без надписи "ГИПНОЗ" -->
+              <p class="logo-subtitle"></p>
             </div>
           </div>
-        </div>
-
-        <div id="stars-indicator" class="stars-indicator">
-          <i class="fas fa-star"></i>
-          0 ★
+          
+          <div class="user-status">
+            <div class="status-indicator">
+              <div class="status-dot"></div>
+              <span class="status-text">Баланс: 0 ★</span>
+            </div>
+          </div>
         </div>
 
         <!-- Навигация -->
         <nav class="navigation">
           <button class="nav-btn active" data-screen="home">
-            <i class="fas fa-house"></i>
+            <i class="fas fa-home-alt"></i>
             <span>Главная</span>
           </button>
           <button class="nav-btn" data-screen="spreads">
-            <i class="fas fa-star-of-david"></i>
+            <i class="fas fa-heart-circle-bolt"></i>
             <span>Расклады</span>
           </button>
           <button class="nav-btn" data-screen="deck">
@@ -69,7 +78,7 @@
                 <p class="section-subtitle">Сакральный шифр вашей судьбы</p>
               </div>
               <button class="refresh-btn" id="refresh-btn">
-                <i class="fas fa-rotate-right"></i>
+                <i class="fas fa-redo"></i>
               </button>
             </div>
 
@@ -101,11 +110,11 @@
             <div class="actions-grid">
               <div class="action-card" id="yes-no-btn">
                 <div class="action-icon sun">
-                  <i class="fas fa-scale-balanced"></i>
+                  <i class="fas fa-check"></i>
                 </div>
                 <h4>Да / Нет</h4>
-                <p>Вопрос с ответом «да» или «нет»</p>
-                <div class="action-price">25</div>
+                <p>Быстрый ответ на вопрос</p>
+                <div class="action-price">★ 25</div>
               </div>
 
               <div class="action-card" id="question-btn">
@@ -113,26 +122,60 @@
                   <i class="fas fa-moon"></i>
                 </div>
                 <h4>Спросить Вселенную</h4>
-                <p>Любовь, карьера, будущее и решения</p>
-                <div class="action-price">35</div>
+                <p>Ответ с трактовкой</p>
+                <div class="action-price">★ 35</div>
               </div>
             </div>
           </section>
 
           <!-- Магазин звёзд -->
-          <section class="magic-actions" id="stars-shop">
+          <section class="magic-actions">
             <div class="section-header">
               <div class="section-icon">
-                <i class="fas fa-coins"></i>
+                <i class="fas fa-star"></i>
               </div>
               <div>
-                <h3>Звёздный магазин</h3>
-                <p class="section-subtitle">Покупка внутриигровых ★ за звёзды Telegram</p>
+                <h3>Магазин звёзд</h3>
+                <p class="section-subtitle">Виртуальная валюта для раскладов</p>
               </div>
             </div>
 
-            <div class="actions-grid" id="stars-shop-grid">
-              <!-- Пакеты звёзд будут здесь -->
+            <div class="actions-grid">
+              <div class="action-card star-pack" data-stars="150">
+                <div class="action-icon tarot">
+                  <i class="fas fa-star"></i>
+                </div>
+                <h4>150 звёзд</h4>
+                <p>Пакет за 99 звёзд Telegram</p>
+                <div class="action-price">★ 150</div>
+              </div>
+
+              <div class="action-card star-pack" data-stars="350">
+                <div class="action-icon tarot">
+                  <i class="fas fa-star"></i>
+                </div>
+                <h4>350 звёзд</h4>
+                <p>Пакет за 199 звёзд Telegram</p>
+                <div class="action-price">★ 350</div>
+              </div>
+
+              <div class="action-card star-pack" data-stars="800">
+                <div class="action-icon tarot">
+                  <i class="fas fa-star"></i>
+                </div>
+                <h4>800 звёзд</h4>
+                <p>Пакет за 399 звёзд Telegram</p>
+                <div class="action-price">★ 800</div>
+              </div>
+
+              <div class="action-card star-pack" data-stars="1000">
+                <div class="action-icon tarot">
+                  <i class="fas fa-star"></i>
+                </div>
+                <h4>1000 звёзд</h4>
+                <p>Пакет за 899 звёзд Telegram</p>
+                <div class="action-price">★ 1000</div>
+              </div>
             </div>
           </section>
 
@@ -144,7 +187,7 @@
               </div>
               <div>
                 <h3>Колесо Фортуны</h3>
-                <p class="section-subtitle">Бесплатно, 1 раз в сутки • результат — карта из колоды</p>
+                <p class="section-subtitle">Результат — карта из колоды</p>
               </div>
             </div>
             
@@ -164,7 +207,7 @@
               
               <button class="spin-btn" id="spin-wheel-btn">
                 <i class="fas fa-play"></i>
-                <span>Крутить колесо (1 раз в сутки)</span>
+                <span>Крутить колесо</span>
                 <div class="spin-glow"></div>
               </button>
               
@@ -180,11 +223,11 @@
           <div class="spreads-container">
             <div class="section-header">
               <div class="section-icon">
-                <i class="fas fa-star-of-david"></i>
+                <i class="fas fa-cards"></i>
               </div>
               <div>
                 <h2>Расклады Таро</h2>
-                <p class="section-subtitle">Цена в ★, результат сохраняется в архив</p>
+                <p class="section-subtitle">Любовные и кармические сценарии</p>
               </div>
             </div>
 
@@ -203,7 +246,7 @@
               </div>
               <div>
                 <h2>Колода Таро</h2>
-                <p class="section-subtitle">12 Старших Арканов с оформлением</p>
+                <p class="section-subtitle">12 старших арканов (остальные в разработке)</p>
               </div>
             </div>
 
@@ -222,10 +265,13 @@
               </div>
               <div>
                 <h2>Архив</h2>
-                <p class="section-subtitle">Купленные расклады и результаты колеса</p>
+                <p class="section-subtitle">Сохранённые расклады и результаты колеса</p>
               </div>
             </div>
-            <div id="archive-list" class="archive-list"></div>
+
+            <div class="spreads-grid" id="archive-list">
+              <!-- Элементы архива -->
+            </div>
           </div>
         </section>
 
@@ -266,14 +312,14 @@
                   <span>Будущее</span>
                 </div>
                 <div class="question-type" data-type="decision">
-                  <i class="fas fa-scale-balanced"></i>
-                  <span>Решение</span>
+                  <i class="fas fa-crossroads"></i>
+                  <span>Выбор</span>
                 </div>
               </div>
               
               <button class="ask-btn" id="ask-question-btn">
                 <i class="fas fa-stars"></i>
-                <span>Спросить (★ 35)</span>
+                <span>Спросить за ★ 35</span>
               </button>
             </div>
           </div>
@@ -284,7 +330,7 @@
           <div class="modal-content">
             <button class="modal-close">&times;</button>
             <div class="modal-body" id="card-modal-body">
-              <!-- Контент карты будет здесь -->
+              <!-- Контент карты или архива будет здесь -->
             </div>
           </div>
         </div>
