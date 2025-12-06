@@ -83,58 +83,9 @@ const CARD_META = {
   }
 };
 
-// ===== РАСКЛАДЫ =====
-const TAROT_SPREADS = [
-  {
-    id: 'celtic-cross',
-    title: 'Кельтский крест',
-    description: 'Глубокий анализ ситуации: прошлое, настоящее, будущее и скрытые влияния.',
-    cardsCount: 10,
-    price: 120
-  },
-  {
-    id: 'love-daisy',
-    title: 'Ромашка любви',
-    description: 'Подходит для понимания чувств партнёра и динамики отношений.',
-    cardsCount: 6,
-    price: 80
-  },
-  {
-    id: 'love-triangle',
-    title: 'Любовный треугольник',
-    description: 'Сравнение двух вариантов развития отношений и возможных исходов.',
-    cardsCount: 9,
-    price: 100
-  },
-  {
-    id: 'time-frames',
-    title: 'Временные рамки',
-    description: 'Показывает, как будут развиваться события во времени: месяц, 3 месяца, полгода, год.',
-    cardsCount: 4,
-    price: 70
-  },
-  {
-    id: 'four-elements',
-    title: 'Четыре элемента',
-    description: 'Материя, эмоции, страсть и разум — четыре стороны ваших отношений.',
-    cardsCount: 4,
-    price: 70
-  },
-  {
-    id: 'fate-pendulum',
-    title: 'Маятник судьбы',
-    description: 'Показывает направление развития ситуации и ключевые события на пути.',
-    cardsCount: 5,
-    price: 75
-  },
-  {
-    id: 'karma-rel',
-    title: 'Карма отношений',
-    description: 'Кармические уроки, задачи и потенциал развития связи.',
-    cardsCount: 7,
-    price: 90
-  }
-];
+// ВАЖНО: расклады теперь берём из cards-data.js,
+// где уже объявлен const TAROT_SPREADS
+var SPREADS = (window.TAROT_SPREADS || []);
 
 const ASK_UNIVERSE_PRICE = 35;
 const YES_NO_PRICE = 25;
@@ -404,11 +355,11 @@ async function initApp() {
 // Telegram
 function initTelegram() {
   if (window.Telegram && window.Telegram.WebApp) {
-    const tg = window.Telegram.WebApp;
+    var tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
-    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+    var user = tg.initDataUnsafe && tg.initDataUnsafe.user;
     if (user) {
       AppState.user = {
         name: user.first_name || 'Пользователь',
@@ -633,7 +584,7 @@ function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
 
-  container.innerHTML = TAROT_SPREADS.map(
+  container.innerHTML = SPREADS.map(
     (spread) => `
     <div class="spread-item" data-id="${spread.id}">
       <div class="spread-header">
@@ -655,7 +606,7 @@ function initSpreads() {
   $$('.spread-item').forEach((item) => {
     item.addEventListener('click', async function () {
       const spreadId = this.getAttribute('data-id');
-      const spread = TAROT_SPREADS.find((s) => s.id === spreadId);
+      const spread = SPREADS.find((s) => s.id === spreadId);
       if (!spread) return;
 
       const price = spread.price;
@@ -927,7 +878,7 @@ function initButtons() {
     });
   }
 
-  const yesNoBtn = $('#daily-spread-btn'); // у тебя эта кнопка под Да/Нет
+  const yesNoBtn = $('#daily-spread-btn'); // кнопка Да/Нет
   if (yesNoBtn) {
     yesNoBtn.addEventListener('click', handleYesNoQuick);
   }
@@ -1165,7 +1116,8 @@ function hideLoader() {
   }
 }
 
-function showToast(message, type = 'info') {
+function showToast(message, type) {
+  if (!type) type = 'info';
   const toast = $('#toast');
   if (!toast) return;
 
@@ -1187,6 +1139,6 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
 
-  // Страховка: даже если что-то упадёт, через 8 секунд лоадер уйдёт
+  // страховка — если что-то совсем рухнуло, всё равно уберём лоадер
   setTimeout(hideLoader, 8000);
 });
