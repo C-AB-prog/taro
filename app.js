@@ -1,35 +1,145 @@
-// ===== УТИЛИТЫ И КОНСТАНТЫ =====
+// ===== ОСНОВНОЙ ФУНКЦИОНАЛ =====
+
+// Утилиты
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const API_BASE = '/api'; // сюда повесишь Vercel + Neon
-
-// цены сервисов (внутриигровые звёзды)
-const YES_NO_PRICE = 25;
-const QUESTION_PRICE = 35;
-
-// Пакеты покупки звёзд (tgStars — звёзды Telegram, amount — внутриигровые ★)
-const STAR_PACKS = [
-  { id: 'pack_99',  tgStars: 99,  amount: 150 },
-  { id: 'pack_199', tgStars: 199, amount: 350 },
-  { id: 'pack_399', tgStars: 399, amount: 800 },
-  { id: 'pack_899', tgStars: 899, amount: 1000 }
-];
-
-// ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
+// Состояние приложения
 const AppState = {
   user: null,
-  stars: 0,
+  userId: null,
   currentCard: null,
-  questionType: 'love',
   archive: [],
-  wheelLastSpin: null,
+  isLoading: false,
+  userStars: 0,
+  questionType: 'love',
+  lastWheelSpin: null,
   lastWheelText: '',
-  lastAnswers: {},
-  isNewUser: false
+  stateLoaded: false,
+  wheelTimerId: null
 };
 
-let wheelTimerId = null;
+// ===== МЕТА-ИНФО ДЛЯ КАРТ (для общего вывода расклада) =====
+const CARD_META = {
+  0: { // Шут
+    score: 1,
+    tags: ['change', 'inner'],
+    vibe: 'новый цикл, спонтанность и желание попробовать'
+  },
+  1: { // Маг
+    score: 2,
+    tags: ['career', 'inner'],
+    vibe: 'сильная воля, умение влиять на события и создавать результат'
+  },
+  2: { // Верховная Жрица
+    score: 1,
+    tags: ['inner', 'relationships'],
+    vibe: 'интуиция, скрытые мотивы и внутреннее знание'
+  },
+  3: { // Императрица
+    score: 2,
+    tags: ['relationships', 'material'],
+    vibe: 'изобилие, притяжение, забота и созидание'
+  },
+  4: { // Император
+    score: 1,
+    tags: ['career', 'material'],
+    vibe: 'структура, ответственность и контроль над ситуацией'
+  },
+  5: { // Иерофант
+    score: 1,
+    tags: ['inner', 'relationships'],
+    vibe: 'традиции, обучение и опора на проверенные подходы'
+  },
+  6: { // Влюблённые
+    score: 2,
+    tags: ['relationships'],
+    vibe: 'выбор сердцем, партнёрство и важные решения в отношениях'
+  },
+  7: { // Колесница
+    score: 2,
+    tags: ['career', 'change'],
+    vibe: 'движение вперёд, победа и контроль над направлением'
+  },
+  8: { // Сила
+    score: 2,
+    tags: ['inner', 'relationships'],
+    vibe: 'внутренняя устойчивость, мягкая сила и терпение'
+  },
+  9: { // Отшельник
+    score: 0,
+    tags: ['inner'],
+    vibe: 'самоанализ, пауза и поиск собственных ответов'
+  },
+  10: { // Колесо Фортуны
+    score: 2,
+    tags: ['change', 'fate'],
+    vibe: 'смена этапа, судьбоносные события и обновление цикла'
+  },
+  11: { // Справедливость
+    score: 0,
+    tags: ['karma', 'material'],
+    vibe: 'равновесие, честность и необходимость принимать последствия'
+  }
+};
+
+// Расклады
+const TAROT_SPREADS = [
+  {
+    id: 'celtic-cross',
+    title: 'Кельтский крест',
+    description: 'Глубокий анализ ситуации: прошлое, настоящее, будущее и скрытые влияния.',
+    cardsCount: 10,
+    price: 120
+  },
+  {
+    id: 'love-daisy',
+    title: 'Ромашка любви',
+    description: 'Подходит для понимания чувств партнёра и динамики отношений.',
+    cardsCount: 6,
+    price: 80
+  },
+  {
+    id: 'love-triangle',
+    title: 'Любовный треугольник',
+    description: 'Сравнение двух вариантов развития отношений и возможных исходов.',
+    cardsCount: 9,
+    price: 100
+  },
+  {
+    id: 'time-frames',
+    title: 'Временные рамки',
+    description: 'Показывает, как будут развиваться события во времени: месяц, 3 месяца, полгода, год.',
+    cardsCount: 4,
+    price: 70
+  },
+  {
+    id: 'four-elements',
+    title: 'Четыре элемента',
+    description: 'Материя, эмоции, страсть и разум — четыре стороны ваших отношений.',
+    cardsCount: 4,
+    price: 70
+  },
+  {
+    id: 'fate-pendulum',
+    title: 'Маятник судьбы',
+    description: 'Показывает направление развития ситуации и ключевые события на пути.',
+    cardsCount: 5,
+    price: 75
+  },
+  {
+    id: 'karma-rel',
+    title: 'Карма отношений',
+    description: 'Кармические уроки, задачи и потенциал развития связи.',
+    cardsCount: 7,
+    price: 90
+  }
+];
+
+const ASK_UNIVERSE_PRICE = 35;
+const YES_NO_PRICE = 25;
+const NEW_USER_STARS = 150;
+const WHEEL_COOLDOWN_HOURS = 24;
 
 // ===== АНИМАЦИИ =====
 class MysticAnimations {
@@ -39,6 +149,7 @@ class MysticAnimations {
     this.initButtonEffects();
   }
 
+  // Частицы в фоне
   initParticles() {
     const container = $('.particles');
     if (!container) return;
@@ -61,7 +172,9 @@ class MysticAnimations {
     }
   }
 
+  // Анимации карт
   initCardAnimations() {
+    // Анимация при наведении на карту
     document.addEventListener('mouseover', (e) => {
       const card = e.target.closest('.card-image-container, .deck-card');
       if (card) {
@@ -79,19 +192,24 @@ class MysticAnimations {
     });
   }
 
+  // Эффекты кнопок
   initButtonEffects() {
     const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card');
+    
     buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => this.createRippleEffect(e));
+      btn.addEventListener('click', (e) => {
+        this.createRippleEffect(e);
+      });
     });
   }
 
   createRippleEffect(event) {
     const btn = event.currentTarget;
     const ripple = document.createElement('span');
+    
     const diameter = Math.max(btn.clientWidth, btn.clientHeight);
     const radius = diameter / 2;
-
+    
     ripple.style.cssText = `
       position: absolute;
       border-radius: 50%;
@@ -104,117 +222,205 @@ class MysticAnimations {
       left: ${event.clientX - btn.getBoundingClientRect().left - radius}px;
       top: ${event.clientY - btn.getBoundingClientRect().top - radius}px;
     `;
-
+    
     btn.style.position = 'relative';
     btn.style.overflow = 'hidden';
     btn.appendChild(ripple);
+    
     setTimeout(() => ripple.remove(), 600);
   }
 }
 
-// ===== TELEGRAM =====
-function initTelegram() {
-  if (window.Telegram?.WebApp) {
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
+// ===== ОБЩИЙ ВЫВОД РАСКЛАДА =====
+function buildSpreadSummary(spread, cards) {
+  if (!cards || !cards.length) {
+    return 'Расклад получился нейтральным, дополнительная трактовка пока недоступна.';
+  }
 
-    const user = tg.initDataUnsafe?.user;
-    if (user) {
-      AppState.user = {
-        id: user.id,
-        name: user.first_name || 'Пользователь',
-        username: user.username || null
-      };
+  let totalScore = 0;
+  const tagCounter = {};
+  const vibes = [];
+
+  cards.forEach((entry) => {
+    const id = typeof entry.cardId === 'number'
+      ? entry.cardId
+      : typeof entry.id === 'number'
+        ? entry.id
+        : null;
+
+    const meta = id != null ? CARD_META[id] : null;
+    if (!meta) return;
+
+    totalScore += meta.score;
+    meta.tags.forEach(tag => {
+      tagCounter[tag] = (tagCounter[tag] || 0) + 1;
+    });
+    vibes.push(meta.vibe);
+  });
+
+  const avg = totalScore / cards.length;
+
+  let tone;
+  if (avg >= 1) {
+    tone = 'в целом расклад выглядит поддерживающим и ресурсным';
+  } else if (avg <= -0.5) {
+    tone = 'в целом расклад указывает на напряжённый этап и необходимость аккуратности';
+  } else {
+    tone = 'в целом расклад сбалансированный, без ярко выраженного плюса или минуса';
+  }
+
+  let topTag = null;
+  let topCount = 0;
+  Object.entries(tagCounter).forEach(([tag, count]) => {
+    if (count > topCount) {
+      topCount = count;
+      topTag = tag;
     }
+  });
+
+  let themeText = '';
+  switch (topTag) {
+    case 'relationships':
+      themeText = 'Главная тема — сфера отношений, взаимодействие с людьми и эмоциональные связи.';
+      break;
+    case 'career':
+      themeText = 'Главная тема — реализация, работа, цели и внешние достижения.';
+      break;
+    case 'inner':
+      themeText = 'Главная тема — внутренние процессы, интуиция и личное взросление.';
+      break;
+    case 'change':
+      themeText = 'Расклад подчёркивает период перемен и смену этапа в вашей жизни.';
+      break;
+    case 'material':
+      themeText = 'Сильный акцент идёт на материальную сферу, стабильность и вопросы ресурса.';
+      break;
+    case 'karma':
+    case 'fate':
+      themeText = 'В раскладе заметен кармический оттенок: важные уроки и судьбоносные события.';
+      break;
+    default:
+      themeText = 'Карты затрагивают несколько сфер одновременно, без доминирования одной темы.';
   }
 
-  // Для тестов в браузере без Telegram
-  if (!AppState.user) {
-    AppState.user = { id: 123, name: 'Дмитрий', username: 'dmitry_tarot' };
-  }
+  const vibesSample = vibes.slice(0, 3).join('; ');
+
+  return [
+    `В целом ${tone}.`,
+    themeText,
+    `По ощущениям карт это про: ${vibesSample}.`,
+    `Сейчас важно отнестись к происходящему осознанно и использовать сильные стороны расклада, а не зацикливаться на возможных сложностях.`
+  ].join(' ');
 }
 
-// ===== API СОСТОЯНИЯ (БД / NEON) =====
-async function loadStateFromServer() {
-  if (!AppState.user?.id) return;
+// ===== РАБОТА С БЭКОМ (Neon через /api/state) =====
+async function loadUserStateFromServer() {
+  const userId = AppState.userId;
+  if (!userId) {
+    AppState.userStars = NEW_USER_STARS;
+    AppState.archive = [];
+    AppState.lastWheelSpin = null;
+    AppState.lastWheelText = '';
+    AppState.stateLoaded = true;
+    return;
+  }
 
   try {
-    const res = await fetch(`${API_BASE}/state?userId=${encodeURIComponent(AppState.user.id)}`);
-    if (!res.ok) {
-      // Новый пользователь
-      AppState.stars = 150;
+    const res = await fetch(`/api/state?userId=${encodeURIComponent(String(userId))}`);
+    if (res.status === 404) {
+      AppState.userStars = NEW_USER_STARS;
       AppState.archive = [];
-      AppState.wheelLastSpin = null;
+      AppState.lastWheelSpin = null;
       AppState.lastWheelText = '';
-      AppState.isNewUser = true;
+      AppState.stateLoaded = true;
       return;
     }
 
-    const data = await res.json();
-    AppState.stars = typeof data.stars === 'number' ? data.stars : 150;
-    AppState.archive = Array.isArray(data.archive) ? data.archive : [];
-    AppState.wheelLastSpin = data.wheelLastSpin || null;
-    AppState.lastWheelText = data.lastWheelText || '';
-
-    if (data.stars == null) {
-      AppState.isNewUser = true;
-      AppState.stars = 150;
+    if (!res.ok) {
+      throw new Error('Failed to load state');
     }
-  } catch (e) {
-    console.warn('Не удалось загрузить состояние с сервера, работаем в памяти', e);
-    AppState.stars = 150;
+
+    const data = await res.json();
+
+    AppState.userStars = typeof data.stars === 'number' ? data.stars : NEW_USER_STARS;
+    AppState.archive = Array.isArray(data.archive) ? data.archive : [];
+    AppState.lastWheelSpin = data.wheelLastSpin ? new Date(data.wheelLastSpin) : null;
+    AppState.lastWheelText = data.lastWheelText || '';
+    AppState.stateLoaded = true;
+  } catch (err) {
+    console.error('Ошибка загрузки состояния:', err);
+    AppState.userStars = NEW_USER_STARS;
     AppState.archive = [];
-    AppState.wheelLastSpin = null;
+    AppState.lastWheelSpin = null;
     AppState.lastWheelText = '';
-    AppState.isNewUser = true;
+    AppState.stateLoaded = true;
   }
 }
 
-async function saveStateToServer() {
-  if (!AppState.user?.id) return;
+async function saveUserStateToServer() {
+  const userId = AppState.userId;
+  if (!userId) return;
+
+  const payload = {
+    userId: String(userId),
+    stars: AppState.userStars,
+    archive: AppState.archive,
+    wheelLastSpin: AppState.lastWheelSpin ? AppState.lastWheelSpin.toISOString() : null,
+    lastWheelText: AppState.lastWheelText || ''
+  };
 
   try {
-    await fetch(`${API_BASE}/state`, {
+    await fetch('/api/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: AppState.user.id,
-        stars: AppState.stars,
-        archive: AppState.archive,
-        wheelLastSpin: AppState.wheelLastSpin,
-        lastWheelText: AppState.lastWheelText
-      })
+      body: JSON.stringify(payload)
     });
-  } catch (e) {
-    console.warn('Не удалось сохранить состояние на сервере', e);
+  } catch (err) {
+    console.error('Ошибка сохранения состояния:', err);
   }
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ =====
+// ===== ОСНОВНЫЕ ФУНКЦИИ =====
+
+// Инициализация
 async function initApp() {
   showLoader();
-
+  
   try {
+    // Инициализация Telegram
     initTelegram();
-    await loadStateFromServer();
 
+    // Скрываем/перенастраиваем "Дмитрий онлайн"
+    cleanupHeaderStatus();
+
+    // Запуск анимаций
     window.mysticAnimations = new MysticAnimations();
-
+    
+    // Загрузка состояния пользователя из БД
+    await loadUserStateFromServer();
+    updateStarsDisplay();
+    
+    // Загрузка карты дня
     await loadCardOfDay();
+    
+    // Инициализация колеса фортуны
     initFortuneWheel();
+    
+    // Инициализация раскладов
     initSpreads();
+    
+    // Инициализация колоды
     initDeck();
+    
+    // Инициализация кнопок
     initButtons();
+    
+    // Инициализация навигации
     initNavigation();
-    initStarShop();
+    
+    // Добавляем CSS для анимаций
     addAnimationStyles();
-    updateStarsUI();
-    renderArchive();
-
-    if (AppState.isNewUser) {
-      showToast('На ваш баланс начислено 150 ★', 'success');
-    }
+    
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
@@ -223,25 +429,56 @@ async function initApp() {
   }
 }
 
-// ===== БАЛАНС =====
-function updateStarsUI() {
-  const el = $('#stars-indicator');
-  if (!el) return;
-  el.innerHTML = `<i class="fas fa-star"></i> ${AppState.stars} ★`;
+// Инициализация Telegram
+function initTelegram() {
+  if (window.Telegram?.WebApp) {
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    
+    const user = tg.initDataUnsafe?.user;
+    if (user) {
+      AppState.user = {
+        name: user.first_name || 'Пользователь',
+        username: user.username || '',
+      };
+      AppState.userId = user.id; // важно для синхронизации
+    }
+  }
+  
+  // Для дебага вне Telegram
+  if (!AppState.userId) {
+    AppState.user = { name: 'Гость', username: 'debug_user' };
+    AppState.userId = 'debug-user-1';
+  }
 }
 
-// ===== КАРТА ДНЯ =====
+// Перенастройка хедера (убираем "Дмитрий онлайн" и показываем баланс)
+function cleanupHeaderStatus() {
+  const statusText = document.querySelector('.status-text');
+  const statusDot = document.querySelector('.status-dot');
+  if (statusDot) {
+    statusDot.classList.remove('online');
+  }
+  if (statusText) {
+    statusText.textContent = 'Баланс: ...';
+  }
+}
+
+// Загрузка карты дня
 async function loadCardOfDay() {
   const container = $('#card-day-content');
   if (!container || !window.TAROT_CARDS?.length) return;
-
-  const today = new Date().getDate();
-  const cardIndex = today % Math.min(window.TAROT_CARDS.length, 12);
+  
+  const today = new Date();
+  const day = today.getDate();
+  const cardIndex = day % Math.min(window.TAROT_CARDS.length, 12);
   const card = window.TAROT_CARDS[cardIndex];
+  
   if (!card) return;
-
+  
   AppState.currentCard = card;
-
+  
   container.innerHTML = `
     <div class="card-display">
       <div class="card-image-container">
@@ -249,7 +486,7 @@ async function loadCardOfDay() {
              alt="${card.name}" 
              class="card-image"
              onload="this.classList.add('loaded')"
-             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjN0E0N0ZGIi8+PC9zdmc+'">
+             onerror="this.src='cards/card-back.png'">
       </div>
       <div class="card-info">
         <div class="card-name-row">
@@ -260,7 +497,7 @@ async function loadCardOfDay() {
         <div class="card-description">${card.description || 'Описание карты'}</div>
         <div class="card-date">
           <i class="fas fa-calendar-alt"></i>
-          ${new Date().toLocaleDateString('ru-RU', { 
+          ${today.toLocaleDateString('ru-RU', { 
             weekday: 'long', 
             day: 'numeric', 
             month: 'long' 
@@ -271,76 +508,15 @@ async function loadCardOfDay() {
   `;
 }
 
-// ===== КОЛЕСО ФОРТУНЫ =====
-function getWheelRemainingMs() {
-  if (!AppState.wheelLastSpin) return 0;
-  const last = new Date(AppState.wheelLastSpin);
-  if (Number.isNaN(last.getTime())) return 0;
-  const now = new Date();
-  const diff = 24 * 60 * 60 * 1000 - (now - last);
-  return diff > 0 ? diff : 0;
-}
-
-function canSpinToday() {
-  return getWheelRemainingMs() <= 0;
-}
-
-function updateWheelUI() {
-  const spinBtn = $('#spin-wheel-btn');
-  const resultEl = $('#wheel-result');
-  if (!spinBtn || !resultEl) return;
-
-  if (wheelTimerId) {
-    clearInterval(wheelTimerId);
-    wheelTimerId = null;
-  }
-
-  const remaining = getWheelRemainingMs();
-
-  if (remaining <= 0) {
-    spinBtn.disabled = false;
-    spinBtn.innerHTML = `
-      <i class="fas fa-play"></i>
-      <span>Крутить колесо (1 раз в сутки)</span>
-      <div class="spin-glow"></div>
-    `;
-    if (AppState.lastWheelText) {
-      resultEl.innerHTML = AppState.lastWheelText;
-    } else {
-      resultEl.textContent = 'Колесо ещё не крутили сегодня';
-    }
-  } else {
-    spinBtn.disabled = true;
-    spinBtn.innerHTML = `
-      <i class="fas fa-ban"></i>
-      <span>До следующего кручения...</span>
-      <div class="spin-glow"></div>
-    `;
-
-    const setText = () => {
-      const ms = getWheelRemainingMs();
-      if (ms <= 0) {
-        updateWheelUI();
-        return;
-      }
-      const totalSeconds = Math.floor(ms / 1000);
-      const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-      const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-      const s = String(totalSeconds % 60).padStart(2, '0');
-      resultEl.textContent = `Следующее вращение через ${h}:${m}:${s}`;
-    };
-
-    setText();
-    wheelTimerId = setInterval(setText, 1000);
-  }
-}
-
+// Колесо фортуны (бесплатно раз в сутки, выдаёт карту + совет)
 function initFortuneWheel() {
   const wheel = $('#fortune-wheel');
   const spinBtn = $('#spin-wheel-btn');
   const resultEl = $('#wheel-result');
+  
   if (!wheel || !spinBtn || !resultEl) return;
-
+  
+  // Создаём визуальные секции (чисто для анимации)
   wheel.innerHTML = '';
   for (let i = 0; i < 12; i++) {
     const section = document.createElement('div');
@@ -354,23 +530,70 @@ function initFortuneWheel() {
     wheel.appendChild(section);
   }
 
-  spinBtn.addEventListener('click', () => {
+  const canSpinNow = () => {
+    if (!AppState.lastWheelSpin) return true;
+    const now = Date.now();
+    const diffMs = now - AppState.lastWheelSpin.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    return diffHours >= WHEEL_COOLDOWN_HOURS;
+  };
+
+  const formatRemaining = () => {
+    if (!AppState.lastWheelSpin) return '';
+    const now = Date.now();
+    const next = AppState.lastWheelSpin.getTime() + WHEEL_COOLDOWN_HOURS * 60 * 60 * 1000;
+    const diffMs = next - now;
+    if (diffMs <= 0) return 'доступно прямо сейчас';
+
+    const totalSec = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  };
+
+  const updateWheelUI = () => {
+    if (canSpinNow()) {
+      spinBtn.disabled = false;
+      spinBtn.innerHTML = '<i class="fas fa-play"></i><span>Крутить колесо</span><div class="spin-glow"></div>';
+      resultEl.innerHTML = AppState.lastWheelText
+        ? AppState.lastWheelText
+        : 'Колесо готово к вращению. В день доступна одна попытка.';
+    } else {
+      spinBtn.disabled = true;
+      const timerText = formatRemaining();
+      const baseText = AppState.lastWheelText || 'Вы уже крутили колесо сегодня.';
+      resultEl.innerHTML = `
+        <div style="text-align:center;">
+          <div style="margin-bottom:8px;">${baseText}</div>
+          <div style="font-size:13px; color:var(--text-light);">
+            Следующее вращение через ${timerText}
+          </div>
+        </div>
+      `;
+    }
+  };
+
+  // Стартуем таймер обратного отсчёта
+  if (AppState.wheelTimerId) {
+    clearInterval(AppState.wheelTimerId);
+  }
+  AppState.wheelTimerId = setInterval(updateWheelUI, 1000);
+  updateWheelUI();
+
+  spinBtn.addEventListener('click', async () => {
+    if (!canSpinNow()) {
+      showToast('Колесо будет доступно чуть позже', 'info');
+      return;
+    }
     if (wheel.classList.contains('spinning')) return;
 
-    if (!canSpinToday()) {
-      showToast('Колесо уже крутили сегодня. Возвращайтесь завтра ✨', 'error');
-      return;
-    }
-
-    if (!window.TAROT_CARDS || !window.TAROT_CARDS.length) {
-      showToast('Колода ещё не загружена', 'error');
-      return;
-    }
-
+    // Запускаем анимацию
     wheel.classList.add('spinning');
     spinBtn.disabled = true;
-    spinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span><div class="spin-glow"></div>';
-    resultEl.textContent = 'Колесо вращается...';
+    spinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Крутится...</span>';
 
     const spins = 5 + Math.floor(Math.random() * 4);
     const extraDegrees = Math.floor(Math.random() * 360);
@@ -382,155 +605,121 @@ function initFortuneWheel() {
     setTimeout(async () => {
       wheel.classList.remove('spinning');
 
-      const cards = window.TAROT_CARDS;
-      const card = cards[Math.floor(Math.random() * cards.length)];
+      // Выбираем случайную карту из колоды
+      const allCards = window.TAROT_CARDS || [];
+      if (!allCards.length) {
+        resultEl.textContent = 'Колода не найдена.';
+        spinBtn.disabled = false;
+        return;
+      }
+      const idx = Math.floor(Math.random() * Math.min(allCards.length, 12));
+      const card = allCards[idx];
 
-      const textHtml = `
-        <div>
-          <div style="margin-bottom: 6px;">Колесо выбрало карту:</div>
-          <div style="font-weight: 700;">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
+      const now = new Date();
+      AppState.lastWheelSpin = now;
+
+      const wheelTextHtml = `
+        <div style="text-align:center;">
+          <div style="font-size:16px; margin-bottom:6px;">Выпала карта:</div>
+          <div style="font-size:20px; font-weight:700; color:var(--primary); margin-bottom:4px;">
+            ${card.name}${card.roman ? ` (${card.roman})` : ''}
+          </div>
+          <div style="font-size:14px; color:var(--secondary); margin-bottom:8px;">
+            ${card.keyword || ''}
+          </div>
+          <div style="font-size:13px; color:var(--text); margin-bottom:8px;">
+            ${card.description || ''}
+          </div>
+          <div style="font-size:13px; color:var(--text-light); font-style:italic;">
+            Совет: ${card.advice || 'Доверьтесь процессу и наблюдайте за знаками.'}
+          </div>
         </div>
       `;
-      resultEl.innerHTML = textHtml;
-      AppState.lastWheelText = textHtml;
 
-      showCardModal(card, { source: 'wheel' });
+      AppState.lastWheelText = wheelTextHtml;
 
+      // Сохраняем в архив
       const entry = {
         type: 'wheel',
-        createdAt: new Date().toISOString(),
+        createdAt: now.toISOString(),
         card: {
           id: card.id,
           name: card.name,
           roman: card.roman,
           keyword: card.keyword,
+          description: card.description,
           advice: card.advice,
           image: card.image
         }
       };
-      AppState.archive.unshift(entry);
-      AppState.wheelLastSpin = new Date().toISOString();
-      await saveStateToServer();
-      renderArchiveIfOpen();
+      AppState.archive = [entry, ...(AppState.archive || [])];
 
-      showToast('Колесо сделало выбор ✨', 'success');
+      await saveUserStateToServer();
+
       updateWheelUI();
+      showToast('Результат колеса сохранён в архив', 'success');
     }, 3000);
   });
-
-  updateWheelUI();
 }
 
-// ===== РАСКЛАДЫ =====
+// Инициализация раскладов
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
 
-  const spreads = [
-    {
-      id: 'celtic-cross',
-      title: 'Кельтский крест',
-      description: 'Классический расклад на 10 карт: причины ситуации, скрытые влияния, развитие и вероятный исход.',
-      price: 120,
-      cardsCount: 10,
-      time: '30–40 мин'
-    },
-    {
-      id: 'love-daisy',
-      title: 'Ромашка любви',
-      description: '6 карт, чтобы увидеть истинные чувства, мотивы и перспективы отношений.',
-      price: 80,
-      cardsCount: 6,
-      time: '15–20 мин'
-    },
-    {
-      id: 'love-triangle',
-      title: 'Любовный треугольник',
-      description: '9 карт для анализа двух вариантов отношений и выбора лучшего пути.',
-      price: 110,
-      cardsCount: 9,
-      time: '25–30 мин'
-    },
-    {
-      id: 'time-frames',
-      title: 'Временные рамки',
-      description: '4 карты: ближайший месяц, 3 месяца, полгода и год развития ситуации.',
-      price: 70,
-      cardsCount: 4,
-      time: '10–15 мин'
-    },
-    {
-      id: 'four-elements',
-      title: 'Четыре элемента',
-      description: 'Материальное, эмоции, страсть и интеллектуальная связь в отношениях.',
-      price: 75,
-      cardsCount: 4,
-      time: '15–20 мин'
-    },
-    {
-      id: 'fate-pendulum',
-      title: 'Маятник судьбы',
-      description: '5 карт: текущее положение, основной путь, альтернативный путь, ключевые события и итог.',
-      price: 90,
-      cardsCount: 5,
-      time: '20–25 мин'
-    },
-    {
-      id: 'relationship-karma',
-      title: 'Карма отношений',
-      description: '7 карт о кармических задачах, уроках прошлого, препятствиях и возможностях союза.',
-      price: 100,
-      cardsCount: 7,
-      time: '20–30 мин'
-    }
-  ];
-
-  container.innerHTML = spreads.map(spread => `
+  container.innerHTML = TAROT_SPREADS.map(spread => `
     <div class="spread-item" data-id="${spread.id}">
       <div class="spread-header">
-        <div class="spread-title">${spread.title}</div>
-        <div class="spread-price">${spread.price}</div>
+        <div class="spread-title">
+          <i class="fas fa-heart-circle-bolt" style="margin-right:6px;"></i>
+          ${spread.title}
+        </div>
+        <div class="spread-price">★ ${spread.price}</div>
       </div>
       <div class="spread-description">${spread.description}</div>
       <div class="spread-meta">
-        <span><i class="fas fa-cards-blank"></i> ${spread.cardsCount} карт</span>
-        <span><i class="fas fa-clock"></i> ${spread.time}</span>
+        <span><i class="fas fa-cards"></i> ${spread.cardsCount} карт</span>
+        <span><i class="fas fa-brain"></i> Общий анализ расклада включён</span>
       </div>
     </div>
   `).join('');
 
   $$('.spread-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const id = item.dataset.id;
-      const spread = spreads.find(s => s.id === id);
+    item.addEventListener('click', async function() {
+      const spreadId = this.dataset.id;
+      const spread = TAROT_SPREADS.find(s => s.id === spreadId);
       if (!spread) return;
 
-      if (!window.TAROT_CARDS || !window.TAROT_CARDS.length) {
-        showToast('Колода ещё не загружена', 'error');
+      const price = spread.price;
+      const title = spread.title;
+
+      if (AppState.userStars < price) {
+        showToast(`Недостаточно звёзд. Нужно ${price} ★`, 'error');
         return;
       }
 
-      if (AppState.stars < spread.price) {
-        showToast(`Недостаточно звёзд. Нужно ${spread.price} ★. Пополните баланс в магазине.`, 'error');
+      if (!confirm(`Купить расклад "${title}" за ${price} ★?`)) {
         return;
       }
 
-      const ok = confirm(`Купить расклад «${spread.title}» за ${spread.price} ★?`);
-      if (!ok) return;
+      AppState.userStars -= price;
+      updateStarsDisplay();
 
-      AppState.stars -= spread.price;
-      updateStarsUI();
-
+      // Делаем расклад
       const result = performSpread(spread);
-      AppState.archive.unshift(result);
-      await saveStateToServer();
-      renderArchiveIfOpen();
+
+      // Сохраняем в архив (новые сверху)
+      AppState.archive = [result, ...(AppState.archive || [])];
+
+      await saveUserStateToServer();
+
       showSpreadResultModal(result);
-      showToast(`Расклад «${spread.title}» добавлен в архив`, 'success');
+      showToast(`Расклад "${title}" добавлен в архив`, 'success');
     });
   });
 }
 
+// Генерация расклада
 function performSpread(spread) {
   const allCards = window.TAROT_CARDS || [];
   const cardsCopy = [...allCards];
@@ -554,15 +743,19 @@ function performSpread(spread) {
     });
   }
 
+  const summary = buildSpreadSummary(spread, used);
+
   return {
     type: 'spread',
     spreadId: spread.id,
     title: spread.title,
     createdAt: new Date().toISOString(),
-    cards: used
+    cards: used,
+    summary
   };
 }
 
+// Показ результата расклада в модалке
 function showSpreadResultModal(result) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -576,70 +769,49 @@ function showSpreadResultModal(result) {
     minute: '2-digit'
   });
 
-  const cardsHtml = (result.cards || []).map((entryCard, index) => {
-    let fullCard = entryCard || {};
-
-    if (window.TAROT_CARDS) {
-      const id =
-        typeof entryCard === 'number'
-          ? entryCard
-          : typeof entryCard.cardId === 'number'
-          ? entryCard.cardId
-          : typeof entryCard.id === 'number'
-          ? entryCard.id
-          : null;
-
-      if (id !== null) {
-        const fromDeck = window.TAROT_CARDS.find(c => c.id === id);
-        if (fromDeck) {
-          fullCard = { ...fromDeck, ...entryCard };
-        }
-      }
-    }
-
-    const hasImage =
-      typeof fullCard.id === 'number' &&
-      fullCard.id < 12 &&
-      !!fullCard.image;
-
-    return `
-      <div style="margin-bottom: 18px; text-align:left;">
-        <div style="font-size:13px; color:var(--text-light); margin-bottom:4px;">
-          Карта ${index + 1}
+  const cardsHtml = (result.cards || []).map((card, index) => `
+    <div style="
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      background: rgba(248,245,255,0.9);
+    ">
+      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index + 1}.</div>
+      <div style="flex:1;">
+        <div style="font-weight:600; color:var(--primary); margin-bottom:2px;">
+          ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
-        <div style="display:flex; gap:12px; align-items:flex-start;">
-          ${hasImage ? `
-            <img src="${fullCard.image}" 
-                 alt="${fullCard.name || 'Карта'}" 
-                 style="width:70px; height:110px; object-fit:cover; border-radius:10px;"
-                 onerror="this.style.display='none'">
-          ` : ''}
-          <div>
-            <div style="font-weight:600; color:var(--primary); margin-bottom:4px;">
-              ${fullCard.name || 'Карта'}
-              ${fullCard.roman ? ` (${fullCard.roman})` : ''}
-            </div>
-            <div style="font-size:13px; color:var(--secondary); margin-bottom:6px;">
-              ${fullCard.keyword || ''}
-            </div>
-            <div style="font-size:13px; color:var(--text); margin-bottom:6px;">
-              ${fullCard.description || ''}
-            </div>
-            <div style="font-size:12px; color:var(--text-light);">
-              Совет: ${fullCard.advice || 'Совет будет добавлен позже.'}
-            </div>
-          </div>
-        </div>
+        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">${card.keyword || ''}</div>
+        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">${card.description || ''}</div>
+        <div style="font-size:11px; color:var(--text-light); font-style:italic;">Совет: ${card.advice || ''}</div>
       </div>
-    `;
-  }).join('');
+    </div>
+  `).join('');
 
   body.innerHTML = `
     <div style="text-align:left;">
       <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
-      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+      <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
         ${dateStr}
       </div>
+
+      ${result.summary ? `
+        <div style="
+          background:rgba(138,43,226,0.06);
+          border-radius:12px;
+          padding:12px 14px;
+          font-size:13px;
+          color:var(--text);
+          margin-bottom:16px;
+        ">
+          <b>Общий вывод:</b> ${result.summary}
+        </div>
+      ` : ''}
+
       ${cardsHtml}
     </div>
   `;
@@ -647,436 +819,338 @@ function showSpreadResultModal(result) {
   openModal(modal);
 }
 
-// ===== КОЛОДА =====
+// Инициализация колоды
 function initDeck() {
   const container = $('#deck-grid');
   if (!container || !window.TAROT_CARDS?.length) return;
-
+  
   const cards = window.TAROT_CARDS.slice(0, 12);
-
+  
   container.innerHTML = cards.map((card, index) => `
     <div class="deck-card" data-id="${card.id}" style="--card-index: ${index};">
       <img src="${card.image}" 
            alt="${card.name}" 
            class="deck-card-image"
            onload="this.classList.add('loaded')"
-           onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjN0E0N0ZGIi8+PC9zdmc+'">
+           onerror="this.src='cards/card-back.png'">
       <div class="deck-card-info">
         <div class="deck-card-name">${card.name}</div>
         <div class="deck-card-roman">${card.roman || ''}</div>
       </div>
     </div>
   `).join('');
-
-  $$('.deck-card').forEach(cardEl => {
-    cardEl.addEventListener('click', () => {
-      const cardId = parseInt(cardEl.dataset.id, 10);
+  
+  $$('.deck-card').forEach(card => {
+    card.addEventListener('click', function() {
+      const cardId = parseInt(this.dataset.id, 10);
       const cardData = window.TAROT_CARDS.find(c => c.id === cardId);
-      if (cardData) showCardModal(cardData, { source: 'deck' });
+      if (cardData) {
+        showCardModal(cardData);
+      }
     });
   });
 }
 
-// ===== МОДАЛКИ =====
-function showCardModal(card, options = {}) {
+// Показать модальное окно карты
+function showCardModal(card) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
+  
   if (!modal || !body) return;
-
+  
   body.innerHTML = `
-    <div style="text-align:center;">
+    <div style="text-align: center;">
       <img src="${card.image}" 
            alt="${card.name}" 
-           style="width:200px; height:300px; object-fit:cover; border-radius:12px; margin-bottom:20px;"
-           onerror="this.style.display='none'">
-      <h3 style="font-size:24px; color:var(--primary); margin-bottom:8px;">${card.name}</h3>
-      ${card.roman ? `<div style="color: var(--text-light); font-size:16px; margin-bottom:12px;">${card.roman}</div>` : ''}
-      <div style="background: var(--primary); color:white; padding:8px 16px; border-radius:20px; display:inline-block; margin-bottom:16px;">
+           style="width: 200px; height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;"
+           onerror="this.src='cards/card-back.png'">
+      <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 8px;">${card.name}</h3>
+      ${card.roman ? `<div style="color: var(--text-light); font-size: 16px; margin-bottom: 12px;">${card.roman}</div>` : ''}
+      <div style="background: var(--primary); color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-bottom: 16px;">
         ${card.keyword || ''}
       </div>
-      <p style="color:var(--text); line-height:1.6; margin-bottom:16px;">${card.description || ''}</p>
-      <div style="font-size:14px; color:var(--text-light);">
-        <i class="fas fa-lightbulb"></i> Совет: ${card.advice || 'Совет будет добавлен позже.'}
+      <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${card.description || ''}</p>
+      <div style="font-size: 14px; color: var(--text-light); font-style: italic;">
+        Совет: ${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}
       </div>
     </div>
   `;
-
+  
   openModal(modal);
 }
 
-function showAnswerModal(question, answer, typeLabel) {
-  const modal = $('#card-modal');
-  const body = $('#card-modal-body');
-  if (!modal || !body) return;
-
-  const typeText = {
-    love: 'Любовь и отношения',
-    career: 'Карьера и дело',
-    future: 'Будущее',
-    decision: 'Выбор и решения'
-  }[typeLabel] || 'Ответ Вселенной';
-
-  body.innerHTML = `
-    <div style="text-align:center; padding:20px;">
-      <div class="modal-icon" style="margin:0 auto 20px;">
-        <i class="fas fa-stars"></i>
-      </div>
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${typeText}</h3>
-      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
-        Ваш вопрос:
-      </div>
-      <div style="background:rgba(138,43,226,0.06); padding:12px; border-radius:12px; margin-bottom:20px; font-style:italic;">
-        "${question}"
-      </div>
-      <div style="font-size:18px; color:var(--primary); font-weight:600; margin-bottom:16px;">
-        ${answer}
-      </div>
-      <div style="font-size:14px; color:var(--text-light);">
-        <i class="fas fa-lightbulb"></i> Дальнейшая трактовка зависит от контекста ситуации.
-      </div>
-    </div>
-  `;
-
-  openModal(modal);
-}
-
-function showYesNoModal(question, result) {
-  const modal = $('#card-modal');
-  const body = $('#card-modal-body');
-  if (!modal || !body) return;
-
-  body.innerHTML = `
-    <div style="text-align:center; padding:20px;">
-      <div class="modal-icon" style="margin:0 auto 20px;">
-        <i class="fas fa-scale-balanced"></i>
-      </div>
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">Ответ «Да / Нет»</h3>
-      <div style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
-        Ваш вопрос:
-      </div>
-      <div style="background:rgba(138,43,226,0.06); padding:12px; border-radius:12px; margin-bottom:20px; font-style:italic;">
-        "${question}"
-      </div>
-      <div style="font-size:22px; font-weight:700; margin-bottom:8px;">
-        ${result.answer}
-      </div>
-      <div style="font-size:14px; color:var(--text-light);">
-        ${result.comment}
-      </div>
-    </div>
-  `;
-
-  openModal(modal);
-}
-
+// Универсальное открытие модалки
 function openModal(modal) {
   modal.classList.add('active');
+  
   const closeBtn = modal.querySelector('.modal-close');
-
   if (closeBtn) {
     closeBtn.onclick = () => modal.classList.remove('active');
   }
-
+  
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
   };
 }
 
-// ===== КНОПКИ И ЛОГИКА ВОПРОСОВ =====
+// Инициализация кнопок
 function initButtons() {
+  // Обновление карты дня
   $('#refresh-btn')?.addEventListener('click', async () => {
+    if (AppState.isLoading) return;
+    
+    AppState.isLoading = true;
     const btn = $('#refresh-btn');
-    if (!btn) return;
     btn.classList.add('refreshing');
+    
     await loadCardOfDay();
     showToast('Карта дня обновлена', 'success');
-    setTimeout(() => btn.classList.remove('refreshing'), 800);
+    
+    setTimeout(() => {
+      btn.classList.remove('refreshing');
+      AppState.isLoading = false;
+    }, 1000);
   });
-
+  
+  // Открытие модалки вопроса "Спросить Вселенную"
   $('#question-btn')?.addEventListener('click', () => {
     openQuestionModal();
   });
-
-  $('#yes-no-btn')?.addEventListener('click', () => {
-    handleYesNo();
-  });
-
+  
+  // Типы вопросов
   $$('.question-type').forEach(type => {
-    type.addEventListener('click', function () {
+    type.addEventListener('click', function() {
       $$('.question-type').forEach(t => t.classList.remove('active'));
       this.classList.add('active');
       AppState.questionType = this.dataset.type;
     });
   });
-
+  
+  // Отправка вопроса
   $('#ask-question-btn')?.addEventListener('click', askQuestion);
-
+  
+  // Счётчик символов
   const questionInput = $('#question-input');
   const charCount = $('#char-count');
-
+  
   if (questionInput && charCount) {
-    questionInput.addEventListener('input', function () {
+    questionInput.addEventListener('input', function() {
       charCount.textContent = this.value.length;
     });
   }
+  
+  // Да/Нет — быстрый ответ (используем первую карточку "Расклад дня" как кнопку Да/Нет)
+  $('#daily-spread-btn')?.addEventListener('click', handleYesNoQuick);
+  
+  // Остальные действия пока в разработке — просто тосты
+  $('#tarot-reading')?.addEventListener('click', () => {
+    showToast('Функция в разработке', 'info');
+  });
+  
+  $('#fortune-telling')?.addEventListener('click', () => {
+    showToast('Функция в разработке', 'info');
+  });
 }
 
+// Открыть модалку вопроса
 function openQuestionModal() {
   const modal = $('#question-modal');
   if (!modal) return;
+  
   modal.classList.add('active');
-
+  
   const closeBtn = modal.querySelector('.modal-close');
-  if (closeBtn) closeBtn.onclick = () => modal.classList.remove('active');
-
+  if (closeBtn) {
+    closeBtn.onclick = () => modal.classList.remove('active');
+  }
+  
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
   };
 }
 
-const ANSWERS_BY_TYPE = {
-  love: [
-    'Ваши чувства взаимны, но важно говорить честно и открыто.',
-    'Связь между вами сильна, но ей не хватает внимания и заботы.',
-    'Эта история ещё не раскрыта до конца — не торопитесь с выводами.',
-    'Сейчас время полюбить прежде всего себя, а потом уже партнёра.',
-    'Отношения имеют потенциал, если вы оба готовы меняться.'
-  ],
-  career: [
-    'Перед вами открываются новые возможности, не бойтесь проявить инициативу.',
-    'Стабильность важнее резких движений — действуйте постепенно.',
-    'Настало время заявить о себе и своих достижениях.',
-    'Инвестиция в обучение сейчас принесёт серьёзные результаты позже.',
-    'Стоит пересмотреть окружение на работе — не все искренни.'
-  ],
-  future: [
-    'В ближайшее время ожидаются мягкие, но важные перемены.',
-    'Сценарий будущего ещё не зафиксирован — многое зависит от вашего выбора.',
-    'Вас ждёт период роста и расширения горизонтов.',
-    'После череды испытаний наступит спокойный и тёплый этап.',
-    'Одна неожиданная возможность сможет сильно изменить ваш путь.'
-  ],
-  decision: [
-    'Лучший выбор — тот, который оставляет чувство внутреннего спокойствия.',
-    'Интуиция уже знает ответ, попробуйте немного замолчать и услышать её.',
-    'Соберите ещё немного фактов, и решение проявится само.',
-    'Если приходится выбирать из двух зол — возможно, есть третий вариант.',
-    'Смелое решение сейчас избавит от долгого сожаления потом.'
-  ]
-};
+// Вопрос Да/Нет (быстрый)
+async function handleYesNoQuick() {
+  const question = prompt('Задайте свой вопрос (Да/Нет):');
+  if (!question || question.trim().length < 3) {
+    showToast('Вопрос должен быть осмысленным', 'error');
+    return;
+  }
 
+  if (AppState.userStars < YES_NO_PRICE) {
+    showToast(`Недостаточно звёзд. Нужно ${YES_NO_PRICE} ★`, 'error');
+    return;
+  }
+
+  AppState.userStars -= YES_NO_PRICE;
+  updateStarsDisplay();
+
+  const answers = [
+    'Однозначно да',
+    'Скорее да, чем нет',
+    'Скорее нет, чем да',
+    'Однозначно нет',
+    'Ответ не ясен, ситуация ещё формируется'
+  ];
+  const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+
+  // Сохраняем в архив как простой текстовый ответ
+  const entry = {
+    type: 'yesno',
+    createdAt: new Date().toISOString(),
+    question: question.trim(),
+    answer: randomAnswer
+  };
+  AppState.archive = [entry, ...(AppState.archive || [])];
+
+  await saveUserStateToServer();
+
+  showAnswerModal(question, randomAnswer);
+}
+
+// Задать вопрос "Спросить Вселенную"
 async function askQuestion() {
   const input = $('#question-input');
   if (!input) return;
-
+  
   const question = input.value.trim();
   if (!question) {
     showToast('Введите ваш вопрос', 'error');
     return;
   }
-
+  
   if (question.length < 5) {
     showToast('Вопрос должен быть не менее 5 символов', 'error');
     return;
   }
-
-  if (AppState.stars < QUESTION_PRICE) {
-    showToast(`Недостаточно звёзд. Нужно ${QUESTION_PRICE} ★.`, 'error');
+  
+  const price = ASK_UNIVERSE_PRICE;
+  if (AppState.userStars < price) {
+    showToast(`Недостаточно звёзд. Нужно ${price} ★`, 'error');
     return;
   }
-
-  const type = AppState.questionType || 'love';
-  const pool = ANSWERS_BY_TYPE[type] || ANSWERS_BY_TYPE.love;
-  if (!pool || !pool.length) {
-    showToast('Ответы для этой категории пока не настроены', 'error');
-    return;
-  }
-
-  let idx = Math.floor(Math.random() * pool.length);
-  const lastIdx = AppState.lastAnswers[type];
-  if (pool.length > 1 && idx === lastIdx) {
-    idx = (idx + 1) % pool.length;
-  }
-  AppState.lastAnswers[type] = idx;
-
-  AppState.stars -= QUESTION_PRICE;
-  updateStarsUI();
-  await saveStateToServer();
-
-  const answer = pool[idx];
-
-  $('#question-modal')?.classList.remove('active');
-  showToast('Вселенная формулирует ответ...', 'info');
-
-  setTimeout(() => {
-    showAnswerModal(question, answer, type);
-  }, 800);
-
-  input.value = '';
-  $('#char-count').textContent = '0';
+  
+  AppState.userStars -= price;
+  updateStarsDisplay();
+  await saveUserStateToServer();
+  
+  $('#question-modal').classList.remove('active');
+  showToast('🌀 Вселенная слышит ваш вопрос...', 'info');
+  
+  setTimeout(async () => {
+    const answers = {
+      love: [
+        'Ваши отношения проходят важный этап честности и откровенности.',
+        'Сейчас главное — не торопить события и дать чувствам раскрыться.',
+        'Истинные чувства проявятся через поступки, а не слова.',
+        'Связь между вами не случайна, но её исход зависит от взаимных шагов.'
+      ],
+      career: [
+        'Новый шанс в работе появится, если вы позволите себе выйти за рамки привычного.',
+        'Ваши навыки недооценены — но это ненадолго.',
+        'Сейчас период подготовки, а не рывка. Используйте его для обучения.',
+        'Решающий поворот в карьере связан с человеком, с которым вы уже знакомы.'
+      ],
+      future: [
+        'Будущее пластично, и сейчас вы закладываете важный фундамент.',
+        'Некоторые события ускорятся, если вы решитесь на перемены внутри себя.',
+        'Ожидается мягкий, постепенный поворот в нужную сторону.',
+        'То, чего вы боитесь, может оказаться опорой, а не угрозой.'
+      ],
+      decision: [
+        'Ваше тело уже знает ответ — прислушайтесь к ощущениям.',
+        'Если выбор даётся слишком тяжело, возможно, оба варианта требуют доработки.',
+        'Правильное решение — то, после которого вы чувствуете не страх, а облегчение.',
+        'Ситуация сама покажет приоритет, если вы позволите ей развиваться без давления.'
+      ]
+    };
+    
+    const typeAnswers = answers[AppState.questionType] || answers.love;
+    const randomAnswer = typeAnswers[Math.floor(Math.random() * typeAnswers.length)];
+    
+    // Сохраняем в архив
+    const entry = {
+      type: 'universe',
+      createdAt: new Date().toISOString(),
+      question,
+      category: AppState.questionType,
+      answer: randomAnswer
+    };
+    AppState.archive = [entry, ...(AppState.archive || [])];
+    await saveUserStateToServer();
+    
+    showAnswerModal(question, randomAnswer);
+    
+    input.value = '';
+    $('#char-count').textContent = '0';
+    
+  }, 2000);
 }
 
-async function handleYesNo() {
-  const question = prompt('Задайте вопрос, на который можно ответить «да» или «нет»:');
-  if (!question || !question.trim()) {
-    return;
-  }
-
-  if (question.trim().length < 3) {
-    showToast('Вопрос слишком короткий', 'error');
-    return;
-  }
-
-  if (AppState.stars < YES_NO_PRICE) {
-    showToast(`Недостаточно звёзд. Нужно ${YES_NO_PRICE} ★.`, 'error');
-    return;
-  }
-
-  AppState.stars -= YES_NO_PRICE;
-  updateStarsUI();
-  await saveStateToServer();
-
-  const variants = [
-    { answer: 'ДА',         comment: 'Энергии благоприятны, но действуйте осознанно.' },
-    { answer: 'НЕТ',        comment: 'Сейчас лучше повременить и пересмотреть план.' },
-    { answer: 'СКОРЕЕ ДА',  comment: 'Шансы высоки, но есть нюансы, на которые стоит обратить внимание.' },
-    { answer: 'СКОРЕЕ НЕТ', comment: 'Условия пока не созрели, попробуйте изменить подход.' }
-  ];
-
-  const choice = variants[Math.floor(Math.random() * variants.length)];
-  showYesNoModal(question.trim(), choice);
+// Показать ответ
+function showAnswerModal(question, answer) {
+  const modal = $('#card-modal');
+  const body = $('#card-modal-body');
+  
+  if (!modal || !body) return;
+  
+  body.innerHTML = `
+    <div style="text-align: center; padding: 20px;">
+      <div class="modal-icon" style="margin: 0 auto 20px;">
+        <i class="fas fa-stars"></i>
+      </div>
+      <h3 style="font-size: 20px; color: var(--primary); margin-bottom: 16px;">Ответ Вселенной</h3>
+      
+      <div style="background: rgba(138, 43, 226, 0.1); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+        <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
+        <div style="font-style: italic; color: var(--text);">"${question}"</div>
+      </div>
+      
+      <div style="font-size: 18px; color: var(--primary); font-weight: 600; margin-bottom: 16px;">
+        ${answer}
+      </div>
+      
+      <div style="font-size: 14px; color: var(--text-light);">
+        <i class="fas fa-lightbulb"></i> Совет: зафиксируйте это сообщение и возвращайтесь к нему в течение недели.
+      </div>
+    </div>
+  `;
+  
+  openModal(modal);
 }
 
-// ===== НАВИГАЦИЯ =====
+// Навигация
 function initNavigation() {
   $$('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
+    btn.addEventListener('click', function() {
       const screen = this.dataset.screen;
-
+      
       $$('.nav-btn').forEach(b => b.classList.remove('active'));
       $$('.screen').forEach(s => s.classList.remove('active'));
-
+      
       this.classList.add('active');
-      const el = $(`#${screen}-screen`);
-      if (el) el.classList.add('active');
-
-      if (screen === 'archive') {
-        renderArchive();
+      
+      const target = document.querySelector(`#${screen}-screen`);
+      if (target) {
+        target.classList.add('active');
       }
     });
   });
 }
 
-// ===== АРХИВ =====
-function renderArchive() {
-  const container = $('#archive-list');
-  if (!container) return;
-
-  if (!AppState.archive.length) {
-    container.innerHTML = `<p class="section-subtitle">Пока здесь пусто. Сделайте расклад или прокрутите колесо фортуны.</p>`;
-    return;
-  }
-
-  container.innerHTML = AppState.archive.map((entry, index) => {
-    const date = new Date(entry.createdAt);
-    const dateStr = date.toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-
-    if (entry.type === 'spread') {
-      return `
-        <div class="archive-item" data-index="${index}">
-          <div class="archive-item-header">
-            <div class="archive-item-title">${entry.title}</div>
-            <div class="archive-item-type">Расклад</div>
-          </div>
-          <div class="archive-item-meta">
-            ${dateStr} • ${entry.cards?.length || 0} карт
-          </div>
-        </div>
-      `;
-    }
-
-    if (entry.type === 'wheel') {
-      return `
-        <div class="archive-item" data-index="${index}">
-          <div class="archive-item-header">
-            <div class="archive-item-title">Колесо фортуны — ${entry.card?.name || 'карта'}</div>
-            <div class="archive-item-type">Колесо</div>
-          </div>
-          <div class="archive-item-meta">
-            ${dateStr}
-          </div>
-        </div>
-      `;
-    }
-
-    return '';
-  }).join('');
-
-  $$('.archive-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const idx = parseInt(item.dataset.index, 10);
-      const entry = AppState.archive[idx];
-      if (!entry) return;
-
-      if (entry.type === 'spread') {
-        showSpreadResultModal(entry);
-      } else if (entry.type === 'wheel' && entry.card) {
-        showCardModal(entry.card, { source: 'wheel-archive' });
-      }
-    });
-  });
-}
-
-function renderArchiveIfOpen() {
-  const archiveScreen = $('#archive-screen');
-  if (archiveScreen && archiveScreen.classList.contains('active')) {
-    renderArchive();
+// Обновление отображения звёзд
+function updateStarsDisplay() {
+  const statusText = document.querySelector('.status-text');
+  if (statusText) {
+    statusText.textContent = `Баланс: ${AppState.userStars} ★`;
   }
 }
 
-// ===== МАГАЗИН ЗВЁЗД =====
-function initStarShop() {
-  const container = $('#stars-shop-grid');
-  if (!container) return;
-
-  container.innerHTML = STAR_PACKS.map(pack => `
-    <div class="action-card star-pack" data-id="${pack.id}">
-      <div class="action-icon tarot">
-        <i class="fas fa-coins"></i>
-      </div>
-      <h4>Пакет ${pack.amount} ★</h4>
-      <p>${pack.tgStars} звёзд Telegram → ${pack.amount} внутриигровых</p>
-      <div class="action-price">${pack.amount}</div>
-    </div>
-  `).join('');
-
-  $$('.star-pack').forEach(card => {
-    card.addEventListener('click', async () => {
-      const id = card.dataset.id;
-      const pack = STAR_PACKS.find(p => p.id === id);
-      if (!pack) return;
-
-      const ok = confirm(
-        `Купить пакет ${pack.amount} ★ за ${pack.tgStars} звёзд Telegram?\n` +
-        'Интеграция оплаты будет добавлена позже, сейчас звёзды начисляются для теста.'
-      );
-      if (!ok) return;
-
-      AppState.stars += pack.amount;
-      updateStarsUI();
-      await saveStateToServer();
-      showToast(`Начислено ${pack.amount} ★`, 'success');
-    });
-  });
-}
-
-// ===== ДОП. СТИЛИ АНИМАЦИЙ =====
+// Добавление CSS для анимаций
 function addAnimationStyles() {
   const style = document.createElement('style');
   style.textContent = `
@@ -1116,7 +1190,8 @@ function addAnimationStyles() {
   document.head.appendChild(style);
 }
 
-// ===== ЛОАДЕР / ТОСТЫ =====
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+
 function showLoader() {
   const loader = $('#app-loader');
   if (loader) {
@@ -1138,20 +1213,20 @@ function hideLoader() {
 function showToast(message, type = 'info') {
   const toast = $('#toast');
   if (!toast) return;
-
-  toast.style.background = type === 'error' ? 'var(--danger)'
-    : type === 'success' ? 'var(--success)'
-    : 'var(--primary)';
-
+  
+  toast.style.background = type === 'error' ? 'var(--danger)' : 
+                          type === 'success' ? 'var(--success)' : 
+                          'var(--primary)';
+  
   toast.textContent = message;
   toast.classList.add('show');
-
+  
   setTimeout(() => {
     toast.classList.remove('show');
   }, 3000);
 }
 
-// ===== ЗАПУСК =====
+// Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
