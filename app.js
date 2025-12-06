@@ -17,7 +17,6 @@ const AppState = {
   wheelTimerId: null
 };
 
-// базовые константы
 const ASK_UNIVERSE_PRICE = 35;
 const YES_NO_PRICE = 25;
 const NEW_USER_STARS = 150;
@@ -39,7 +38,7 @@ const CARD_META = {
   11: { score: 0, tags: ['karma', 'material'], vibe: 'равновесие, честность и необходимость принимать последствия' }
 };
 
-// ===== РАСКЛАДЫ ИЗ cards-data.js (приводим к единому виду) =====
+// ===== РАСКЛАДЫ ИЗ cards-data.js в едином формате =====
 var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
   id: s.id,
   title: s.title,
@@ -54,7 +53,7 @@ var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
       : Number(s.cards) || s.requiredCards || 0
 }));
 
-// ===== КЛАСС АНИМАЦИЙ =====
+// ===== АНИМАЦИИ =====
 class MysticAnimations {
   constructor() {
     this.initParticles();
@@ -218,7 +217,7 @@ function buildSpreadSummary(spread, cards) {
   ].join(' ');
 }
 
-// ===== РАБОТА С БЭКОМ (/api/state) =====
+// ===== БЭК: ЗАГРУЗКА / СОХРАНЕНИЕ =====
 async function loadUserStateFromServer() {
   const userId = AppState.userId;
   if (!userId) {
@@ -331,7 +330,6 @@ function initTelegram() {
     }
   }
 
-  // режим отладки вне телеги
   if (!AppState.userId) {
     AppState.user = { name: 'Гость', username: 'debug_user' };
     AppState.userId = 999999; // подходит под BIGINT
@@ -339,10 +337,8 @@ function initTelegram() {
 }
 
 function cleanupHeaderStatus() {
-  const statusDot = $('.status-dot');
-  if (statusDot) statusDot.classList.remove('online');
-  const statusText = $('.status-text');
-  if (statusText) statusText.textContent = 'Баланс: ...';
+  const amountEl = $('#stars-amount');
+  if (amountEl) amountEl.textContent = '0';
 }
 
 // ===== КАРТА ДНЯ =====
@@ -394,7 +390,6 @@ function initFortuneWheel() {
   const resultEl = $('#wheel-result');
   if (!wheel || !spinBtn || !resultEl) return;
 
-  // секции колеса (цвета задаются в CSS фоном круга, здесь просто делим)
   wheel.innerHTML = '';
   for (let i = 0; i < 12; i++) {
     const section = document.createElement('div');
@@ -500,6 +495,10 @@ function initFortuneWheel() {
 
       const wheelTextHtml = `
         <div style="text-align:center;">
+          <img src="${card.image}"
+               alt="${card.name}"
+               style="width:120px;height:180px;object-fit:cover;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);margin-bottom:12px;"
+               onerror="this.src='cards/card-back.png'">
           <div style="font-size:16px; margin-bottom:6px;">Выпала карта:</div>
           <div style="font-size:20px; font-weight:700; color:var(--primary); margin-bottom:4px;">
             ${card.name}${card.roman ? ` (${card.roman})` : ''}
@@ -555,7 +554,7 @@ function initSpreads() {
           <i class="fas fa-heart-circle-bolt" style="margin-right:6px;"></i>
           ${spread.title}
         </div>
-        <div class="spread-price">★ ${spread.price}</div>
+        <div class="spread-price">${spread.price}</div>
       </div>
       <div class="spread-description">${spread.description}</div>
       <div class="spread-meta">
@@ -580,7 +579,13 @@ function initSpreads() {
         return;
       }
 
-      if (!confirm(`Купить расклад "${title}" за ${price} ★?`)) return;
+      const ok = await openConfirmModal({
+        title: 'Покупка расклада',
+        message: `Купить расклад "${title}" за ${price} ★?`,
+        okText: 'Купить',
+        cancelText: 'Отмена'
+      });
+      if (!ok) return;
 
       AppState.userStars -= price;
       updateStarsDisplay();
@@ -658,21 +663,20 @@ function showSpreadResultModal(result) {
       align-items: flex-start;
       background: rgba(248,245,255,0.9);
     ">
-      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index +
-        1}.</div>
+      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index + 1}.</div>
       <div style="flex:1;">
         <div style="font-weight:600; color:var(--primary); margin-bottom:2px;">
           ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
-        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">${
-          card.keyword || ''
-        }</div>
-        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">${
-          card.description || ''
-        }</div>
-        <div style="font-size:11px; color:var(--text-light); font-style:italic;">Совет: ${
-          card.advice || ''
-        }</div>
+        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">
+          ${card.keyword || ''}
+        </div>
+        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">
+          ${card.description || ''}
+        </div>
+        <div style="font-size:11px; color:var(--text-light); font-style:italic;">
+          Совет: ${card.advice || ''}
+        </div>
       </div>
     </div>
   `
@@ -681,9 +685,7 @@ function showSpreadResultModal(result) {
 
   body.innerHTML = `
     <div style="text-align:left;">
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${
-        result.title
-      }</h3>
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
       <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
         ${dateStr}
       </div>
@@ -795,7 +797,24 @@ function openModal(modal) {
 
 // ===== КНОПКИ =====
 function initButtons() {
-  // обновить карту дня
+  // плюсик в балансе -> магазин
+  const openShopBtn = $('#open-shop-btn');
+  if (openShopBtn) {
+    openShopBtn.addEventListener('click', () => {
+      const homeBtn = document.querySelector('.nav-btn[data-screen="home"]');
+      if (homeBtn && !homeBtn.classList.contains('active')) {
+        homeBtn.click();
+      }
+      setTimeout(() => {
+        const shopSection = $('#shop-section');
+        if (shopSection) {
+          shopSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    });
+  }
+
+  // обновление карты дня
   const refreshBtn = $('#refresh-btn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
@@ -846,7 +865,16 @@ function initButtons() {
   // Да / Нет
   const yesNoBtn = $('#yes-no-btn');
   if (yesNoBtn) {
-    yesNoBtn.addEventListener('click', handleYesNoQuick);
+    yesNoBtn.addEventListener('click', () => openYesNoModal());
+  }
+
+  // модалка Да/Нет — счётчик
+  const yesnoInput = $('#yesno-input');
+  const yesnoChar = $('#yesno-char-count');
+  if (yesnoInput && yesnoChar) {
+    yesnoInput.addEventListener('input', function () {
+      yesnoChar.textContent = this.value.length;
+    });
   }
 
   // Магазин звёзд (пока без реальной оплаты)
@@ -855,7 +883,13 @@ function initButtons() {
       const amount = Number(this.dataset.stars) || 0;
       if (!amount) return;
 
-      if (!confirm(`Начислить ${amount} внутриигровых звёзд?`)) return;
+      const ok = await openConfirmModal({
+        title: 'Покупка звёзд',
+        message: `Начислить ${amount} внутриигровых звёзд?`,
+        okText: 'Начислить',
+        cancelText: 'Отмена'
+      });
+      if (!ok) return;
 
       AppState.userStars += amount;
       updateStarsDisplay();
@@ -882,43 +916,68 @@ function openQuestionModal() {
   };
 }
 
-async function handleYesNoQuick() {
-  const question = prompt('Задайте свой вопрос (Да/Нет):');
-  if (!question || question.trim().length < 3) {
-    showToast('Вопрос должен быть осмысленным', 'error');
-    return;
+async function openYesNoModal() {
+  const modal = $('#yesno-modal');
+  if (!modal) return;
+
+  const input = $('#yesno-input');
+  const counter = $('#yesno-char-count');
+  if (input) input.value = '';
+  if (counter) counter.textContent = '0';
+
+  modal.classList.add('active');
+
+  const closeBtn = modal.querySelector('.modal-close');
+  if (closeBtn) {
+    closeBtn.onclick = () => modal.classList.remove('active');
   }
 
-  if (AppState.userStars < YES_NO_PRICE) {
-    showToast('Недостаточно звёзд. Нужно ' + YES_NO_PRICE + ' ★', 'error');
-    return;
-  }
-
-  AppState.userStars -= YES_NO_PRICE;
-  updateStarsDisplay();
-
-  const answers = [
-    'Однозначно да',
-    'Скорее да, чем нет',
-    'Скорее нет, чем да',
-    'Однозначно нет',
-    'Ответ не ясен, ситуация ещё формируется'
-  ];
-  const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
-
-  const entry = {
-    type: 'yesno',
-    createdAt: new Date().toISOString(),
-    title: 'Да / Нет',
-    question: question.trim(),
-    answer: randomAnswer
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.remove('active');
   };
-  AppState.archive = [entry, ...(AppState.archive || [])];
 
-  await saveUserStateToServer();
-  renderArchive();
+  const submitBtn = $('#yesno-submit-btn');
+  if (!submitBtn) return;
 
-  showAnswerModal(question, randomAnswer);
+  submitBtn.onclick = async () => {
+    const question = (input && input.value.trim()) || '';
+    if (question.length < 3) {
+      showToast('Вопрос должен быть осмысленным', 'error');
+      return;
+    }
+
+    if (AppState.userStars < YES_NO_PRICE) {
+      showToast('Недостаточно звёзд. Нужно ' + YES_NO_PRICE + ' ★', 'error');
+      return;
+    }
+
+    AppState.userStars -= YES_NO_PRICE;
+    updateStarsDisplay();
+
+    const answers = [
+      'Однозначно да.',
+      'Скорее да, чем нет.',
+      'Скорее нет, чем да.',
+      'Однозначно нет.',
+      'Ответ не ясен, ситуация ещё формируется.'
+    ];
+    const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+
+    const entry = {
+      type: 'yesno',
+      createdAt: new Date().toISOString(),
+      title: 'Да / Нет',
+      question,
+      answer: randomAnswer
+    };
+    AppState.archive = [entry, ...(AppState.archive || [])];
+
+    await saveUserStateToServer();
+    renderArchive();
+
+    modal.classList.remove('active');
+    showAnswerModal(question, randomAnswer);
+  };
 }
 
 async function askQuestion() {
@@ -1168,6 +1227,63 @@ function showArchiveEntryModal(entry) {
   openModal(modal);
 }
 
+// ===== МОДАЛКА-ПОДТВЕРЖДЕНИЕ =====
+function openConfirmModal({ title, message, okText = 'ОК', cancelText = 'Отмена' }) {
+  const modal = $('#confirm-modal');
+  const titleEl = $('#confirm-title');
+  const msgEl = $('#confirm-message');
+  const okBtn = $('#confirm-ok-btn');
+  const cancelBtn = $('#confirm-cancel-btn');
+  const closeBtn = modal ? modal.querySelector('.modal-close') : null;
+
+  if (!modal || !titleEl || !msgEl || !okBtn || !cancelBtn) {
+    const ok = window.confirm(message);
+    return Promise.resolve(ok);
+  }
+
+  titleEl.textContent = title || 'Подтверждение';
+  msgEl.textContent = message || '';
+
+  modal.classList.add('active');
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      modal.classList.remove('active');
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      if (closeBtn) closeBtn.onclick = null;
+      modal.onclick = null;
+    };
+
+    okBtn.textContent = okText;
+    cancelBtn.textContent = cancelText;
+
+    okBtn.onclick = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    cancelBtn.onclick = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    if (closeBtn) {
+      closeBtn.onclick = () => {
+        cleanup();
+        resolve(false);
+      };
+    }
+
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        cleanup();
+        resolve(false);
+      }
+    };
+  });
+}
+
 // ===== НАВИГАЦИЯ =====
 function initNavigation() {
   $$('.nav-btn').forEach((btn) => {
@@ -1184,15 +1300,15 @@ function initNavigation() {
   });
 }
 
-// ===== ОБНОВЛЕНИЕ БАЛАНСА =====
+// ===== БАЛАНС =====
 function updateStarsDisplay() {
-  const statusText = document.querySelector('.status-text');
-  if (statusText) {
-    statusText.textContent = 'Баланс: ' + AppState.userStars + ' ★';
+  const amountEl = $('#stars-amount');
+  if (amountEl) {
+    amountEl.textContent = AppState.userStars;
   }
 }
 
-// ===== ДОПОЛНИТЕЛЬНЫЕ СТИЛИ АНИМАЦИЙ =====
+// ===== ДОП. СТИЛИ АНИМАЦИЙ =====
 function addAnimationStyles() {
   const style = document.createElement('style');
   style.textContent = `
@@ -1255,6 +1371,5 @@ function showToast(message, type) {
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
-  // страховка на случай фатальной ошибки
   setTimeout(hideLoader, 8000);
 });
