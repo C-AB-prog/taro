@@ -377,59 +377,6 @@ async function loadCardOfDay() {
       </div>
     </div>
   `;
-
-  // Делаем карту кликабельной
-  const cardImageContainer = $('#card-day-image');
-  if (cardImageContainer) {
-    cardImageContainer.addEventListener('click', () => {
-      showFullCardModal(card);
-    });
-  }
-}
-
-// ===== ПОЛНЫЙ ПРОСМОТР КАРТЫ ДНЯ =====
-function showFullCardModal(card) {
-  const modal = $('#card-modal');
-  const body = $('#card-modal-body');
-  if (!modal || !body) return;
-
-  const today = new Date();
-  
-  body.innerHTML = `
-    <div class="full-card-content">
-      <img src="${card.image}"
-           alt="${card.name}"
-           class="full-card-image"
-           onerror="this.src='cards/card-back.png'">
-      
-      <div class="full-card-name">${card.name}</div>
-      ${card.roman ? `<div class="full-card-roman">${card.roman}</div>` : ''}
-      
-      <div class="full-card-keyword">${card.keyword || ''}</div>
-      
-      <div class="full-card-description">
-        ${card.description || 'Описание карты'}
-      </div>
-      
-      <div class="full-card-date">
-        <i class="fas fa-calendar-alt"></i>
-        ${today.toLocaleDateString('ru-RU', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long'
-        })}
-      </div>
-      
-      ${card.advice ? `
-        <div class="full-card-advice">
-          <i class="fas fa-lightbulb"></i>
-          <strong>Совет дня:</strong> ${card.advice}
-        </div>
-      ` : ''}
-    </div>
-  `;
-
-  openModal(modal);
 }
 
 // ===== КОЛЕСО ФОРТУНЫ =====
@@ -701,29 +648,19 @@ function showSpreadResultModal(result) {
   const cardsHtml = (result.cards || [])
     .map(
       (card, index) => `
-    <div style="
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      padding: 10px 12px;
-      margin-bottom: 10px;
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      background: rgba(248,245,255,0.9);
-    ">
-      <div style="font-size:13px; color:var(--text-light); min-width:20px;">${index + 1}.</div>
-      <div style="flex:1;">
-        <div style="font-weight:600; color:var(--primary); margin-bottom:2px;">
-          ${card.name}${card.roman ? ` (${card.roman})` : ''}
-        </div>
-        <div style="font-size:12px; color:var(--secondary); margin-bottom:4px;">
-          ${card.keyword || ''}
-        </div>
-        <div style="font-size:12px; color:var(--text); margin-bottom:4px;">
-          ${card.description || ''}
-        </div>
-        <div style="font-size:11px; color:var(--text-light); font-style:italic;">
-          Совет: ${card.advice || ''}
+    <div class="spread-card-item">
+      <img src="${card.image}"
+           alt="${card.name}"
+           class="spread-card-image"
+           onload="this.classList.add('loaded')"
+           onerror="this.src='cards/card-back.png'">
+      <div class="spread-card-content">
+        <div class="spread-card-name">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
+        <div class="spread-card-roman">${card.roman || ''}</div>
+        <div class="spread-card-keyword">${card.keyword || ''}</div>
+        <div class="spread-card-description">${card.description || ''}</div>
+        <div class="spread-card-advice">
+          <i class="fas fa-lightbulb"></i> ${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}
         </div>
       </div>
     </div>
@@ -735,7 +672,7 @@ function showSpreadResultModal(result) {
     <div style="text-align:left;">
       <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
       <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
-        ${dateStr}
+        <i class="fas fa-calendar-alt"></i> ${dateStr}
       </div>
 
       ${
@@ -754,6 +691,10 @@ function showSpreadResultModal(result) {
       `
           : ''
       }
+
+      <div style="font-size:14px; color:var(--primary); font-weight:600; margin-bottom:12px;">
+        Карты в раскладе:
+      </div>
 
       ${cardsHtml}
     </div>
@@ -868,16 +809,6 @@ function initButtons() {
         refreshBtn.classList.remove('refreshing');
         AppState.isLoading = false;
       }, 1000);
-    });
-  }
-
-  // кнопка "Открыть полностью" под картой дня
-  const openCardFullBtn = $('#open-card-full-btn');
-  if (openCardFullBtn) {
-    openCardFullBtn.addEventListener('click', () => {
-      if (AppState.currentCard) {
-        showFullCardModal(AppState.currentCard);
-      }
     });
   }
 
@@ -1172,26 +1103,45 @@ function renderArchive() {
 
   list.innerHTML = AppState.archive
     .map((entry, index) => {
-      const dateStr = new Date(entry.createdAt || Date.now()).toLocaleString(
-        'ru-RU',
-        { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-      );
+      const date = new Date(entry.createdAt || Date.now());
+      const dateStr = date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      const timeStr = date.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
 
       let subtitle = '';
+      let iconClass = '';
       if (entry.type === 'spread') {
         subtitle = `${(entry.cards || []).length} карт • Расклад`;
+        iconClass = 'spread';
       } else if (entry.type === 'wheel') {
         subtitle = `Колесо фортуны • ${entry.card ? entry.card.name : ''}`;
+        iconClass = 'wheel';
       } else if (entry.type === 'yesno') {
         subtitle = 'Да / Нет';
+        iconClass = 'yesno';
       } else if (entry.type === 'universe') {
         subtitle = 'Спросить Вселенную';
+        iconClass = 'universe';
       }
 
       const title = entry.title || 'Запись архива';
 
       return `
         <div class="spread-item archive-item" data-index="${index}">
+          <div class="archive-icon ${iconClass}">
+            ${
+              entry.type === 'spread' ? '<i class="fas fa-heart-circle-bolt"></i>' :
+              entry.type === 'wheel' ? '<i class="fas fa-dharmachakra"></i>' :
+              entry.type === 'yesno' ? '<i class="fas fa-check"></i>' :
+              '<i class="fas fa-moon"></i>'
+            }
+          </div>
           <div class="spread-header">
             <div class="spread-title">${title}</div>
             <div class="spread-price" style="font-size:14px;">
@@ -1200,6 +1150,10 @@ function renderArchive() {
           </div>
           <div class="spread-description" style="font-size:13px;">
             ${subtitle}
+          </div>
+          <div class="archive-date">
+            <i class="far fa-clock"></i>
+            ${timeStr}
           </div>
         </div>
       `;
@@ -1226,17 +1180,25 @@ function showArchiveEntryModal(entry) {
   const body = $('#card-modal-body');
   if (!modal || !body) return;
 
-  const dateStr = new Date(entry.createdAt || Date.now()).toLocaleString(
-    'ru-RU',
-    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-  );
+  const date = new Date(entry.createdAt || Date.now());
+  const dateStr = date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+  const timeStr = date.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 
   if (entry.type === 'wheel' && entry.card) {
     const card = entry.card;
     body.innerHTML = `
       <div style="text-align:center;">
         <h3 style="font-size:20px; color:var(--primary); margin-bottom:6px;">Колесо фортуны</h3>
-        <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">${dateStr}</div>
+        <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
+          <i class="fas fa-calendar-alt"></i> ${dateStr} <i class="far fa-clock" style="margin-left:10px;"></i> ${timeStr}
+        </div>
         <img src="${card.image}"
              alt="${card.name}"
              style="width:200px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;"
@@ -1265,7 +1227,9 @@ function showArchiveEntryModal(entry) {
         <h3 style="font-size:20px; color:var(--primary); margin-bottom:6px;">${
           entry.type === 'yesno' ? 'Да / Нет' : 'Спросить Вселенную'
         }</h3>
-        <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">${dateStr}</div>
+        <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
+          <i class="fas fa-calendar-alt"></i> ${dateStr} <i class="far fa-clock" style="margin-left:10px;"></i> ${timeStr}
+        </div>
 
         <div style="background: rgba(138, 43, 226, 0.1); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
           <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
@@ -1286,7 +1250,9 @@ function showArchiveEntryModal(entry) {
     <div style="padding:20px;">
       <h3 style="font-size:20px; color:var(--primary); margin-bottom:6px;">${entry.title ||
         'Запись архива'}</h3>
-      <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">${dateStr}</div>
+      <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
+        <i class="fas fa-calendar-alt"></i> ${dateStr} <i class="far fa-clock" style="margin-left:10px;"></i> ${timeStr}
+      </div>
       <pre style="font-size:12px; white-space:pre-wrap; color:var(--text);">${
         JSON.stringify(entry, null, 2)
       }</pre>
