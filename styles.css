@@ -107,7 +107,6 @@ body {
   height: 100%;
   background: white;
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  /* убрали вращение, чтобы не крутилось */
 }
 
 .crystal-shine {
@@ -160,7 +159,7 @@ body {
 }
 
 .status-dot {
-  display: none; /* точку "онлайн" прячем */
+  display: none;
 }
 
 .status-star-icon {
@@ -357,8 +356,8 @@ body {
 }
 
 .card-display {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
 }
 
@@ -369,7 +368,7 @@ body {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
   transform-style: preserve-3d;
   perspective: 1000px;
-  height: 280px;
+  height: 320px;
 }
 
 .card-image {
@@ -441,9 +440,9 @@ body {
   color: var(--text);
   opacity: 0.9;
   padding: 15px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(138, 43, 226, 0.05);
   border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(138, 43, 226, 0.1);
 }
 
 .card-date {
@@ -453,47 +452,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-/* Футер карты */
-.card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-.energy-indicator {
-  flex: 1;
-}
-
-.energy-bar {
-  width: 100%;
-  height: 6px;
-  background: rgba(138, 43, 226, 0.1);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-
-.energy-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--secondary));
-  border-radius: 3px;
-  animation: energyPulse 2s ease-in-out infinite;
-}
-
-@keyframes energyPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-.energy-text {
-  font-size: 12px;
-  color: var(--text-light);
-  font-weight: 500;
 }
 
 /* ===== МАГИЧЕСКИЕ ДЕЙСТВИЯ ===== */
@@ -586,16 +544,6 @@ body {
 .action-icon.moon {
   background: linear-gradient(135deg, #9370DB, #4B0082);
   color: #E6E6FA;
-}
-
-.action-icon.tarot {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: white;
-}
-
-.action-icon.fortune {
-  background: linear-gradient(135deg, #FF00FF, #8A2BE2);
-  color: white;
 }
 
 .action-card h4 {
@@ -1093,6 +1041,66 @@ body {
   background: rgba(0, 0, 0, 0.06);
 }
 
+/* ===== МАГАЗИН ЗВЕЗД ===== */
+.shop-packs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.shop-pack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(138, 43, 226, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(138, 43, 226, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.shop-pack:hover {
+  transform: translateX(5px);
+  background: rgba(138, 43, 226, 0.1);
+  border-color: var(--primary);
+}
+
+.pack-icon {
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 20px;
+}
+
+.pack-info {
+  flex: 1;
+}
+
+.pack-info h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.pack-info p {
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.pack-price {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
 /* ===== ВВОД ВОПРОСОВ ===== */
 .question-input-container {
   margin-bottom: 20px;
@@ -1177,71 +1185,6 @@ body {
   box-shadow: 0 8px 25px rgba(138, 43, 226, 0.4);
 }
 
-/* ===== ЛОАДЕР ===== */
-.loader {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(248, 245, 255, 0.95);
-  backdrop-filter: blur(10px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  transition: opacity 0.3s ease;
-}
-
-.loader-wheel {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  margin-bottom: 20px;
-}
-
-.wheel-spoke {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 60px;
-  height: 4px;
-  background: var(--primary);
-  transform-origin: left center;
-  border-radius: 2px;
-}
-
-.wheel-spoke:nth-child(1) { transform: translate(-50%, -50%) rotate(0deg); }
-.wheel-spoke:nth-child(2) { transform: translate(-50%, -50%) rotate(120deg); }
-.wheel-spoke:nth-child(3) { transform: translate(-50%, -50%) rotate(240deg); }
-
-.loader-wheel {
-  animation: loaderSpin 1.5s linear infinite;
-}
-
-@keyframes loaderSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.loader .wheel-center {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
-  background: var(--primary);
-  border-radius: 50%;
-}
-
-.loader p {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--primary);
-}
-
 /* ===== ТОСТЫ ===== */
 .toast {
   position: fixed;
@@ -1268,6 +1211,25 @@ body {
   opacity: 1;
 }
 
+/* Улучшенная загрузка изображений */
+.card-image {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.card-image.loaded {
+  opacity: 1;
+}
+
+.deck-card-image {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.deck-card-image.loaded {
+  opacity: 1;
+}
+
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 480px) {
   .container {
@@ -1275,7 +1237,7 @@ body {
   }
   
   .card-image-container {
-    height: 240px;
+    height: 280px;
   }
   
   .wheel-wrapper {
@@ -1320,23 +1282,4 @@ body {
   .question-types {
     grid-template-columns: repeat(2, 1fr);
   }
-}
-
-/* Улучшенная загрузка изображений */
-.card-image {
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-
-.card-image.loaded {
-  opacity: 1;
-}
-
-.deck-card-image {
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-
-.deck-card-image.loaded {
-  opacity: 1;
 }
