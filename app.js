@@ -547,7 +547,6 @@ function initSpreads() {
     <div class="spread-item" data-id="${spread.id}">
       <div class="spread-header">
         <div class="spread-title">
-          <i class="fas fa-heart-circle-bolt" style="margin-right:6px;"></i>
           ${spread.title}
         </div>
         <div class="spread-price">${spread.price}</div>
