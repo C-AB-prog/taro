@@ -352,7 +352,7 @@ async function loadCardOfDay() {
 
   container.innerHTML = `
     <div class="card-display">
-      <div class="card-image-container">
+      <div class="card-image-container" id="card-day-image">
         <img src="${card.image}"
              alt="${card.name}"
              class="card-image"
@@ -377,6 +377,59 @@ async function loadCardOfDay() {
       </div>
     </div>
   `;
+
+  // Делаем карту кликабельной
+  const cardImageContainer = $('#card-day-image');
+  if (cardImageContainer) {
+    cardImageContainer.addEventListener('click', () => {
+      showFullCardModal(card);
+    });
+  }
+}
+
+// ===== ПОЛНЫЙ ПРОСМОТР КАРТЫ ДНЯ =====
+function showFullCardModal(card) {
+  const modal = $('#card-modal');
+  const body = $('#card-modal-body');
+  if (!modal || !body) return;
+
+  const today = new Date();
+  
+  body.innerHTML = `
+    <div class="full-card-content">
+      <img src="${card.image}"
+           alt="${card.name}"
+           class="full-card-image"
+           onerror="this.src='cards/card-back.png'">
+      
+      <div class="full-card-name">${card.name}</div>
+      ${card.roman ? `<div class="full-card-roman">${card.roman}</div>` : ''}
+      
+      <div class="full-card-keyword">${card.keyword || ''}</div>
+      
+      <div class="full-card-description">
+        ${card.description || 'Описание карты'}
+      </div>
+      
+      <div class="full-card-date">
+        <i class="fas fa-calendar-alt"></i>
+        ${today.toLocaleDateString('ru-RU', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long'
+        })}
+      </div>
+      
+      ${card.advice ? `
+        <div class="full-card-advice">
+          <i class="fas fa-lightbulb"></i>
+          <strong>Совет дня:</strong> ${card.advice}
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  openModal(modal);
 }
 
 // ===== КОЛЕСО ФОРТУНЫ =====
@@ -815,6 +868,16 @@ function initButtons() {
         refreshBtn.classList.remove('refreshing');
         AppState.isLoading = false;
       }, 1000);
+    });
+  }
+
+  // кнопка "Открыть полностью" под картой дня
+  const openCardFullBtn = $('#open-card-full-btn');
+  if (openCardFullBtn) {
+    openCardFullBtn.addEventListener('click', () => {
+      if (AppState.currentCard) {
+        showFullCardModal(AppState.currentCard);
+      }
     });
   }
 
