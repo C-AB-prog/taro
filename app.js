@@ -388,9 +388,12 @@ async function loadCardOfDay() {
 
   AppState.currentCard = card;
 
+  // Создаем безопасную строку для передачи в onclick
+  const cardJson = JSON.stringify(card).replace(/"/g, '&quot;');
+
   container.innerHTML = `
     <div class="card-display-full">
-      <div class="card-image-container-full" onclick="showCardModal(${JSON.stringify(card).replace(/"/g, '&quot;')})">
+      <div class="card-image-container-full" onclick="showCardModalById(${card.id})">
         <img src="${card.image}"
              alt="${card.name}"
              class="card-image-full"
@@ -435,7 +438,7 @@ async function loadCardOfDay() {
         </div>
         
         <div class="card-actions">
-          <button class="btn-card-details" onclick="showCardModal(${JSON.stringify(card).replace(/"/g, '&quot;')})">
+          <button class="btn-card-details" onclick="showCardModalById(${card.id})">
             <i class="fas fa-search"></i>
             Подробное описание
           </button>
@@ -455,6 +458,12 @@ function getSuitName(suit) {
     default: return '';
   }
 }
+
+// Глобальная функция для показа модалки по ID карты
+window.showCardModalById = function(cardId) {
+  const card = window.TAROT_CARDS.find(c => c.id === cardId);
+  if (card) showCardModal(card);
+};
 
 // ===== МОДАЛКА КАРТЫ =====
 function showCardModal(card) {
