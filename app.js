@@ -42,7 +42,7 @@ const CARD_META = {
 // Дополняем META для всех карт
 for (let i = 12; i <= 77; i++) {
   CARD_META[i] = { 
-    score: Math.floor(Math.random() * 3) - 1, // от -1 до 1
+    score: Math.floor(Math.random() * 3) - 1,
     tags: getRandomTags(),
     vibe: getRandomVibe()
   };
@@ -86,82 +86,89 @@ var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
       : Number(s.cards) || s.requiredCards || 0
 }));
 
-// ===== ИИ АНАЛИЗ =====
-async function analyzeSpreadWithAI(spread, cards, question = '') {
-  if (!AppState.aiEnabled) {
-    return getFallbackAnalysis(spread, cards);
-  }
+// ===== УДАЛЯЕМ ФУНКЦИИ ИИ (по просьбе пользователя) =====
+// Вместо ИИ используем улучшенный базовый анализ
 
-  try {
-    console.log('🤖 Отправляем расклад на анализ ИИ...');
-    
-    const aiPayload = {
-      cards: cards.map(card => ({
-        name: card.name,
-        roman: card.roman || '',
-        category: card.category,
-        suit: card.suit || '',
-        keyword: card.keyword || '',
-        description: card.description || '',
-        upright: card.upright || '',
-        reversed: card.reversed || '',
-        advice: card.advice || ''
-      })),
-      spreadType: spread.title,
-      question: question || `Общий анализ расклада "${spread.title}"`
-    };
-
-    const response = await fetch('/api/ai-analysis', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aiPayload)
-    });
-
-    if (!response.ok) {
-      console.warn('ИИ API недоступен, используем базовый анализ');
-      return getFallbackAnalysis(spread, cards);
-    }
-
-    const aiResult = await response.json();
-    
-    return {
-      aiAnalysis: aiResult.analysis || getFallbackAnalysis(spread, cards),
-      aiSummary: aiResult.summary || generateBasicSummary(cards),
-      isAIgenerated: !aiResult.fallback,
-      aiTimestamp: aiResult.timestamp || new Date().toISOString()
-    };
-    
-  } catch (error) {
-    console.warn('ИИ анализ не удался:', error);
-    return getFallbackAnalysis(spread, cards);
-  }
+function getSpreadAnalysis(spread, cards, question = '') {
+  return {
+    analysis: generateSpreadAnalysis(spread, cards, question),
+    summary: generateBasicSummary(cards),
+    isEnhanced: true,
+    timestamp: new Date().toISOString()
+  };
 }
 
-function getFallbackAnalysis(spread, cards) {
-  const analysis = buildSpreadSummary(spread, cards);
-  return {
-    aiAnalysis: analysis,
-    aiSummary: generateBasicSummary(cards),
-    isAIgenerated: false,
-    aiTimestamp: new Date().toISOString()
-  };
+function generateSpreadAnalysis(spread, cards, question = '') {
+  const cardNames = cards.map(c => c.name).join(', ');
+  const majorCount = cards.filter(c => c.suit === 'major').length;
+  const cupsCount = cards.filter(c => c.suit === 'cups').length;
+  const swordsCount = cards.filter(c => c.suit === 'swords').length;
+  const pentaclesCount = cards.filter(c => c.suit === 'pentacles').length;
+  const wandsCount = cards.filter(c => c.suit === 'wands').length;
+  
+  let analysis = `📊 АНАЛИЗ РАСКЛАДА "${spread.title}"\n\n`;
+  
+  if (question) {
+    analysis += `Вопрос: "${question}"\n\n`;
+  }
+  
+  analysis += `Карты в раскладе: ${cardNames}\n\n`;
+  
+  analysis += `🔍 ОБЩАЯ ЭНЕРГЕТИКА:\n`;
+  
+  if (majorCount > cards.length / 2) {
+    analysis += `Сильное влияние Старших Арканов (${majorCount} из ${cards.length}) — период значительных перемен и судьбоносных событий.\n\n`;
+  } else if (cupsCount > 0 && swordsCount === 0) {
+    analysis += `Эмоционально насыщенный расклад с акцентом на чувства и отношения.\n\n`;
+  } else if (swordsCount > cupsCount) {
+    analysis += `Расклад с ментальным акцентом — важно анализировать ситуации, а не действовать импульсивно.\n\n`;
+  } else {
+    analysis += `Сбалансированный расклад с разнообразными энергиями.\n\n`;
+  }
+  
+  analysis += `💫 ОСНОВНЫЕ ТЕМЫ:\n`;
+  const themes = [];
+  if (cupsCount > 0) themes.push('эмоции и отношения');
+  if (swordsCount > 0) themes.push('мысли и решения');
+  if (pentaclesCount > 0) themes.push('материальные вопросы');
+  if (wandsCount > 0) themes.push('творчество и действие');
+  if (majorCount > 0) themes.push('важные жизненные уроки');
+  
+  analysis += themes.join(', ') + '.\n\n';
+  
+  analysis += `🌟 РЕКОМЕНДАЦИИ:\n`;
+  analysis += `1. Рассмотрите каждую карту как часть единой картины\n`;
+  analysis += `2. Обратите внимание на повторяющиеся символы или цвета\n`;
+  analysis += `3. Доверьтесь своей интуиции при интерпретации\n`;
+  analysis += `4. Возвращайтесь к этому раскладу в течение недели\n\n`;
+  
+  analysis += `📝 КЛЮЧЕВОЙ СОВЕТ:\n`;
+  const advice = [
+    "Используйте энергию этого расклада для осознанных действий.",
+    "Этот период идеален для внутренней работы и размышлений.",
+    "Обратите внимание на знаки, которые появляются в ближайшие дни.",
+    "Доверяйте процессу и не торопите события.",
+    "Используйте полученные инсайты для практических шагов."
+  ];
+  analysis += advice[Math.floor(Math.random() * advice.length)];
+  
+  return analysis;
 }
 
 function generateBasicSummary(cards) {
   const majorArcana = cards.filter(c => c.suit === 'major').length;
-  const cups = cards.filter(c => c.suit === 'cups').length;
-  const swords = cards.filter(c => c.suit === 'swords').length;
-  const pentacles = cards.filter(c => c.suit === 'pentacles').length;
-  const wands = cards.filter(c => c.suit === 'wands').length;
+  const positiveCards = cards.filter(c => {
+    const meta = CARD_META[c.cardId || c.id];
+    return meta && meta.score > 0;
+  }).length;
   
-  const themes = [];
-  if (majorArcana > 0) themes.push('важные жизненные уроки');
-  if (cups > 0) themes.push('эмоциональное развитие');
-  if (swords > 0) themes.push('ментальные процессы');
-  if (pentacles > 0) themes.push('материальные аспекты');
-  if (wands > 0) themes.push('творческую энергию');
-  
-  return `Расклад затрагивает ${themes.join(', ')}. Требуется внимательное рассмотрение.`;
+  if (majorArcana > cards.length / 2) {
+    return 'Расклад с сильным влиянием старших арканов — период значительных перемен.';
+  } else if (positiveCards > cards.length / 2) {
+    return 'Преобладают поддерживающие энергии — благоприятный период для действий.';
+  } else {
+    return 'Сбалансированный расклад, требующий внимательного рассмотрения всех аспектов.';
+  }
 }
 
 // ===== АНИМАЦИИ =====
@@ -440,7 +447,7 @@ function initTelegram() {
 
   if (!AppState.userId) {
     AppState.user = { name: 'Гость', username: 'debug_user' };
-    AppState.userId = 999999; // подходит под BIGINT
+    AppState.userId = 999999;
   }
 }
 
@@ -474,7 +481,7 @@ async function loadCardOfDay() {
              alt="${card.name}"
              class="card-image-full"
              onload="this.classList.add('loaded')"
-             onerror="this.src='cards/card-back.jpg'">
+             onerror="this.onerror=null; this.src='cards/default-card.jpg'">
       </div>
       <div class="card-info-full">
         <div class="card-name-row">
@@ -552,7 +559,7 @@ function showCardModal(card) {
       <div class="card-modal-image">
         <img src="${card.image}"
              alt="${card.name}"
-             onerror="this.src='cards/card-back.jpg'">
+             onerror="this.onerror=null; this.src='cards/default-card.jpg'">
       </div>
       
       <div class="card-modal-content">
@@ -744,7 +751,7 @@ function initFortuneWheel() {
           <img src="${card.image}"
                alt="${card.name}"
                style="width:120px;height:180px;object-fit:cover;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);margin-bottom:12px;"
-               onerror="this.src='cards/card-back.jpg'">
+               onerror="this.onerror=null; this.src='cards/default-card.jpg'">
           <div style="font-size:16px; margin-bottom:6px;">Выпала карта:</div>
           <div style="font-size:20px; font-weight:700; color:var(--primary); margin-bottom:4px;">
             ${card.name}${card.roman ? ` (${card.roman})` : ''}
@@ -787,7 +794,7 @@ function initFortuneWheel() {
   });
 }
 
-// ===== РАСКЛАДЫ С ИИ АНАЛИЗОМ =====
+// ===== РАСКЛАДЫ С УЛУЧШЕННЫМ АНАЛИЗОМ =====
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
@@ -798,8 +805,8 @@ function initSpreads() {
       <div class="spread-header">
         <div class="spread-title">
           ${spread.title}
-          <span class="ai-badge">
-            <i class="fas fa-robot"></i> ИИ-анализ
+          <span class="enhanced-badge">
+            <i class="fas fa-star"></i> Улучшенный анализ
           </span>
         </div>
         <div class="spread-price">${spread.price}</div>
@@ -807,8 +814,8 @@ function initSpreads() {
       <div class="spread-description">${spread.description}</div>
       <div class="spread-meta">
         <span><i class="fas fa-cards"></i> ${spread.cardsCount} карт</span>
-        <span><i class="fas fa-brain"></i> Общий анализ включён</span>
-        <span><i class="fas fa-robot"></i> ИИ-анализ</span>
+        <span><i class="fas fa-brain"></i> Детальный анализ</span>
+        <span><i class="fas fa-magic"></i> С персонализацией</span>
       </div>
     </div>
   `
@@ -828,13 +835,14 @@ function initSpreads() {
         return;
       }
 
-      // Спрашиваем вопрос для расклада
+      // ФИКС: Исправляем модалку вопроса
       const question = await openQuestionModalForSpread(spread);
+      if (question === undefined) return; // Если пользователь закрыл модалку
       
       const ok = await openConfirmModal({
         title: 'Покупка расклада',
         message: `Купить расклад "${title}" за ${price} ★?${question ? '\n\nС вопросом: ' + question : ''}`,
-        okText: 'Купить с ИИ-анализом',
+        okText: 'Купить',
         cancelText: 'Отмена'
       });
       
@@ -843,32 +851,32 @@ function initSpreads() {
       AppState.userStars -= price;
       updateStarsDisplay();
 
-      // Показываем индикатор анализа
-      showToast('🎴 Создаём расклад... ИИ анализирует карты', 'info');
+      showToast('🎴 Создаём расклад...', 'info');
 
-      // Выполняем расклад с ИИ анализом
       const result = await performSpread(spread, question);
       
-      // Добавляем в архив
       AppState.archive = [result, ...(AppState.archive || [])];
       await saveUserStateToServer();
       renderArchive();
 
-      // Показываем результат с ИИ анализом
       showSpreadResultModal(result);
       
-      showToast(`Расклад "${title}" готов! ИИ анализ включён`, 'success');
+      showToast(`Расклад "${title}" готов!`, 'success');
     });
   });
 }
 
+// ФИКС: Улучшенная функция модалки вопроса
 async function openQuestionModalForSpread(spread) {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.innerHTML = `
       <div class="modal-content">
-        <button class="modal-close" onclick="this.closest('.modal').remove(); resolve('')">&times;</button>
+        <button class="modal-close" onclick="
+          this.closest('.modal').remove();
+          resolve('');
+        ">&times;</button>
         <div class="modal-header">
           <div class="modal-icon">
             <i class="fas fa-question"></i>
@@ -877,7 +885,7 @@ async function openQuestionModalForSpread(spread) {
         </div>
         <div class="modal-body">
           <p style="margin-bottom: 16px; color: var(--text-light); font-size: 14px;">
-            Задайте вопрос для более точного ИИ-анализа (необязательно)
+            Задайте вопрос для более точного анализа (необязательно)
           </p>
           <textarea 
             id="spread-question-input" 
@@ -887,12 +895,14 @@ async function openQuestionModalForSpread(spread) {
           ></textarea>
           <div class="modal-actions">
             <button class="btn-secondary" onclick="
-              this.closest('.modal').remove();
+              const modal = this.closest('.modal');
+              modal.remove();
               resolve('');
             ">Без вопроса</button>
             <button class="btn-primary" onclick="
               const input = document.getElementById('spread-question-input');
-              this.closest('.modal').remove();
+              const modal = this.closest('.modal');
+              modal.remove();
               resolve(input.value.trim());
             ">Продолжить</button>
           </div>
@@ -901,7 +911,19 @@ async function openQuestionModalForSpread(spread) {
     `;
     
     document.body.appendChild(modal);
-    setTimeout(() => modal.classList.add('active'), 10);
+    setTimeout(() => {
+      modal.classList.add('active');
+      const textarea = modal.querySelector('#spread-question-input');
+      if (textarea) textarea.focus();
+    }, 10);
+    
+    // Закрытие по клику вне модалки
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+        resolve('');
+      }
+    });
   });
 }
 
@@ -930,11 +952,8 @@ async function performSpread(spread, question = '') {
     });
   }
 
-  // Получаем базовый анализ
-  const baseSummary = buildSpreadSummary(spread, used);
-  
-  // Получаем ИИ анализ
-  const aiResult = await analyzeSpreadWithAI(spread, used, question);
+  // Получаем улучшенный анализ
+  const analysisResult = getSpreadAnalysis(spread, used, question);
 
   return {
     type: 'spread',
@@ -942,8 +961,9 @@ async function performSpread(spread, question = '') {
     title: spread.title,
     createdAt: new Date().toISOString(),
     cards: used,
-    summary: baseSummary,
-    ...aiResult,
+    summary: analysisResult.summary,
+    analysis: analysisResult.analysis,
+    isEnhanced: analysisResult.isEnhanced,
     question: question || ''
   };
 }
@@ -969,7 +989,7 @@ function showSpreadResultModal(result) {
            alt="${card.name}"
            class="spread-card-image"
            onload="this.classList.add('loaded')"
-           onerror="this.src='cards/card-back.jpg'">
+           onerror="this.onerror=null; this.src='cards/default-card.jpg'">
       <div class="spread-card-content">
         <div class="spread-card-name">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
         <div class="spread-card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
@@ -980,13 +1000,12 @@ function showSpreadResultModal(result) {
     )
     .join('');
 
-  // Определяем иконку для ИИ анализа
-  const aiIcon = result.isAIgenerated ? 
-    '<i class="fas fa-robot" style="color: var(--primary);"></i>' : 
+  const enhancedIcon = result.isEnhanced ? 
+    '<i class="fas fa-star" style="color: #FFD700;"></i>' : 
     '<i class="fas fa-brain" style="color: var(--text-light);"></i>';
   
-  const aiLabel = result.isAIgenerated ? 
-    '<span style="color: var(--success); font-weight: 600;">ИИ-анализ включён</span>' : 
+  const enhancedLabel = result.isEnhanced ? 
+    '<span style="color: #FF8C00; font-weight: 600;">Улучшенный анализ</span>' : 
     '<span style="color: var(--text-light);">Базовый анализ</span>';
 
   body.innerHTML = `
@@ -998,10 +1017,10 @@ function showSpreadResultModal(result) {
       </div>
 
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.05); border-radius: 12px;">
-        ${aiIcon}
+        ${enhancedIcon}
         <div>
-          <div style="font-size: 14px; font-weight: 500;">${aiLabel}</div>
-          ${result.aiSummary ? `<div style="font-size: 12px; color: var(--text); margin-top: 4px;">${result.aiSummary}</div>` : ''}
+          <div style="font-size: 14px; font-weight: 500;">${enhancedLabel}</div>
+          ${result.summary ? `<div style="font-size: 12px; color: var(--text); margin-top: 4px;">${result.summary}</div>` : ''}
         </div>
       </div>
 
@@ -1013,16 +1032,16 @@ function showSpreadResultModal(result) {
         ${cardsHtml}
       </div>
 
-      <div class="ai-analysis-section">
+      <div class="analysis-section">
         <h4 style="font-size: 16px; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
           <i class="fas fa-chart-line"></i> Детальный анализ
         </h4>
         <div style="font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-line;">
-          ${result.aiAnalysis || result.summary}
+          ${result.analysis || result.summary}
         </div>
-        ${result.isAIgenerated ? `
+        ${result.isEnhanced ? `
           <div style="margin-top: 12px; font-size: 11px; color: var(--text-light); font-style: italic; border-top: 1px dashed rgba(138, 43, 226, 0.2); padding-top: 8px;">
-            <i class="fas fa-robot"></i> Анализ сгенерирован с помощью ИИ на основе значений карт Таро
+            <i class="fas fa-star"></i> Анализ создан с учётом сочетания всех карт
           </div>
         ` : ''}
       </div>
@@ -1054,7 +1073,6 @@ function initDeck() {
   const container = $('#deck-grid');
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
 
-  // Добавляем фильтры
   const filterHtml = `
     <div class="deck-filters">
       <button class="filter-btn active" data-filter="all">Все</button>
@@ -1103,7 +1121,7 @@ function renderDeckPage() {
                alt="${card.name}"
                class="deck-card-image"
                onload="this.classList.add('loaded')"
-               onerror="this.src='cards/card-back.jpg'">
+               onerror="this.onerror=null; this.src='cards/default-card.jpg'">
           <div class="deck-card-overlay">
             <div class="overlay-content">
               <div class="card-category-small">${card.category}</div>
@@ -1549,7 +1567,7 @@ function renderArchive() {
       let subtitle = '';
       let iconClass = '';
       if (entry.type === 'spread') {
-        subtitle = `${(entry.cards || []).length} карт • ${entry.isAIgenerated ? 'ИИ-анализ' : 'Расклад'}`;
+        subtitle = `${(entry.cards || []).length} карт • ${entry.isEnhanced ? 'Улучшенный анализ' : 'Расклад'}`;
         iconClass = 'spread';
       } else if (entry.type === 'wheel') {
         subtitle = `Колесо фортуны • ${entry.card ? entry.card.name : ''}`;
@@ -1569,7 +1587,7 @@ function renderArchive() {
           <div class="archive-icon ${iconClass}">
             ${
               entry.type === 'spread' ? 
-                (entry.isAIgenerated ? '<i class="fas fa-robot"></i>' : '<i class="fas fa-heart-circle-bolt"></i>') :
+                (entry.isEnhanced ? '<i class="fas fa-star"></i>' : '<i class="fas fa-heart-circle-bolt"></i>') :
               entry.type === 'wheel' ? '<i class="fas fa-dharmachakra"></i>' :
               entry.type === 'yesno' ? '<i class="fas fa-check"></i>' :
               '<i class="fas fa-moon"></i>'
@@ -1635,7 +1653,7 @@ function showArchiveEntryModal(entry) {
         <img src="${card.image}"
              alt="${card.name}"
              style="width:200px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;"
-             onerror="this.src='cards/card-back.jpg'">
+             onerror="this.onerror=null; this.src='cards/default-card.jpg'">
         <div style="font-size:18px; font-weight:600; color:var(--primary); margin-bottom:6px;">
           ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
