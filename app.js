@@ -286,8 +286,6 @@ async function saveUserStateToServer() {
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 async function initApp() {
-  showLoader();
-
   try {
     initTelegram();
     cleanupHeaderStatus();
@@ -308,8 +306,6 @@ async function initApp() {
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
-  } finally {
-    hideLoader();
   }
 }
 
@@ -801,16 +797,7 @@ function initButtons() {
   const openShopBtn = $('#open-shop-btn');
   if (openShopBtn) {
     openShopBtn.addEventListener('click', () => {
-      const homeBtn = document.querySelector('.nav-btn[data-screen="home"]');
-      if (homeBtn && !homeBtn.classList.contains('active')) {
-        homeBtn.click();
-      }
-      setTimeout(() => {
-        const shopSection = $('#shop-section');
-        if (shopSection) {
-          shopSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 150);
+      openShopModal();
     });
   }
 
@@ -876,9 +863,26 @@ function initButtons() {
       yesnoChar.textContent = this.value.length;
     });
   }
+}
 
-  // Магазин звёзд (пока без реальной оплаты)
-  $$('.star-pack').forEach((card) => {
+// ===== МОДАЛКА МАГАЗИНА =====
+function openShopModal() {
+  const modal = $('#shop-modal');
+  if (!modal) return;
+
+  modal.classList.add('active');
+
+  const closeBtn = modal.querySelector('.modal-close');
+  if (closeBtn) {
+    closeBtn.onclick = () => modal.classList.remove('active');
+  }
+
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.remove('active');
+  };
+
+  // Обработчики для покупки звезд
+  $$('.shop-pack').forEach((card) => {
     card.addEventListener('click', async function () {
       const amount = Number(this.dataset.stars) || 0;
       if (!amount) return;
@@ -895,6 +899,8 @@ function initButtons() {
       updateStarsDisplay();
       await saveUserStateToServer();
       showToast(`Начислено ${amount} звёзд`, 'success');
+      
+      modal.classList.remove('active');
     });
   });
 }
@@ -1332,23 +1338,7 @@ function addAnimationStyles() {
   document.head.appendChild(style);
 }
 
-// ===== ЛОАДЕР / ТОСТ =====
-function showLoader() {
-  const loader = $('#app-loader');
-  if (loader) loader.style.display = 'flex';
-}
-
-function hideLoader() {
-  const loader = $('#app-loader');
-  if (loader) {
-    loader.style.opacity = '0';
-    setTimeout(() => {
-      loader.style.display = 'none';
-      loader.style.opacity = '1';
-    }, 300);
-  }
-}
-
+// ===== ТОСТ =====
 function showToast(message, type) {
   if (!type) type = 'info';
   const toast = $('#toast');
@@ -1371,5 +1361,4 @@ function showToast(message, type) {
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 TARO запускается...');
   initApp();
-  setTimeout(hideLoader, 8000);
 });
