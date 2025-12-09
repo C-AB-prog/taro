@@ -96,8 +96,6 @@ body {
   gap: 12px;
 }
 
-/* Убрали .logo-icon, .crystal, .crystal-shine */
-
 .logo-text h1 {
   font-family: 'Playfair Display', serif;
   font-size: 32px;
@@ -254,8 +252,6 @@ body {
   padding: 0 8px;
 }
 
-/* Убрали .section-icon */
-
 .section-header h2 {
   font-size: 22px;
   font-weight: 700;
@@ -317,7 +313,7 @@ body {
   box-shadow: 0 6px 20px rgba(138, 43, 226, 0.3);
 }
 
-/* КОНТЕНТ КАРТЫ - ПОЛНЫЙ ЭКРАН */
+/* КОНТЕНТ КАРТЫ НА ГЛАВНОЙ */
 .card-content {
   margin: 24px 0;
 }
@@ -335,7 +331,28 @@ body {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
   transform-style: preserve-3d;
   perspective: 1000px;
-  height: 400px; /* Увеличили высоту для полного отображения */
+  height: 350px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.card-image-container:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 50px rgba(138, 43, 226, 0.3);
+}
+
+.card-image-container:hover::after {
+  content: 'Нажмите для полного просмотра';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(138, 43, 226, 0.9);
+  color: white;
+  text-align: center;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .card-image {
@@ -343,11 +360,6 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.card-image:hover {
-  transform: scale(1.05) rotateY(5deg);
 }
 
 .card-image-container::before {
@@ -410,6 +422,12 @@ body {
   background: rgba(138, 43, 226, 0.05);
   border-radius: 15px;
   border: 1px solid rgba(138, 43, 226, 0.1);
+  max-height: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
 }
 
 .card-date {
@@ -419,6 +437,121 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Футер карты дня */
+.card-day-footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.card-day-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.card-day-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.card-day-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(138, 43, 226, 0.4);
+}
+
+.card-day-btn i {
+  font-size: 16px;
+}
+
+/* СТИЛИ ДЛЯ ПОЛНОГО ПРОСМОТРА КАРТЫ ДНЯ В МОДАЛКЕ */
+.full-card-content {
+  text-align: center;
+}
+
+.full-card-image {
+  width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.full-card-name {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--primary);
+  font-family: 'Playfair Display', serif;
+  margin-bottom: 8px;
+}
+
+.full-card-roman {
+  font-size: 20px;
+  color: var(--text-light);
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+.full-card-keyword {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--secondary);
+  background: rgba(0, 206, 209, 0.1);
+  padding: 10px 20px;
+  border-radius: 12px;
+  display: inline-block;
+  margin-bottom: 20px;
+  border-left: 4px solid var(--secondary);
+}
+
+.full-card-description {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text);
+  margin-bottom: 24px;
+  text-align: left;
+  padding: 20px;
+  background: rgba(138, 43, 226, 0.05);
+  border-radius: 16px;
+}
+
+.full-card-date {
+  font-size: 14px;
+  color: var(--text-light);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.full-card-advice {
+  font-size: 14px;
+  color: var(--text-light);
+  font-style: italic;
+  padding: 15px;
+  background: rgba(255, 215, 0, 0.1);
+  border-radius: 12px;
+  border-left: 3px solid var(--gold);
+  text-align: left;
+}
+
+.full-card-advice i {
+  color: var(--gold);
+  margin-right: 8px;
 }
 
 /* ===== МАГИЧЕСКИЕ ДЕЙСТВИЯ ===== */
@@ -914,7 +1047,7 @@ body {
   background: var(--card-bg);
   border-radius: 24px;
   padding: 24px;
-  max-width: 400px;
+  max-width: 500px;
   width: 100%;
   max-height: 80vh;
   overflow-y: auto;
@@ -1207,7 +1340,7 @@ body {
   }
   
   .card-image-container {
-    height: 350px; /* Уменьшаем для мобилок, но все равно больше чем было */
+    height: 320px;
   }
   
   .wheel-wrapper {
@@ -1247,6 +1380,7 @@ body {
   .modal-content {
     padding: 20px;
     margin: 0 12px;
+    max-width: 90%;
   }
   
   .question-types {
@@ -1255,5 +1389,18 @@ body {
   
   .logo-text h1 {
     font-size: 28px;
+  }
+  
+  .full-card-image {
+    max-height: 300px;
+  }
+  
+  .full-card-name {
+    font-size: 26px;
+  }
+  
+  .full-card-description {
+    font-size: 14px;
+    padding: 15px;
   }
 }
