@@ -313,7 +313,7 @@ body {
   box-shadow: 0 6px 20px rgba(138, 43, 226, 0.3);
 }
 
-/* КОНТЕНТ КАРТЫ НА ГЛАВНОЙ */
+/* КОНТЕНТ КАРТЫ НА ГЛАВНОЙ - ПОЛНАЯ ВЕРСИЯ */
 .card-content {
   margin: 24px 0;
 }
@@ -321,7 +321,7 @@ body {
 .card-display {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .card-image-container {
@@ -331,28 +331,14 @@ body {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
   transform-style: preserve-3d;
   perspective: 1000px;
-  height: 350px;
+  height: 380px;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
 .card-image-container:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 20px 50px rgba(138, 43, 226, 0.3);
-}
-
-.card-image-container:hover::after {
-  content: 'Нажмите для полного просмотра';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(138, 43, 226, 0.9);
-  color: white;
-  text-align: center;
-  padding: 10px;
-  font-size: 14px;
-  font-weight: 500;
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 25px 60px rgba(138, 43, 226, 0.4);
 }
 
 .card-image {
@@ -378,14 +364,14 @@ body {
 .card-info {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
 }
 
 .card-name-row {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .card-name {
@@ -407,27 +393,20 @@ body {
   font-weight: 600;
   color: var(--secondary);
   background: rgba(0, 206, 209, 0.1);
-  padding: 8px 16px;
+  padding: 10px 18px;
   border-radius: 12px;
   display: inline-block;
-  border-left: 3px solid var(--secondary);
+  border-left: 4px solid var(--secondary);
 }
 
 .card-description {
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text);
-  opacity: 0.9;
-  padding: 15px;
+  padding: 18px;
   background: rgba(138, 43, 226, 0.05);
-  border-radius: 15px;
+  border-radius: 16px;
   border: 1px solid rgba(138, 43, 226, 0.1);
-  max-height: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
 }
 
 .card-date {
@@ -437,121 +416,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-/* Футер карты дня */
-.card-day-footer {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-.card-day-actions {
-  display: flex;
-  justify-content: center;
-}
-
-.card-day-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  border: none;
-  border-radius: 12px;
-  color: white;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.card-day-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(138, 43, 226, 0.4);
-}
-
-.card-day-btn i {
-  font-size: 16px;
-}
-
-/* СТИЛИ ДЛЯ ПОЛНОГО ПРОСМОТРА КАРТЫ ДНЯ В МОДАЛКЕ */
-.full-card-content {
-  text-align: center;
-}
-
-.full-card-image {
-  width: 100%;
-  max-height: 400px;
-  object-fit: contain;
-  border-radius: 16px;
-  margin-bottom: 24px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.full-card-name {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--primary);
-  font-family: 'Playfair Display', serif;
-  margin-bottom: 8px;
-}
-
-.full-card-roman {
-  font-size: 20px;
-  color: var(--text-light);
-  font-weight: 500;
-  margin-bottom: 16px;
-}
-
-.full-card-keyword {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--secondary);
-  background: rgba(0, 206, 209, 0.1);
-  padding: 10px 20px;
-  border-radius: 12px;
-  display: inline-block;
-  margin-bottom: 20px;
-  border-left: 4px solid var(--secondary);
-}
-
-.full-card-description {
-  font-size: 16px;
-  line-height: 1.7;
-  color: var(--text);
-  margin-bottom: 24px;
-  text-align: left;
-  padding: 20px;
-  background: rgba(138, 43, 226, 0.05);
-  border-radius: 16px;
-}
-
-.full-card-date {
-  font-size: 14px;
-  color: var(--text-light);
-  font-style: italic;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.full-card-advice {
-  font-size: 14px;
-  color: var(--text-light);
-  font-style: italic;
-  padding: 15px;
-  background: rgba(255, 215, 0, 0.1);
-  border-radius: 12px;
-  border-left: 3px solid var(--gold);
-  text-align: left;
-}
-
-.full-card-advice i {
-  color: var(--gold);
-  margin-right: 8px;
 }
 
 /* ===== МАГИЧЕСКИЕ ДЕЙСТВИЯ ===== */
@@ -944,6 +808,68 @@ body {
   gap: 4px;
 }
 
+/* СТИЛИ ДЛЯ КАРТ В РАСКЛАДЕ */
+.spread-card-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(248, 245, 255, 0.9);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(138, 43, 226, 0.1);
+}
+
+.spread-card-image {
+  width: 80px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.spread-card-content {
+  flex: 1;
+}
+
+.spread-card-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.spread-card-roman {
+  font-size: 12px;
+  color: var(--text-light);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.spread-card-keyword {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+  background: rgba(0, 206, 209, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.spread-card-description {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.spread-card-advice {
+  font-size: 11px;
+  color: var(--text-light);
+  font-style: italic;
+}
+
 /* ===== КОЛОДА ===== */
 .deck-container {
   background: var(--card-bg);
@@ -1020,6 +946,58 @@ body {
   font-size: 12px;
   color: var(--text-light);
   font-weight: 500;
+}
+
+/* ===== АРХИВ ===== */
+.archive-item {
+  position: relative;
+}
+
+.archive-date {
+  font-size: 11px;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(138, 43, 226, 0.1);
+}
+
+.archive-date i {
+  font-size: 10px;
+  color: var(--primary);
+}
+
+.archive-icon {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+  z-index: 1;
+}
+
+.archive-icon.spread {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+}
+
+.archive-icon.wheel {
+  background: linear-gradient(135deg, #FFD700, #FF8C00);
+}
+
+.archive-icon.yesno {
+  background: linear-gradient(135deg, #00CED1, #008B8B);
+}
+
+.archive-icon.universe {
+  background: linear-gradient(135deg, #9370DB, #4B0082);
 }
 
 /* ===== МОДАЛЬНЫЕ ОКНА ===== */
@@ -1333,6 +1311,15 @@ body {
   opacity: 1;
 }
 
+.spread-card-image {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.spread-card-image.loaded {
+  opacity: 1;
+}
+
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 480px) {
   .container {
@@ -1391,16 +1378,16 @@ body {
     font-size: 28px;
   }
   
-  .full-card-image {
-    max-height: 300px;
+  .spread-card-image {
+    width: 70px;
+    height: 105px;
   }
   
-  .full-card-name {
-    font-size: 26px;
-  }
-  
-  .full-card-description {
+  .spread-card-name {
     font-size: 14px;
-    padding: 15px;
+  }
+  
+  .spread-card-description {
+    font-size: 11px;
   }
 }
