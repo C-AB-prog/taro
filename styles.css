@@ -492,13 +492,13 @@ body {
   box-shadow: 0 8px 25px rgba(138, 43, 226, 0.4);
 }
 
-/* ===== ИИ БЭДЖ ===== */
-.ai-badge {
+/* ===== УЛУЧШЕННЫЙ БЭДЖ ===== */
+.enhanced-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  background: linear-gradient(135deg, #FF8C00, #FFD700);
   color: white;
   border-radius: 20px;
   font-size: 11px;
@@ -860,6 +860,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .spread-price {
@@ -869,6 +870,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .spread-price::before {
@@ -897,8 +899,8 @@ body {
   gap: 4px;
 }
 
-/* ===== СЕКЦИЯ ИИ АНАЛИЗА ===== */
-.ai-analysis-section {
+/* ===== СЕКЦИЯ АНАЛИЗА ===== */
+.analysis-section {
   background: linear-gradient(135deg, 
     rgba(138, 43, 226, 0.03), 
     rgba(0, 206, 209, 0.03)
@@ -911,7 +913,7 @@ body {
   overflow: hidden;
 }
 
-.ai-analysis-section::before {
+.analysis-section::before {
   content: '';
   position: absolute;
   top: 0;
@@ -1705,26 +1707,6 @@ body {
   opacity: 1;
 }
 
-/* ===== АНИМАЦИЯ ЗАГРУЗКИ ИИ ===== */
-.ai-loading {
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.ai-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(138, 43, 226, 0.1);
-  border-radius: 50%;
-  border-top-color: var(--primary);
-  animation: ai-spin 1s ease-in-out infinite;
-  margin: 0 auto 16px;
-}
-
-@keyframes ai-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 480px) {
   .container {
@@ -1835,7 +1817,7 @@ body {
     font-size: 11px;
   }
   
-  .ai-badge {
+  .enhanced-badge {
     font-size: 10px;
     padding: 3px 8px;
   }
