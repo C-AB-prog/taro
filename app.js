@@ -38,6 +38,38 @@ const CARD_META = {
   11: { score: 0, tags: ['karma', 'material'], vibe: 'равновесие, честность и необходимость принимать последствия' }
 };
 
+// Дополняем META для всех карт
+for (let i = 12; i <= 77; i++) {
+  CARD_META[i] = { 
+    score: Math.floor(Math.random() * 3) - 1, // от -1 до 1
+    tags: getRandomTags(),
+    vibe: getRandomVibe()
+  };
+}
+
+function getRandomTags() {
+  const allTags = ['inner', 'relationships', 'career', 'material', 'change', 'karma', 'fate'];
+  const count = Math.floor(Math.random() * 3) + 1;
+  const shuffled = [...allTags].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count);
+}
+
+function getRandomVibe() {
+  const vibes = [
+    'энергия перемен и новых возможностей',
+    'внутренний поиск и осознание',
+    'гармония в отношениях и взаимопонимание',
+    'материальная стабильность и рост',
+    'творческий подъём и вдохновение',
+    'преодоление трудностей и развитие',
+    'духовный рост и просветление',
+    'практические достижения и успех',
+    'эмоциональная глубина и чувствительность',
+    'интеллектуальный прорыв и ясность'
+  ];
+  return vibes[Math.floor(Math.random() * vibes.length)];
+}
+
 // ===== РАСКЛАДЫ ИЗ cards-data.js в едином формате =====
 var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
   id: s.id,
@@ -85,7 +117,7 @@ class MysticAnimations {
 
   initCardAnimations() {
     document.addEventListener('mouseover', (e) => {
-      const card = e.target.closest('.card-image-container, .deck-card');
+      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
       if (card) {
         card.style.transform = 'translateY(-10px)';
         card.style.boxShadow = '0 20px 40px rgba(138, 43, 226, 0.3)';
@@ -93,7 +125,7 @@ class MysticAnimations {
     });
 
     document.addEventListener('mouseout', (e) => {
-      const card = e.target.closest('.card-image-container, .deck-card');
+      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
       if (card) {
         card.style.transform = 'translateY(0)';
         card.style.boxShadow = '';
@@ -303,6 +335,7 @@ async function initApp() {
     initButtons();
     initNavigation();
     addAnimationStyles();
+    initDeckFilters();
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
@@ -344,39 +377,171 @@ async function loadCardOfDay() {
 
   const today = new Date();
   const day = today.getDate();
-  const cardIndex = day % Math.min(window.TAROT_CARDS.length, 12);
+  const month = today.getMonth() + 1;
+  const year = today.getFullYear();
+  
+  const uniqueSeed = day + month * 100 + year;
+  const cardIndex = uniqueSeed % window.TAROT_CARDS.length;
   const card = window.TAROT_CARDS[cardIndex];
+  
   if (!card) return;
 
   AppState.currentCard = card;
 
   container.innerHTML = `
-    <div class="card-display">
-      <div class="card-image-container" id="card-day-image">
+    <div class="card-display-full">
+      <div class="card-image-container-full" onclick="showCardModal(${JSON.stringify(card).replace(/"/g, '&quot;')})">
         <img src="${card.image}"
              alt="${card.name}"
-             class="card-image"
+             class="card-image-full"
              onload="this.classList.add('loaded')"
              onerror="this.src='cards/card-back.png'">
       </div>
-      <div class="card-info">
+      <div class="card-info-full">
         <div class="card-name-row">
           <div class="card-name">${card.name}</div>
           ${card.roman ? `<div class="card-roman">${card.roman}</div>` : ''}
         </div>
+        <div class="card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
         <div class="card-keyword">${card.keyword || ''}</div>
         <div class="card-description">${card.description || 'Описание карты'}</div>
+        
+        <div class="card-meanings">
+          <div class="meaning-group">
+            <div class="meaning-title">Прямое положение:</div>
+            <div class="meaning-text">${card.upright || 'Позитивные аспекты карты'}</div>
+          </div>
+          <div class="meaning-group">
+            <div class="meaning-title">Перевёрнутое положение:</div>
+            <div class="meaning-text">${card.reversed || 'Теневая сторона карты'}</div>
+          </div>
+        </div>
+        
+        <div class="card-advice-section">
+          <div class="advice-icon">
+            <i class="fas fa-lightbulb"></i>
+          </div>
+          <div class="advice-text">${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}</div>
+        </div>
+        
         <div class="card-date">
           <i class="fas fa-calendar-alt"></i>
           ${today.toLocaleDateString('ru-RU', {
             weekday: 'long',
             day: 'numeric',
-            month: 'long'
+            month: 'long',
+            year: 'numeric'
           })}
+        </div>
+        
+        <div class="card-actions">
+          <button class="btn-card-details" onclick="showCardModal(${JSON.stringify(card).replace(/"/g, '&quot;')})">
+            <i class="fas fa-search"></i>
+            Подробное описание
+          </button>
         </div>
       </div>
     </div>
   `;
+}
+
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КАРТ =====
+function getSuitName(suit) {
+  switch(suit) {
+    case 'swords': return 'Мечи';
+    case 'cups': return 'Чаши';
+    case 'pentacles': return 'Пентакли';
+    case 'wands': return 'Жезлы';
+    default: return '';
+  }
+}
+
+// ===== МОДАЛКА КАРТЫ =====
+function showCardModal(card) {
+  const modal = $('#card-modal');
+  const body = $('#card-modal-body');
+  if (!modal || !body) return;
+
+  body.innerHTML = `
+    <div class="card-modal-full">
+      <div class="card-modal-image">
+        <img src="${card.image}"
+             alt="${card.name}"
+             onerror="this.src='cards/card-back.png'">
+      </div>
+      
+      <div class="card-modal-content">
+        <h3 class="card-modal-title">
+          ${card.name}
+          ${card.roman ? `<span class="card-modal-roman">${card.roman}</span>` : ''}
+        </h3>
+        
+        <div class="card-modal-meta">
+          <span class="meta-category">${card.category}</span>
+          ${card.suit ? `<span class="meta-suit">${getSuitName(card.suit)}</span>` : ''}
+        </div>
+        
+        <div class="card-modal-keyword">
+          <i class="fas fa-key"></i>
+          ${card.keyword || ''}
+        </div>
+        
+        <div class="card-modal-description">
+          ${card.description || 'Описание карты'}
+        </div>
+        
+        <div class="card-modal-sections">
+          <div class="section">
+            <h4><i class="fas fa-sun"></i> Прямое положение</h4>
+            <p>${card.upright || 'Позитивные аспекты карты'}</p>
+          </div>
+          
+          <div class="section">
+            <h4><i class="fas fa-moon"></i> Перевёрнутое положение</h4>
+            <p>${card.reversed || 'Теневая сторона карты'}</p>
+          </div>
+          
+          <div class="section section-advice">
+            <h4><i class="fas fa-lightbulb"></i> Совет карты</h4>
+            <p>${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}</p>
+          </div>
+        </div>
+        
+        <div class="card-modal-tips">
+          <div class="tip">
+            <i class="fas fa-brain"></i>
+            <span>В медитации: ${getMeditationTip(card)}</span>
+          </div>
+          <div class="tip">
+            <i class="fas fa-question-circle"></i>
+            <span>Если выпала: ${getReadingTip(card)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  openModal(modal);
+}
+
+function getMeditationTip(card) {
+  if (card.suit === 'major') return 'Сосредоточьтесь на внутренних переменах';
+  if (card.suit === 'cups') return 'Обратите внимание на свои чувства';
+  if (card.suit === 'swords') return 'Проанализируйте свои мысли';
+  if (card.suit === 'pentacles') return 'Сосредоточьтесь на материальной стабильности';
+  if (card.suit === 'wands') return 'Ищите творческое вдохновение';
+  return 'Наблюдайте за знаками в течение дня';
+}
+
+function getReadingTip(card) {
+  const tips = {
+    'major': 'Обратите внимание на важные жизненные уроки',
+    'cups': 'Проследите за эмоциональными паттернами',
+    'swords': 'Проанализируйте ментальные установки',
+    'pentacles': 'Оцените материальные аспекты',
+    'wands': 'Ищите области для творческого роста'
+  };
+  return tips[card.suit] || 'Рассмотрите карту в контексте вопроса';
 }
 
 // ===== КОЛЕСО ФОРТУНЫ =====
@@ -483,7 +648,7 @@ function initFortuneWheel() {
         return;
       }
 
-      const idx = Math.floor(Math.random() * Math.min(allCards.length, 12));
+      const idx = Math.floor(Math.random() * allCards.length);
       const card = allCards[idx];
 
       const now = new Date();
@@ -616,7 +781,9 @@ function performSpread(spread) {
       keyword: card.keyword,
       description: card.description,
       advice: card.advice,
-      image: card.image
+      image: card.image,
+      category: card.category,
+      suit: card.suit
     });
   }
 
@@ -656,7 +823,7 @@ function showSpreadResultModal(result) {
            onerror="this.src='cards/card-back.png'">
       <div class="spread-card-content">
         <div class="spread-card-name">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
-        <div class="spread-card-roman">${card.roman || ''}</div>
+        <div class="spread-card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
         <div class="spread-card-keyword">${card.keyword || ''}</div>
         <div class="spread-card-description">${card.description || ''}</div>
         <div class="spread-card-advice">
@@ -693,7 +860,7 @@ function showSpreadResultModal(result) {
       }
 
       <div style="font-size:14px; color:var(--primary); font-weight:600; margin-bottom:12px;">
-        Карты в раскладе:
+        Карты в раскладе (${result.cards.length}):
       </div>
 
       ${cardsHtml}
@@ -703,31 +870,141 @@ function showSpreadResultModal(result) {
   openModal(modal);
 }
 
-// ===== КОЛОДА =====
+// ===== КОЛОДА С ПАГИНАЦИЕЙ И ФИЛЬТРАМИ =====
+let currentDeckPage = 0;
+let currentDeckFilter = 'all';
+const CARDS_PER_PAGE = 12;
+
 function initDeck() {
   const container = $('#deck-grid');
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
 
-  const cards = window.TAROT_CARDS.slice(0, 12);
+  renderDeckPage();
+  initCardClickHandlers();
+}
 
-  container.innerHTML = cards
+function renderDeckPage() {
+  const container = $('#deck-grid');
+  if (!container) return;
+
+  let filteredCards = window.TAROT_CARDS;
+  
+  if (currentDeckFilter !== 'all') {
+    filteredCards = window.TAROT_CARDS.filter(card => {
+      if (currentDeckFilter === 'major') return card.suit === 'major';
+      return card.suit === currentDeckFilter;
+    });
+  }
+
+  const totalPages = Math.ceil(filteredCards.length / CARDS_PER_PAGE);
+  if (currentDeckPage >= totalPages && totalPages > 0) {
+    currentDeckPage = totalPages - 1;
+  }
+
+  const start = currentDeckPage * CARDS_PER_PAGE;
+  const end = start + CARDS_PER_PAGE;
+  const pageCards = filteredCards.slice(start, end);
+
+  container.innerHTML = pageCards
     .map(
       (card, index) => `
-    <div class="deck-card" data-id="${card.id}" style="--card-index: ${index};">
-      <img src="${card.image}"
-           alt="${card.name}"
-           class="deck-card-image"
-           onload="this.classList.add('loaded')"
-           onerror="this.src='cards/card-back.png'">
-      <div class="deck-card-info">
-        <div class="deck-card-name">${card.name}</div>
-        <div class="deck-card-roman">${card.roman || ''}</div>
+      <div class="deck-card" data-id="${card.id}" style="--card-index: ${index};">
+        <div class="deck-card-inner">
+          <img src="${card.image}"
+               alt="${card.name}"
+               class="deck-card-image"
+               onload="this.classList.add('loaded')"
+               onerror="this.src='cards/card-back.png'">
+          <div class="deck-card-overlay">
+            <div class="overlay-content">
+              <div class="card-category-small">${card.category}</div>
+              <div class="card-keyword-small">${card.keyword || ''}</div>
+            </div>
+          </div>
+        </div>
+        <div class="deck-card-info">
+          <div class="deck-card-name">${card.name}</div>
+          <div class="deck-card-roman">${card.roman || ''}</div>
+        </div>
       </div>
-    </div>
-  `
+    `
     )
     .join('');
 
+  renderDeckPagination(filteredCards.length);
+  initCardClickHandlers();
+}
+
+function initDeckFilters() {
+  const filterBtns = $$('.filter-btn');
+  if (!filterBtns.length) return;
+
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', function() {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      
+      currentDeckFilter = this.dataset.filter;
+      currentDeckPage = 0;
+      renderDeckPage();
+    });
+  });
+}
+
+function renderDeckPagination(totalCards) {
+  const totalPages = Math.ceil(totalCards / CARDS_PER_PAGE);
+  let pagination = $('.deck-pagination');
+  
+  if (!pagination) {
+    pagination = document.createElement('div');
+    pagination.className = 'deck-pagination';
+    const container = $('#deck-grid');
+    container.parentNode.insertBefore(pagination, container.nextSibling);
+  }
+
+  if (totalPages <= 1) {
+    pagination.innerHTML = `
+      <div class="pagination-info">Всего карт: ${totalCards}</div>
+    `;
+    return;
+  }
+
+  pagination.innerHTML = `
+    <button class="pagination-btn ${currentDeckPage === 0 ? 'disabled' : ''}" 
+            onclick="changeDeckPage(${currentDeckPage - 1})">
+      <i class="fas fa-chevron-left"></i>
+    </button>
+    <div class="pagination-info">
+      Страница ${currentDeckPage + 1} из ${totalPages}<br>
+      <small>Всего карт: ${totalCards}</small>
+    </div>
+    <button class="pagination-btn ${currentDeckPage === totalPages - 1 ? 'disabled' : ''}" 
+            onclick="changeDeckPage(${currentDeckPage + 1})">
+      <i class="fas fa-chevron-right"></i>
+    </button>
+  `;
+}
+
+window.changeDeckPage = function(page) {
+  const container = $('#deck-grid');
+  if (!container) return;
+
+  let filteredCards = window.TAROT_CARDS;
+  if (currentDeckFilter !== 'all') {
+    filteredCards = window.TAROT_CARDS.filter(card => {
+      if (currentDeckFilter === 'major') return card.suit === 'major';
+      return card.suit === currentDeckFilter;
+    });
+  }
+
+  const totalPages = Math.ceil(filteredCards.length / CARDS_PER_PAGE);
+  if (page >= 0 && page < totalPages) {
+    currentDeckPage = page;
+    renderDeckPage();
+  }
+};
+
+function initCardClickHandlers() {
   $$('.deck-card').forEach((cardEl) => {
     cardEl.addEventListener('click', function () {
       const cardId = parseInt(this.getAttribute('data-id'), 10);
@@ -735,40 +1012,6 @@ function initDeck() {
       if (cardData) showCardModal(cardData);
     });
   });
-}
-
-function showCardModal(card) {
-  const modal = $('#card-modal');
-  const body = $('#card-modal-body');
-  if (!modal || !body) return;
-
-  body.innerHTML = `
-    <div style="text-align: center;">
-      <img src="${card.image}"
-           alt="${card.name}"
-           style="width: 200px; height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;"
-           onerror="this.src='cards/card-back.png'">
-      <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 8px;">${card.name}</h3>
-      ${
-        card.roman
-          ? `<div style="color: var(--text-light); font-size: 16px; margin-bottom: 12px;">${card.roman}</div>`
-          : ''
-      }
-      <div style="background: var(--primary); color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-bottom: 16px;">
-        ${card.keyword || ''}
-      </div>
-      <p style="color: var(--text); line-height: 1.6; margin-bottom: 20px;">${
-        card.description || ''
-      }</p>
-      <div style="font-size: 14px; color: var(--text-light); font-style: italic;">
-        Совет: ${
-          card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'
-        }
-      </div>
-    </div>
-  `;
-
-  openModal(modal);
 }
 
 function openModal(modal) {
