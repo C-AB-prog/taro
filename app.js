@@ -14,7 +14,8 @@ const AppState = {
   lastWheelSpin: null,
   lastWheelText: '',
   stateLoaded: false,
-  wheelTimerId: null
+  wheelTimerId: null,
+  aiEnabled: true
 };
 
 const ASK_UNIVERSE_PRICE = 35;
@@ -84,6 +85,84 @@ var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
       ? s.cardsCount
       : Number(s.cards) || s.requiredCards || 0
 }));
+
+// ===== ИИ АНАЛИЗ =====
+async function analyzeSpreadWithAI(spread, cards, question = '') {
+  if (!AppState.aiEnabled) {
+    return getFallbackAnalysis(spread, cards);
+  }
+
+  try {
+    console.log('🤖 Отправляем расклад на анализ ИИ...');
+    
+    const aiPayload = {
+      cards: cards.map(card => ({
+        name: card.name,
+        roman: card.roman || '',
+        category: card.category,
+        suit: card.suit || '',
+        keyword: card.keyword || '',
+        description: card.description || '',
+        upright: card.upright || '',
+        reversed: card.reversed || '',
+        advice: card.advice || ''
+      })),
+      spreadType: spread.title,
+      question: question || `Общий анализ расклада "${spread.title}"`
+    };
+
+    const response = await fetch('/api/ai-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aiPayload)
+    });
+
+    if (!response.ok) {
+      console.warn('ИИ API недоступен, используем базовый анализ');
+      return getFallbackAnalysis(spread, cards);
+    }
+
+    const aiResult = await response.json();
+    
+    return {
+      aiAnalysis: aiResult.analysis || getFallbackAnalysis(spread, cards),
+      aiSummary: aiResult.summary || generateBasicSummary(cards),
+      isAIgenerated: !aiResult.fallback,
+      aiTimestamp: aiResult.timestamp || new Date().toISOString()
+    };
+    
+  } catch (error) {
+    console.warn('ИИ анализ не удался:', error);
+    return getFallbackAnalysis(spread, cards);
+  }
+}
+
+function getFallbackAnalysis(spread, cards) {
+  const analysis = buildSpreadSummary(spread, cards);
+  return {
+    aiAnalysis: analysis,
+    aiSummary: generateBasicSummary(cards),
+    isAIgenerated: false,
+    aiTimestamp: new Date().toISOString()
+  };
+}
+
+function generateBasicSummary(cards) {
+  const majorArcana = cards.filter(c => c.suit === 'major').length;
+  const cups = cards.filter(c => c.suit === 'cups').length;
+  const swords = cards.filter(c => c.suit === 'swords').length;
+  const pentacles = cards.filter(c => c.suit === 'pentacles').length;
+  const wands = cards.filter(c => c.suit === 'wands').length;
+  
+  const themes = [];
+  if (majorArcana > 0) themes.push('важные жизненные уроки');
+  if (cups > 0) themes.push('эмоциональное развитие');
+  if (swords > 0) themes.push('ментальные процессы');
+  if (pentacles > 0) themes.push('материальные аспекты');
+  if (wands > 0) themes.push('творческую энергию');
+  
+  return `Расклад затрагивает ${themes.join(', ')}. Требуется внимательное рассмотрение.`;
+}
 
 // ===== АНИМАЦИИ =====
 class MysticAnimations {
@@ -388,9 +467,6 @@ async function loadCardOfDay() {
 
   AppState.currentCard = card;
 
-  // Создаем безопасную строку для передачи в onclick
-  const cardJson = JSON.stringify(card).replace(/"/g, '&quot;');
-
   container.innerHTML = `
     <div class="card-display-full">
       <div class="card-image-container-full" onclick="showCardModalById(${card.id})">
@@ -398,7 +474,7 @@ async function loadCardOfDay() {
              alt="${card.name}"
              class="card-image-full"
              onload="this.classList.add('loaded')"
-             onerror="this.src='cards/card-back.png'">
+             onerror="this.src='cards/card-back.jpg'">
       </div>
       <div class="card-info-full">
         <div class="card-name-row">
@@ -476,7 +552,7 @@ function showCardModal(card) {
       <div class="card-modal-image">
         <img src="${card.image}"
              alt="${card.name}"
-             onerror="this.src='cards/card-back.png'">
+             onerror="this.src='cards/card-back.jpg'">
       </div>
       
       <div class="card-modal-content">
@@ -668,7 +744,7 @@ function initFortuneWheel() {
           <img src="${card.image}"
                alt="${card.name}"
                style="width:120px;height:180px;object-fit:cover;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);margin-bottom:12px;"
-               onerror="this.src='cards/card-back.png'">
+               onerror="this.src='cards/card-back.jpg'">
           <div style="font-size:16px; margin-bottom:6px;">Выпала карта:</div>
           <div style="font-size:20px; font-weight:700; color:var(--primary); margin-bottom:4px;">
             ${card.name}${card.roman ? ` (${card.roman})` : ''}
@@ -711,7 +787,7 @@ function initFortuneWheel() {
   });
 }
 
-// ===== РАСКЛАДЫ =====
+// ===== РАСКЛАДЫ С ИИ АНАЛИЗОМ =====
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
@@ -722,6 +798,9 @@ function initSpreads() {
       <div class="spread-header">
         <div class="spread-title">
           ${spread.title}
+          <span class="ai-badge">
+            <i class="fas fa-robot"></i> ИИ-анализ
+          </span>
         </div>
         <div class="spread-price">${spread.price}</div>
       </div>
@@ -729,6 +808,7 @@ function initSpreads() {
       <div class="spread-meta">
         <span><i class="fas fa-cards"></i> ${spread.cardsCount} карт</span>
         <span><i class="fas fa-brain"></i> Общий анализ включён</span>
+        <span><i class="fas fa-robot"></i> ИИ-анализ</span>
       </div>
     </div>
   `
@@ -748,30 +828,84 @@ function initSpreads() {
         return;
       }
 
+      // Спрашиваем вопрос для расклада
+      const question = await openQuestionModalForSpread(spread);
+      
       const ok = await openConfirmModal({
         title: 'Покупка расклада',
-        message: `Купить расклад "${title}" за ${price} ★?`,
-        okText: 'Купить',
+        message: `Купить расклад "${title}" за ${price} ★?${question ? '\n\nС вопросом: ' + question : ''}`,
+        okText: 'Купить с ИИ-анализом',
         cancelText: 'Отмена'
       });
+      
       if (!ok) return;
 
       AppState.userStars -= price;
       updateStarsDisplay();
 
-      const result = performSpread(spread);
-      AppState.archive = [result, ...(AppState.archive || [])];
+      // Показываем индикатор анализа
+      showToast('🎴 Создаём расклад... ИИ анализирует карты', 'info');
 
+      // Выполняем расклад с ИИ анализом
+      const result = await performSpread(spread, question);
+      
+      // Добавляем в архив
+      AppState.archive = [result, ...(AppState.archive || [])];
       await saveUserStateToServer();
       renderArchive();
 
+      // Показываем результат с ИИ анализом
       showSpreadResultModal(result);
-      showToast(`Расклад "${title}" добавлен в архив`, 'success');
+      
+      showToast(`Расклад "${title}" готов! ИИ анализ включён`, 'success');
     });
   });
 }
 
-function performSpread(spread) {
+async function openQuestionModalForSpread(spread) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <button class="modal-close" onclick="this.closest('.modal').remove(); resolve('')">&times;</button>
+        <div class="modal-header">
+          <div class="modal-icon">
+            <i class="fas fa-question"></i>
+          </div>
+          <h3>Вопрос для расклада</h3>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 16px; color: var(--text-light); font-size: 14px;">
+            Задайте вопрос для более точного ИИ-анализа (необязательно)
+          </p>
+          <textarea 
+            id="spread-question-input" 
+            placeholder="Например: Что ждёт меня в отношениях в ближайшие 3 месяца?"
+            rows="3"
+            style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px;"
+          ></textarea>
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="
+              this.closest('.modal').remove();
+              resolve('');
+            ">Без вопроса</button>
+            <button class="btn-primary" onclick="
+              const input = document.getElementById('spread-question-input');
+              this.closest('.modal').remove();
+              resolve(input.value.trim());
+            ">Продолжить</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    setTimeout(() => modal.classList.add('active'), 10);
+  });
+}
+
+async function performSpread(spread, question = '') {
   const allCards = window.TAROT_CARDS || [];
   const cardsCopy = allCards.slice();
   const used = [];
@@ -796,7 +930,11 @@ function performSpread(spread) {
     });
   }
 
-  const summary = buildSpreadSummary(spread, used);
+  // Получаем базовый анализ
+  const baseSummary = buildSpreadSummary(spread, used);
+  
+  // Получаем ИИ анализ
+  const aiResult = await analyzeSpreadWithAI(spread, used, question);
 
   return {
     type: 'spread',
@@ -804,7 +942,9 @@ function performSpread(spread) {
     title: spread.title,
     createdAt: new Date().toISOString(),
     cards: used,
-    summary
+    summary: baseSummary,
+    ...aiResult,
+    question: question || ''
   };
 }
 
@@ -829,50 +969,76 @@ function showSpreadResultModal(result) {
            alt="${card.name}"
            class="spread-card-image"
            onload="this.classList.add('loaded')"
-           onerror="this.src='cards/card-back.png'">
+           onerror="this.src='cards/card-back.jpg'">
       <div class="spread-card-content">
         <div class="spread-card-name">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
         <div class="spread-card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
         <div class="spread-card-keyword">${card.keyword || ''}</div>
-        <div class="spread-card-description">${card.description || ''}</div>
-        <div class="spread-card-advice">
-          <i class="fas fa-lightbulb"></i> ${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}
-        </div>
       </div>
     </div>
   `
     )
     .join('');
 
+  // Определяем иконку для ИИ анализа
+  const aiIcon = result.isAIgenerated ? 
+    '<i class="fas fa-robot" style="color: var(--primary);"></i>' : 
+    '<i class="fas fa-brain" style="color: var(--text-light);"></i>';
+  
+  const aiLabel = result.isAIgenerated ? 
+    '<span style="color: var(--success); font-weight: 600;">ИИ-анализ включён</span>' : 
+    '<span style="color: var(--text-light);">Базовый анализ</span>';
+
   body.innerHTML = `
     <div style="text-align:left;">
       <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
       <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
         <i class="fas fa-calendar-alt"></i> ${dateStr}
+        ${result.question ? `<br><i class="fas fa-question-circle"></i> Вопрос: "${result.question}"` : ''}
       </div>
 
-      ${
-        result.summary
-          ? `
-        <div style="
-          background:rgba(138,43,226,0.06);
-          border-radius:12px;
-          padding:12px 14px;
-          font-size:13px;
-          color:var(--text);
-          margin-bottom:16px;
-        ">
-          <b>Общий вывод:</b> ${result.summary}
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.05); border-radius: 12px;">
+        ${aiIcon}
+        <div>
+          <div style="font-size: 14px; font-weight: 500;">${aiLabel}</div>
+          ${result.aiSummary ? `<div style="font-size: 12px; color: var(--text); margin-top: 4px;">${result.aiSummary}</div>` : ''}
         </div>
-      `
-          : ''
-      }
+      </div>
 
       <div style="font-size:14px; color:var(--primary); font-weight:600; margin-bottom:12px;">
         Карты в раскладе (${result.cards.length}):
       </div>
 
-      ${cardsHtml}
+      <div style="max-height: 200px; overflow-y: auto; margin-bottom: 20px;">
+        ${cardsHtml}
+      </div>
+
+      <div class="ai-analysis-section">
+        <h4 style="font-size: 16px; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <i class="fas fa-chart-line"></i> Детальный анализ
+        </h4>
+        <div style="font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-line;">
+          ${result.aiAnalysis || result.summary}
+        </div>
+        ${result.isAIgenerated ? `
+          <div style="margin-top: 12px; font-size: 11px; color: var(--text-light); font-style: italic; border-top: 1px dashed rgba(138, 43, 226, 0.2); padding-top: 8px;">
+            <i class="fas fa-robot"></i> Анализ сгенерирован с помощью ИИ на основе значений карт Таро
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="
+        background: rgba(255, 215, 0, 0.05);
+        border-radius: 12px;
+        padding: 12px;
+        border: 1px solid rgba(255, 215, 0, 0.2);
+        margin-top: 16px;
+      ">
+        <div style="font-size: 13px; color: var(--text);">
+          <i class="fas fa-lightbulb" style="color: #FFD700;"></i>
+          <b>Совет:</b> Возвращайтесь к этому анализу в течение недели. Записывайте инсайты.
+        </div>
+      </div>
     </div>
   `;
 
@@ -888,8 +1054,22 @@ function initDeck() {
   const container = $('#deck-grid');
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
 
+  // Добавляем фильтры
+  const filterHtml = `
+    <div class="deck-filters">
+      <button class="filter-btn active" data-filter="all">Все</button>
+      <button class="filter-btn" data-filter="major">Старшие</button>
+      <button class="filter-btn" data-filter="cups">Чаши</button>
+      <button class="filter-btn" data-filter="swords">Мечи</button>
+      <button class="filter-btn" data-filter="pentacles">Пентакли</button>
+      <button class="filter-btn" data-filter="wands">Жезлы</button>
+    </div>
+  `;
+  
+  container.insertAdjacentHTML('beforebegin', filterHtml);
   renderDeckPage();
   initCardClickHandlers();
+  initDeckFilters();
 }
 
 function renderDeckPage() {
@@ -923,7 +1103,7 @@ function renderDeckPage() {
                alt="${card.name}"
                class="deck-card-image"
                onload="this.classList.add('loaded')"
-               onerror="this.src='cards/card-back.png'">
+               onerror="this.src='cards/card-back.jpg'">
           <div class="deck-card-overlay">
             <div class="overlay-content">
               <div class="card-category-small">${card.category}</div>
@@ -1369,7 +1549,7 @@ function renderArchive() {
       let subtitle = '';
       let iconClass = '';
       if (entry.type === 'spread') {
-        subtitle = `${(entry.cards || []).length} карт • Расклад`;
+        subtitle = `${(entry.cards || []).length} карт • ${entry.isAIgenerated ? 'ИИ-анализ' : 'Расклад'}`;
         iconClass = 'spread';
       } else if (entry.type === 'wheel') {
         subtitle = `Колесо фортуны • ${entry.card ? entry.card.name : ''}`;
@@ -1388,7 +1568,8 @@ function renderArchive() {
         <div class="spread-item archive-item" data-index="${index}">
           <div class="archive-icon ${iconClass}">
             ${
-              entry.type === 'spread' ? '<i class="fas fa-heart-circle-bolt"></i>' :
+              entry.type === 'spread' ? 
+                (entry.isAIgenerated ? '<i class="fas fa-robot"></i>' : '<i class="fas fa-heart-circle-bolt"></i>') :
               entry.type === 'wheel' ? '<i class="fas fa-dharmachakra"></i>' :
               entry.type === 'yesno' ? '<i class="fas fa-check"></i>' :
               '<i class="fas fa-moon"></i>'
@@ -1454,7 +1635,7 @@ function showArchiveEntryModal(entry) {
         <img src="${card.image}"
              alt="${card.name}"
              style="width:200px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;"
-             onerror="this.src='cards/card-back.png'">
+             onerror="this.src='cards/card-back.jpg'">
         <div style="font-size:18px; font-weight:600; color:var(--primary); margin-bottom:6px;">
           ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
