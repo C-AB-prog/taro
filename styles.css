@@ -133,10 +133,6 @@ body {
   gap: 8px;
 }
 
-.status-dot {
-  display: none;
-}
-
 .status-star-icon {
   font-size: 14px;
   color: var(--gold);
