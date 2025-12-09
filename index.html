@@ -86,15 +86,6 @@
             <div id="card-day-content" class="card-content">
               <!-- Карта будет здесь -->
             </div>
-
-            <div class="card-footer">
-              <div class="energy-indicator">
-                <div class="energy-bar">
-                  <div class="energy-fill" style="width: 100%"></div>
-                </div>
-                <span class="energy-text">Энергия карты: 100%</span>
-              </div>
-            </div>
           </div>
 
           <!-- Магические действия -->
@@ -125,57 +116,6 @@
                 <h4>Спросить Вселенную</h4>
                 <p>Ответ с трактовкой</p>
                 <div class="action-price">35</div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Магазин звёзд -->
-          <section class="magic-actions" id="shop-section">
-            <div class="section-header">
-              <div class="section-icon">
-                <i class="fas fa-star"></i>
-              </div>
-              <div>
-                <h3>Магазин звёзд</h3>
-                <p class="section-subtitle">Виртуальная валюта для раскладов</p>
-              </div>
-            </div>
-
-            <div class="actions-grid">
-              <div class="action-card star-pack" data-stars="150">
-                <div class="action-icon tarot">
-                  <i class="fas fa-star"></i>
-                </div>
-                <h4>150 звёзд</h4>
-                <p>Пакет за 99 звёзд Telegram</p>
-                <div class="action-price">150</div>
-              </div>
-
-              <div class="action-card star-pack" data-stars="350">
-                <div class="action-icon tarot">
-                  <i class="fas fa-star"></i>
-                </div>
-                <h4>350 звёзд</h4>
-                <p>Пакет за 199 звёзд Telegram</p>
-                <div class="action-price">350</div>
-              </div>
-
-              <div class="action-card star-pack" data-stars="800">
-                <div class="action-icon tarot">
-                  <i class="fas fa-star"></i>
-                </div>
-                <h4>800 звёзд</h4>
-                <p>Пакет за 399 звёзд Telegram</p>
-                <div class="action-price">800</div>
-              </div>
-
-              <div class="action-card star-pack" data-stars="1000">
-                <div class="action-icon tarot">
-                  <i class="fas fa-star"></i>
-                </div>
-                <h4>1000 звёзд</h4>
-                <p>Пакет за 899 звёзд Telegram</p>
-                <div class="action-price">1000</div>
               </div>
             </div>
           </section>
@@ -355,6 +295,72 @@
           </div>
         </div>
 
+        <!-- Модальное окно магазина звезд -->
+        <div class="modal" id="shop-modal">
+          <div class="modal-content">
+            <button class="modal-close">&times;</button>
+            <div class="modal-header">
+              <div class="modal-icon">
+                <i class="fas fa-shopping-cart"></i>
+              </div>
+              <h3>Магазин звёзд</h3>
+            </div>
+            <div class="modal-body">
+              <p style="text-align:center; margin-bottom:20px; color:var(--text-light);">Пополните баланс звёздами</p>
+              
+              <div class="shop-packs">
+                <div class="shop-pack" data-stars="150">
+                  <div class="pack-icon">
+                    <i class="fas fa-star"></i>
+                  </div>
+                  <div class="pack-info">
+                    <h4>150 звёзд</h4>
+                    <p>Пакет за 99 звёзд Telegram</p>
+                  </div>
+                  <div class="pack-price">150 ★</div>
+                </div>
+                
+                <div class="shop-pack" data-stars="350">
+                  <div class="pack-icon">
+                    <i class="fas fa-star"></i>
+                  </div>
+                  <div class="pack-info">
+                    <h4>350 звёзд</h4>
+                    <p>Пакет за 199 звёзд Telegram</p>
+                  </div>
+                  <div class="pack-price">350 ★</div>
+                </div>
+                
+                <div class="shop-pack" data-stars="800">
+                  <div class="pack-icon">
+                    <i class="fas fa-star"></i>
+                  </div>
+                  <div class="pack-info">
+                    <h4>800 звёзд</h4>
+                    <p>Пакет за 399 звёзд Telegram</p>
+                  </div>
+                  <div class="pack-price">800 ★</div>
+                </div>
+                
+                <div class="shop-pack" data-stars="1000">
+                  <div class="pack-icon">
+                    <i class="fas fa-star"></i>
+                  </div>
+                  <div class="pack-info">
+                    <h4>1000 звёзд</h4>
+                    <p>Пакет за 899 звёзд Telegram</p>
+                  </div>
+                  <div class="pack-price">1000 ★</div>
+                </div>
+              </div>
+              
+              <div style="text-align:center; margin-top:20px; font-size:12px; color:var(--text-light);">
+                <i class="fas fa-info-circle"></i> Звёзды используются для покупки раскладов и вопросов
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Модальное окно подтверждения покупки -->
         <div class="modal" id="confirm-modal">
           <div class="modal-content">
@@ -389,17 +395,6 @@
 
     <!-- Тосты -->
     <div id="toast" class="toast"></div>
-
-    <!-- Лоадер -->
-    <div class="loader" id="app-loader">
-      <div class="loader-wheel">
-        <div class="wheel-spoke"></div>
-        <div class="wheel-spoke"></div>
-        <div class="wheel-spoke"></div>
-        <div class="wheel-center"></div>
-      </div>
-      <p>Инициализация энергий...</p>
-    </div>
   </div>
 
   <script src="cards-data.js"></script>
