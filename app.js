@@ -2,7 +2,7 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-// ===== СКРОЛЛ-ЛОК ДЛЯ МОДАЛОК (чтобы фон не листался) =====
+// ===== СКРОЛЛ-ЛОК ДЛЯ МОДАЛОК =====
 let __scrollLockY = 0;
 
 function lockBodyScroll() {
@@ -29,7 +29,6 @@ function activateModal(modal) {
   modal.classList.add('active');
   lockBodyScroll();
 
-  // На мобилке: если свайп по затемнению — не даём “пробить” фон
   const preventBackdropScroll = (e) => {
     if (e.target === modal) e.preventDefault();
   };
@@ -49,13 +48,12 @@ function closeModal(modal) {
   if (!anyModalActive()) unlockBodyScroll();
 }
 
-// ===== ФИКС ДЛЯ JPG/PNG: УМНЫЙ onerror =====
+// ===== ФИКС ДЛЯ JPG/PNG =====
 function handleCardImgError(imgEl) {
   if (!imgEl) return;
   const src = imgEl.getAttribute('src') || '';
   const step = Number(imgEl.dataset.fallbackStep || 0);
 
-  // 0: пробуем сменить расширение
   if (step === 0) {
     if (/\.png(\?|#|$)/i.test(src)) {
       imgEl.dataset.fallbackStep = '1';
@@ -69,7 +67,6 @@ function handleCardImgError(imgEl) {
     }
   }
 
-  // 1+: дефолт
   imgEl.dataset.fallbackStep = '2';
   imgEl.onerror = null;
   imgEl.src = 'cards/default-card.jpg';
@@ -95,8 +92,7 @@ const AppState = {
   lastWheelSpin: null,
   lastWheelText: '',
   stateLoaded: false,
-  wheelTimerId: null,
-  aiEnabled: true
+  wheelTimerId: null
 };
 
 const ASK_UNIVERSE_PRICE = 35;
@@ -104,436 +100,14 @@ const YES_NO_PRICE = 25;
 const NEW_USER_STARS = 150;
 const WHEEL_COOLDOWN_HOURS = 24;
 
-// ===== МЕТА ДЛЯ КАРТ (для общего вывода расклада) =====
-const CARD_META = {
-  0: { score: 1, tags: ['change', 'inner'], vibe: 'новый цикл, спонтанность и желание попробовать' },
-  1: { score: 2, tags: ['career', 'inner'], vibe: 'сильная воля, умение влиять на события и создавать результат' },
-  2: { score: 1, tags: ['inner', 'relationships'], vibe: 'интуиция, скрытые мотивы и внутреннее знание' },
-  3: { score: 2, tags: ['relationships', 'material'], vibe: 'изобилие, притяжение, забота и созидание' },
-  4: { score: 1, tags: ['career', 'material'], vibe: 'структура, ответственность и контроль над ситуацией' },
-  5: { score: 1, tags: ['inner', 'relationships'], vibe: 'традиции, обучение и опора на проверенные подходы' },
-  6: { score: 2, tags: ['relationships'], vibe: 'выбор сердцем, партнёрство и важные решения в отношениях' },
-  7: { score: 2, tags: ['career', 'change'], vibe: 'движение вперёд, победа и контроль над направлением' },
-  8: { score: 2, tags: ['inner', 'relationships'], vibe: 'внутренняя устойчивость, мягкая сила и терпение' },
-  9: { score: 0, tags: ['inner'], vibe: 'самоанализ, пауза и поиск собственных ответов' },
-  10: { score: 2, tags: ['change', 'fate'], vibe: 'смена этапа, судьбоносные события и обновление цикла' },
-  11: { score: 0, tags: ['karma', 'material'], vibe: 'равновесие, честность и необходимость принимать последствия' }
-};
-
-// Дополняем META для всех карт
-for (let i = 12; i <= 77; i++) {
-  CARD_META[i] = {
-    score: Math.floor(Math.random() * 3) - 1,
-    tags: getRandomTags(),
-    vibe: getRandomVibe()
-  };
-}
-
-function getRandomTags() {
-  const allTags = ['inner', 'relationships', 'career', 'material', 'change', 'karma', 'fate'];
-  const count = Math.floor(Math.random() * 3) + 1;
-  const shuffled = [...allTags].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count);
-}
-
-function getRandomVibe() {
-  const vibes = [
-    'энергия перемен и новых возможностей',
-    'внутренний поиск и осознание',
-    'гармония в отношениях и взаимопонимание',
-    'материальная стабильность и рост',
-    'творческий подъём и вдохновение',
-    'преодоление трудностей и развитие',
-    'духовный рост и просветление',
-    'практические достижения и успех',
-    'эмоциональная глубина и чувствительность',
-    'интеллектуальный прорыв и ясность'
-  ];
-  return vibes[Math.floor(Math.random() * vibes.length)];
-}
-
-// ===== РАСКЛАДЫ ИЗ cards-data.js в едином формате =====
-var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
-  id: s.id,
-  title: s.title,
-  description: s.description,
-  price:
-    typeof s.price === 'number'
-      ? s.price
-      : parseInt(String(s.priceLabel || '').replace(/\D/g, ''), 10) || 0,
-  cardsCount:
-    typeof s.cardsCount === 'number'
-      ? s.cardsCount
-      : Number(s.cards) || s.requiredCards || 0
-}));
-
-// ===== ВМЕСТО ИИ — УЛУЧШЕННЫЙ БАЗОВЫЙ АНАЛИЗ =====
-function getSpreadAnalysis(spread, cards, question = '') {
-  return {
-    analysis: generateSpreadAnalysis(spread, cards, question),
-    summary: generateBasicSummary(cards),
-    isEnhanced: true,
-    timestamp: new Date().toISOString()
-  };
-}
-
-function generateSpreadAnalysis(spread, cards, question = '') {
-  const cardNames = cards.map(c => c.name).join(', ');
-  const majorCount = cards.filter(c => c.suit === 'major').length;
-  const cupsCount = cards.filter(c => c.suit === 'cups').length;
-  const swordsCount = cards.filter(c => c.suit === 'swords').length;
-  const pentaclesCount = cards.filter(c => c.suit === 'pentacles').length;
-  const wandsCount = cards.filter(c => c.suit === 'wands').length;
-
-  let analysis = `📊 АНАЛИЗ РАСКЛАДА "${spread.title}"\n\n`;
-
-  if (question) {
-    analysis += `Вопрос: "${question}"\n\n`;
-  }
-
-  analysis += `Карты в раскладе: ${cardNames}\n\n`;
-
-  analysis += `🔍 ОБЩАЯ ЭНЕРГЕТИКА:\n`;
-
-  if (majorCount > cards.length / 2) {
-    analysis += `Сильное влияние Старших Арканов (${majorCount} из ${cards.length}) — период значительных перемен и судьбоносных событий.\n\n`;
-  } else if (cupsCount > 0 && swordsCount === 0) {
-    analysis += `Эмоционально насыщенный расклад с акцентом на чувства и отношения.\n\n`;
-  } else if (swordsCount > cupsCount) {
-    analysis += `Расклад с ментальным акцентом — важно анализировать ситуации, а не действовать импульсивно.\n\n`;
-  } else {
-    analysis += `Сбалансированный расклад с разнообразными энергиями.\n\n`;
-  }
-
-  analysis += `💫 ОСНОВНЫЕ ТЕМЫ:\n`;
-  const themes = [];
-  if (cupsCount > 0) themes.push('эмоции и отношения');
-  if (swordsCount > 0) themes.push('мысли и решения');
-  if (pentaclesCount > 0) themes.push('материальные вопросы');
-  if (wandsCount > 0) themes.push('творчество и действие');
-  if (majorCount > 0) themes.push('важные жизненные уроки');
-
-  analysis += themes.join(', ') + '.\n\n';
-
-  analysis += `🌟 РЕКОМЕНДАЦИИ:\n`;
-  analysis += `1. Рассмотрите каждую карту как часть единой картины\n`;
-  analysis += `2. Обратите внимание на повторяющиеся символы или цвета\n`;
-  analysis += `3. Доверьтесь своей интуиции при интерпретации\n`;
-  analysis += `4. Возвращайтесь к этому раскладу в течение недели\n\n`;
-
-  analysis += `📝 КЛЮЧЕВОЙ СОВЕТ:\n`;
-  const advice = [
-    "Используйте энергию этого расклада для осознанных действий.",
-    "Этот период идеален для внутренней работы и размышлений.",
-    "Обратите внимание на знаки, которые появляются в ближайшие дни.",
-    "Доверяйте процессу и не торопите события.",
-    "Используйте полученные инсайты для практических шагов."
-  ];
-  analysis += advice[Math.floor(Math.random() * advice.length)];
-
-  return analysis;
-}
-
-function generateBasicSummary(cards) {
-  const majorArcana = cards.filter(c => c.suit === 'major').length;
-  const positiveCards = cards.filter(c => {
-    const meta = CARD_META[c.cardId || c.id];
-    return meta && meta.score > 0;
-  }).length;
-
-  if (majorArcana > cards.length / 2) {
-    return 'Сильное влияние старших арканов — период значимых перемен.';
-  } else if (positiveCards > cards.length / 2) {
-    return 'Преобладают поддерживающие энергии — хороший период для действий.';
-  } else {
-    return 'Сбалансированный расклад, важно учитывать все нюансы.';
-  }
-}
-
-// ===== АНИМАЦИИ =====
-class MysticAnimations {
-  constructor() {
-    this.initParticles();
-    this.initCardAnimations();
-    this.initButtonEffects();
-  }
-
-  initParticles() {
-    const container = $('.particles');
-    if (!container) return;
-
-    for (let i = 0; i < 10; i++) {
-      const particle = document.createElement('div');
-      particle.style.cssText = `
-        position: absolute;
-        width: ${2 + Math.random() * 3}px;
-        height: ${2 + Math.random() * 3}px;
-        background: ${i % 3 === 0 ? 'var(--primary)' : i % 3 === 1 ? 'var(--secondary)' : 'var(--accent)'};
-        border-radius: 50%;
-        top: ${Math.random() * 100}%;
-        left: ${Math.random() * 100}%;
-        opacity: ${0.05 + Math.random() * 0.1};
-        animation: floatParticle ${15 + Math.random() * 10}s linear infinite;
-        animation-delay: ${Math.random() * 5}s;
-      `;
-      container.appendChild(particle);
-    }
-  }
-
-  initCardAnimations() {
-    document.addEventListener('mouseover', (e) => {
-      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
-      if (card) {
-        card.style.transform = 'translateY(-10px)';
-        card.style.boxShadow = '0 20px 40px rgba(138, 43, 226, 0.3)';
-      }
-    });
-
-    document.addEventListener('mouseout', (e) => {
-      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
-      if (card) {
-        card.style.transform = 'translateY(0)';
-        card.style.boxShadow = '';
-      }
-    });
-  }
-
-  initButtonEffects() {
-    const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card, .btn-card-details');
-    buttons.forEach((btn) => {
-      btn.addEventListener('click', (e) => this.createRippleEffect(e));
-    });
-  }
-
-  createRippleEffect(event) {
-    const btn = event.currentTarget;
-    const ripple = document.createElement('span');
-
-    const diameter = Math.max(btn.clientWidth, btn.clientHeight);
-    const radius = diameter / 2;
-
-    ripple.style.cssText = `
-      position: absolute;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.3);
-      transform: scale(0);
-      animation: ripple 0.6s linear;
-      pointer-events: none;
-      width: ${diameter}px;
-      height: ${diameter}px;
-      left: ${event.clientX - btn.getBoundingClientRect().left - radius}px;
-      top: ${event.clientY - btn.getBoundingClientRect().top - radius}px;
-    `;
-
-    btn.style.position = 'relative';
-    btn.style.overflow = 'hidden';
-    btn.appendChild(ripple);
-
-    setTimeout(() => ripple.remove(), 600);
-  }
-}
-
-// ===== ОБЩИЙ ВЫВОД РАСКЛАДА =====
-function buildSpreadSummary(spread, cards) {
-  if (!cards || !cards.length) {
-    return 'Расклад получился нейтральным, дополнительная трактовка пока недоступна.';
-  }
-
-  let totalScore = 0;
-  const tagCounter = {};
-  const vibes = [];
-
-  cards.forEach((entry) => {
-    const id =
-      typeof entry.cardId === 'number'
-        ? entry.cardId
-        : typeof entry.id === 'number'
-        ? entry.id
-        : null;
-    const meta = id != null ? CARD_META[id] : null;
-    if (!meta) return;
-
-    totalScore += meta.score;
-    meta.tags.forEach((tag) => {
-      tagCounter[tag] = (tagCounter[tag] || 0) + 1;
-    });
-    vibes.push(meta.vibe);
-  });
-
-  const avg = totalScore / cards.length;
-  let tone;
-  if (avg >= 1) {
-    tone = 'в целом расклад выглядит поддерживающим и ресурсным';
-  } else if (avg <= -0.5) {
-    tone = 'в целом расклад указывает на более напряжённый этап и необходимость аккуратности';
-  } else {
-    tone = 'в целом расклад сбалансирован, без ярко выраженного плюса или минуса';
-  }
-
-  let topTag = null;
-  let topCount = 0;
-  Object.entries(tagCounter).forEach(([tag, count]) => {
-    if (count > topCount) {
-      topCount = count;
-      topTag = tag;
-    }
-  });
-
-  let themeText = '';
-  switch (topTag) {
-    case 'relationships':
-      themeText = 'Главная тема — отношения и эмоциональные связи.';
-      break;
-    case 'career':
-      themeText = 'Главная тема — реализация, работа и цели.';
-      break;
-    case 'inner':
-      themeText = 'Главная тема — внутренние процессы и интуиция.';
-      break;
-    case 'change':
-      themeText = 'Период перемен и смены этапа.';
-      break;
-    case 'material':
-      themeText = 'Акцент на материальную сферу и ресурсы.';
-      break;
-    case 'karma':
-    case 'fate':
-      themeText = 'Чувствуется кармический оттенок: важные уроки.';
-      break;
-    default:
-      themeText = 'Затронуто несколько сфер одновременно.';
-  }
-
-  const vibesSample = vibes.slice(0, 3).join('; ');
-
-  return [
-    `В целом ${tone}.`,
-    themeText,
-    `По ощущениям карт это про: ${vibesSample}.`,
-    `Важно действовать осознанно и не зацикливаться на сложностях.`
-  ].join(' ');
-}
-
-// ===== БЭК: ЗАГРУЗКА / СОХРАНЕНИЕ =====
-async function loadUserStateFromServer() {
-  const userId = AppState.userId;
-  if (!userId) {
-    AppState.userStars = NEW_USER_STARS;
-    AppState.archive = [];
-    AppState.lastWheelSpin = null;
-    AppState.lastWheelText = '';
-    AppState.stateLoaded = true;
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/state?userId=' + encodeURIComponent(String(userId)));
-
-    if (res.status === 404) {
-      AppState.userStars = NEW_USER_STARS;
-      AppState.archive = [];
-      AppState.lastWheelSpin = null;
-      AppState.lastWheelText = '';
-      AppState.stateLoaded = true;
-      return;
-    }
-
-    if (!res.ok) throw new Error('Failed to load state');
-
-    const data = await res.json();
-
-    AppState.userStars =
-      typeof data.stars === 'number' && data.stars > 0 ? data.stars : NEW_USER_STARS;
-    AppState.archive = Array.isArray(data.archive) ? data.archive : [];
-    AppState.lastWheelSpin = data.wheelLastSpin ? new Date(data.wheelLastSpin) : null;
-    AppState.lastWheelText = data.lastWheelText || '';
-    AppState.stateLoaded = true;
-  } catch (err) {
-    console.error('Ошибка загрузки состояния:', err);
-    AppState.userStars = NEW_USER_STARS;
-    AppState.archive = [];
-    AppState.lastWheelSpin = null;
-    AppState.lastWheelText = '';
-    AppState.stateLoaded = true;
-  }
-}
-
-async function saveUserStateToServer() {
-  const userId = AppState.userId;
-  if (!userId) return;
-
-  const payload = {
-    userId: String(userId),
-    stars: AppState.userStars,
-    archive: AppState.archive,
-    wheelLastSpin: AppState.lastWheelSpin ? AppState.lastWheelSpin.toISOString() : null,
-    lastWheelText: AppState.lastWheelText || ''
-  };
-
-  try {
-    await fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-  } catch (err) {
-    console.error('Ошибка сохранения состояния:', err);
-  }
-}
-
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-async function initApp() {
-  try {
-    initTelegram();
-    cleanupHeaderStatus();
-
-    window.mysticAnimations = new MysticAnimations();
-
-    await loadUserStateFromServer();
-    updateStarsDisplay();
-    renderArchive();
-
-    await loadCardOfDay();
-    initFortuneWheel();
-    initSpreads();
-    initDeck();
-    initButtons();
-    initNavigation();
-    addAnimationStyles();
-    initDeckFilters();
-  } catch (error) {
-    console.error('Ошибка инициализации:', error);
-    showToast('Ошибка загрузки приложения', 'error');
-  }
-}
-
-// ===== TELEGRAM =====
-function initTelegram() {
-  if (window.Telegram && window.Telegram.WebApp) {
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
-
-    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
-    if (user) {
-      AppState.user = {
-        name: user.first_name || 'Пользователь',
-        username: user.username || ''
-      };
-      AppState.userId = user.id;
-    }
-  }
-
-  if (!AppState.userId) {
-    AppState.user = { name: 'Гость', username: 'debug_user' };
-    AppState.userId = 999999;
-  }
-}
-
-function cleanupHeaderStatus() {
-  const amountEl = $('#stars-amount');
-  if (amountEl) amountEl.textContent = '0';
-}
+// ===== ТАРОЛОГИ ДЛЯ ЛОКАЛЬНОЙ ГЕНЕРАЦИИ =====
+const TAROT_READERS = [
+  { name: "Арина", specialty: "кармические связи", emoji: "🌙" },
+  { name: "Михаил", specialty: "практические вопросы", emoji: "⚡" },
+  { name: "Лиана", specialty: "отношения", emoji: "💖" },
+  { name: "Дмитрий", specialty: "духовный рост", emoji: "🕊️" },
+  { name: "Светлана", specialty: "финансы и карьера", emoji: "💼" }
+];
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КАРТ =====
 function getSuitName(suit) {
@@ -546,7 +120,364 @@ function getSuitName(suit) {
   }
 }
 
-// ===== КАРТА ДНЯ (на главной только имя + значение, детали под кнопкой) =====
+// ===== ИИ-ТРАКТОВКА РАСКЛАДОВ =====
+async function getAITarotReading(spread, cards, question = '') {
+  try {
+    showThinkingAnimation('Анализирую расклад...');
+    
+    const response = await fetch('/api/tarot-reading', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        cards: cards.map(card => ({
+          id: card.id,
+          name: card.name,
+          roman: card.roman,
+          keyword: card.keyword,
+          description: card.description,
+          upright: card.upright,
+          reversed: card.reversed,
+          advice: card.advice,
+          category: card.category,
+          suit: card.suit
+        })),
+        spreadType: spread.title,
+        question: question,
+        userId: AppState.userId || 'guest_' + Date.now()
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Network response was not ok');
+    }
+
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error('AI analysis failed');
+    }
+
+    return {
+      analysis: data.analysis,
+      summary: data.summary,
+      tarotReader: data.tarotReader,
+      readingId: data.readingId,
+      isAI: true,
+      timestamp: data.timestamp
+    };
+
+  } catch (error) {
+    console.error('AI Reading Error:', error);
+    
+    // Фолбэк на локальную генерацию
+    return generateLocalReading(spread, cards, question);
+  }
+}
+
+// ===== ЛОКАЛЬНАЯ ГЕНЕРАЦИЯ (ЗАПАСНОЙ ВАРИАНТ) =====
+function generateLocalReading(spread, cards, question) {
+  const reader = TAROT_READERS[Math.floor(Math.random() * TAROT_READERS.length)];
+  
+  let analysis = `${reader.emoji} Привет! Я ${reader.name}. `;
+  
+  if (question) {
+    analysis += `Ваш вопрос "${question}" очень важен. Давайте разберём его через карты.\n\n`;
+  } else {
+    analysis += `Давайте посмотрим, что карты расскажут о вашей ситуации.\n\n`;
+  }
+  
+  // Анализ каждой карты
+  cards.forEach((card, index) => {
+    analysis += `Карта ${index + 1}: ${card.name}\n`;
+    analysis += `${getCardInsight(card, index)}\n\n`;
+  });
+  
+  // Общий анализ
+  analysis += `🌿 Общая энергетика:\n`;
+  analysis += `${getOverallReading(cards)}\n\n`;
+  
+  // Совет
+  analysis += `💫 Мой совет:\n`;
+  analysis += `${getPersonalAdvice(cards, reader)}\n\n`;
+  
+  // Подпись
+  analysis += `С уважением,\n${reader.name}\nТаролог, специализация: ${reader.specialty}`;
+  
+  return {
+    analysis,
+    summary: getQuickSummary(cards),
+    tarotReader: reader,
+    readingId: 'local_' + Date.now(),
+    isAI: false,
+    timestamp: new Date().toISOString()
+  };
+}
+
+// Вспомогательные функции для локальной генерации
+function getCardInsight(card, position) {
+  const insights = [
+    `В этой позиции ${card.name} говорит о ${card.keyword.toLowerCase()}. ${getRandomObservation()}`,
+    `Мне часто встречалась эта карта, когда клиенты переживали ${getRandomSituation()}.`,
+    `Интересно, что именно ${card.name} выпала здесь... Это может указывать на ${getRandomMeaning()}.`,
+    `По моему опыту, ${card.name} в такой позиции часто предвещает ${getRandomOutcome()}.`
+  ];
+  
+  return insights[Math.floor(Math.random() * insights.length)];
+}
+
+function getRandomObservation() {
+  const observations = [
+    'Обратите внимание на детали.',
+    'Важно не упустить момент.',
+    'Это время для внутренней работы.',
+    'Ситуация требует терпения.',
+    'Доверьтесь процессу.'
+  ];
+  return observations[Math.floor(Math.random() * observations.length)];
+}
+
+function getRandomSituation() {
+  const situations = [
+    'периоды перемен',
+    'важные решения',
+    'эмоциональные подъёмы',
+    'моменты выбора',
+    'духовные поиски'
+  ];
+  return situations[Math.floor(Math.random() * situations.length)];
+}
+
+function getRandomMeaning() {
+  const meanings = [
+    'скрытые возможности',
+    'невысказанные чувства',
+    'внутренние ресурсы',
+    'важные уроки',
+    'кармические связи'
+  ];
+  return meanings[Math.floor(Math.random() * meanings.length)];
+}
+
+function getRandomOutcome() {
+  const outcomes = [
+    'новые знакомства',
+    'финансовые изменения',
+    'творческий подъём',
+    'душевное равновесие',
+    'ясность в отношениях'
+  ];
+  return outcomes[Math.floor(Math.random() * outcomes.length)];
+}
+
+function getOverallReading(cards) {
+  const majorCount = cards.filter(c => c.suit === 'major').length;
+  const cupsCount = cards.filter(c => c.suit === 'cups').length;
+  const swordsCount = cards.filter(c => c.suit === 'swords').length;
+  
+  if (majorCount > cards.length / 2) {
+    return 'Сильное влияние Старших Арканов — это период судьбоносных перемен и важных жизненных уроков.';
+  } else if (cupsCount > swordsCount) {
+    return 'Расклад с акцентом на эмоции и отношения. Чувства играют ключевую роль.';
+  } else if (swordsCount > cupsCount) {
+    return 'Ментальная энергия преобладает. Важно анализировать, а не действовать импульсивно.';
+  } else {
+    return 'Сбалансированная энергия. Есть и вызовы, и ресурсы для их преодоления.';
+  }
+}
+
+function getPersonalAdvice(cards, reader) {
+  const advices = [
+    `Как специалист по ${reader.specialty}, советую: ${getRandomPracticalAdvice()}`,
+    `Из моего опыта: ${getRandomExperience()}`,
+    `Клиенты часто спрашивают, что делать в таких ситуациях. Мой ответ: ${getRandomGuidance()}`,
+    `Запомните: ${getRandomWisdom()}`
+  ];
+  
+  return advices[Math.floor(Math.random() * advices.length)];
+}
+
+function getRandomPracticalAdvice() {
+  const advices = [
+    'выделите время для самоанализа в течение недели',
+    'ведите дневник наблюдений за знаками',
+    'обсудите ситуацию с тем, кому доверяете',
+    'не торопитесь с выводами',
+    'практикуйте медитацию для ясности'
+  ];
+  return advices[Math.floor(Math.random() * advices.length)];
+}
+
+function getRandomExperience() {
+  const experiences = [
+    'самые важные прозрения приходят в тишине',
+    'карты показывают тенденции, но выбор всегда за вами',
+    'доверие к себе — лучший советчик',
+    'все события взаимосвязаны',
+    'каждый расклад уникален, как и человек'
+  ];
+  return experiences[Math.floor(Math.random() * experiences.length)];
+}
+
+function getRandomGuidance() {
+  const guidance = [
+    'слушайте своё сердце, но проверяйте факты',
+    'делайте маленькие шаги каждый день',
+    'обращайте внимание на повторяющиеся знаки',
+    'не бойтесь просить о помощи',
+    'цените то, что уже есть'
+  ];
+  return guidance[Math.floor(Math.random() * guidance.length)];
+}
+
+function getRandomWisdom() {
+  const wisdom = [
+    'всё происходит вовремя',
+    'каждая карта — это урок',
+    'жизнь — это путь, а не пункт назначения',
+    'настоящая сила в принятии',
+    'любовь — лучший проводник'
+  ];
+  return wisdom[Math.floor(Math.random() * wisdom.length)];
+}
+
+function getQuickSummary(cards) {
+  const summaries = [
+    'Период роста и трансформации',
+    'Время для важных решений',
+    'Эмоциональное обновление',
+    'Практические шаги к цели',
+    'Духовные прозрения',
+    'Гармония в отношениях',
+    'Творческая реализация'
+  ];
+  return summaries[Math.floor(Math.random() * summaries.length)];
+}
+
+// ===== ФУНКЦИЯ ДЛЯ АНИМАЦИИ "ДУМАЕТ" =====
+function showThinkingAnimation(message = 'Таролог обдумывает ваш вопрос...') {
+  const modal = $('#card-modal');
+  const body = $('#card-modal-body');
+  if (!modal || !body) return;
+
+  body.innerHTML = `
+    <div style="text-align: center; padding: 50px 20px;">
+      <div style="width: 100px; height: 100px; margin: 0 auto 30px; position: relative;">
+        <div class="crystal-ball">
+          <div class="inner-glow"></div>
+          <i class="fas fa-crystal-ball"></i>
+        </div>
+        <div class="spark spark-1"></div>
+        <div class="spark spark-2"></div>
+        <div class="spark spark-3"></div>
+      </div>
+      
+      <h3 style="font-size: 22px; color: var(--primary); margin-bottom: 15px; font-family: 'Playfair Display', serif;">
+        ${message}
+      </h3>
+      
+      <p style="color: var(--text-light); margin-bottom: 30px; font-size: 14px; max-width: 300px; margin-left: auto; margin-right: auto;">
+        Карты раскладываются, звёзды выстраиваются в узор...
+        Это займёт всего несколько секунд.
+      </p>
+      
+      <div class="thinking-indicator">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      
+      <div style="margin-top: 40px; font-size: 12px; color: var(--text-light); font-style: italic;">
+        <i class="fas fa-user-circle"></i> Выбран таролог: загружается...
+      </div>
+    </div>
+  `;
+
+  // Добавляем стили для анимации
+  const style = document.createElement('style');
+  style.textContent = `
+    .crystal-ball {
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 40px;
+      position: relative;
+      animation: float 3s ease-in-out infinite;
+      box-shadow: 0 10px 30px rgba(138, 43, 226, 0.3);
+    }
+    
+    .inner-glow {
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.3), transparent 70%);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    .spark {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: sparkle 1.5s ease-in-out infinite;
+    }
+    
+    .spark-1 { top: 20px; left: 20px; animation-delay: 0s; }
+    .spark-2 { top: 40px; right: 20px; animation-delay: 0.5s; }
+    .spark-3 { bottom: 20px; left: 50px; animation-delay: 1s; }
+    
+    .thinking-indicator {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    
+    .dot {
+      width: 10px;
+      height: 10px;
+      background: var(--primary);
+      border-radius: 50%;
+      animation: bounce 1.4s ease-in-out infinite;
+    }
+    
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
+    
+    @keyframes sparkle {
+      0%, 100% { transform: scale(1); opacity: 0; }
+      50% { transform: scale(1.3); opacity: 1; }
+    }
+    
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  openModal(modal);
+}
+
+// ===== КАРТА ДНЯ =====
 async function loadCardOfDay() {
   const container = $('#card-day-content');
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
@@ -642,20 +573,18 @@ async function loadCardOfDay() {
   }
 }
 
-// Глобальная функция для показа модалки по ID карты (компактная — для "Колоды")
+// Глобальные функции для модалок
 window.showCardModalById = function (cardId) {
   const card = window.TAROT_CARDS.find(c => c.id === cardId);
   if (card) showCardModal(card, { mode: 'deck' });
 };
 
-// Модалка "Карта дня" (полная)
 window.showCardDayModalById = function (cardId) {
   const card = window.TAROT_CARDS.find(c => c.id === cardId);
   if (card) showCardModal(card, { mode: 'day' });
 };
 
-// ===== МОДАЛКА КАРТЫ =====
-// mode: 'day' => полная (с советом), 'deck' => краткая (без советов)
+// Модалка карты
 function showCardModal(card, opts = { mode: 'deck' }) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -716,7 +645,6 @@ function showCardModal(card, opts = { mode: 'deck' }) {
       </div>
     `;
   } else {
-    // КОЛОДА: только “что за карта” + краткое описание, без советов и без доп.блоков
     body.innerHTML = `
       <div class="card-modal-full">
         <div class="card-modal-image">
@@ -911,7 +839,21 @@ function initFortuneWheel() {
   });
 }
 
-// ===== РАСКЛАДЫ (убраны надписи “улучшенный анализ/персонализация”, цена красивее) =====
+// ===== РАСКЛАДЫ =====
+var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
+  id: s.id,
+  title: s.title,
+  description: s.description,
+  price:
+    typeof s.price === 'number'
+      ? s.price
+      : parseInt(String(s.priceLabel || '').replace(/\D/g, ''), 10) || 0,
+  cardsCount:
+    typeof s.cardsCount === 'number'
+      ? s.cardsCount
+      : Number(s.cards) || s.requiredCards || 0
+}));
+
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
@@ -978,7 +920,7 @@ function initSpreads() {
   });
 }
 
-// ===== ФИКС: модалка вопроса расклада (без inline resolve в HTML) =====
+// Модалка вопроса для расклада
 async function openQuestionModalForSpread(spread) {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
@@ -1039,9 +981,10 @@ async function openQuestionModalForSpread(spread) {
   });
 }
 
+// Основная функция выполнения расклада
 async function performSpread(spread, question = '') {
   const allCards = window.TAROT_CARDS || [];
-  const cardsCopy = allCards.slice();
+  const cardsCopy = [...allCards];
   const used = [];
 
   const count = Math.min(spread.cardsCount, cardsCopy.length);
@@ -1064,7 +1007,8 @@ async function performSpread(spread, question = '') {
     });
   }
 
-  const analysisResult = getSpreadAnalysis(spread, used, question);
+  // Получаем ИИ-трактовку
+  const reading = await getAITarotReading(spread, used, question);
 
   return {
     type: 'spread',
@@ -1072,13 +1016,16 @@ async function performSpread(spread, question = '') {
     title: spread.title,
     createdAt: new Date().toISOString(),
     cards: used,
-    summary: analysisResult.summary,
-    analysis: analysisResult.analysis,
-    isEnhanced: analysisResult.isEnhanced,
-    question: question || ''
+    analysis: reading.analysis,
+    summary: reading.summary,
+    tarotReader: reading.tarotReader,
+    readingId: reading.readingId,
+    question: question || '',
+    isAI: reading.isAI
   };
 }
 
+// Показать результат расклада
 function showSpreadResultModal(result) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
@@ -1086,16 +1033,19 @@ function showSpreadResultModal(result) {
 
   const dateStr = new Date(result.createdAt).toLocaleString('ru-RU', {
     day: '2-digit',
-    month: '2-digit',
+    month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   });
 
+  const reader = result.tarotReader || { name: 'Таролог', emoji: '🔮', specialty: 'работа с картами' };
+  
   const cardsHtml = (result.cards || [])
     .map(
-      (card) => `
-    <div class="spread-card-item">
+      (card, index) => `
+    <div class="spread-card-item" style="animation-delay: ${index * 0.1}s;">
+      <div class="spread-card-number">${index + 1}</div>
       <img src="${card.image}"
            alt="${card.name}"
            class="spread-card-image"
@@ -1108,47 +1058,132 @@ function showSpreadResultModal(result) {
       </div>
     </div>
   `
-    )
-    .join('');
+    ).join('');
 
   body.innerHTML = `
     <div style="text-align:left;">
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
-      <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">
-        <i class="fas fa-calendar-alt"></i> ${dateStr}
-        ${result.question ? `<br><i class="fas fa-question-circle"></i> Вопрос: "${result.question}"` : ''}
+      <!-- Шапка с информацией о тарологе -->
+      <div style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; padding: 25px; border-radius: 16px 16px 0 0; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+          <div style="width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px;">
+            ${reader.emoji}
+          </div>
+          <div>
+            <h3 style="margin: 0 0 5px 0; font-size: 22px; font-family: 'Playfair Display', serif;">Консультация с тарологом</h3>
+            <div style="font-size: 16px; opacity: 0.9;">${reader.name}</div>
+            <div style="font-size: 14px; opacity: 0.7;">${reader.specialty}</div>
+          </div>
+        </div>
+        <div style="font-size: 14px; opacity: 0.8;">
+          <i class="fas fa-calendar-alt"></i> ${dateStr}
+          ${result.question ? `<br><i class="fas fa-question-circle"></i> <strong>Ваш вопрос:</strong> "${result.question}"` : ''}
+          ${result.readingId ? `<br><i class="fas fa-fingerprint"></i> ID: ${result.readingId}` : ''}
+        </div>
       </div>
 
-      ${result.summary ? `
-        <div class="result-summary-box">
-          <div class="result-summary-title">Короткий вывод</div>
-          <div class="result-summary-text">${result.summary}</div>
+      <!-- Карты -->
+      <div style="padding: 0 20px;">
+        <div style="font-size: 16px; font-weight: 600; color: var(--primary); margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+          <i class="fas fa-layer-group"></i> Карты в раскладе (${result.cards.length})
         </div>
+        
+        <div style="max-height: 250px; overflow-y: auto; margin-bottom: 25px; padding-right: 10px;">
+          ${cardsHtml}
+        </div>
+      </div>
+
+      <!-- Анализ -->
+      <div style="background: rgba(248, 245, 255, 0.9); border-radius: 16px; padding: 25px; margin: 20px; border: 1px solid rgba(138, 43, 226, 0.1); box-shadow: 0 5px 20px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid rgba(138, 43, 226, 0.1);">
+          <div style="width: 40px; height: 40px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px;">
+            <i class="fas fa-comment-dots"></i>
+          </div>
+          <h4 style="margin: 0; font-size: 18px; color: var(--primary);">Трактовка расклада</h4>
+        </div>
+        
+        <div style="font-size: 15px; line-height: 1.7; color: var(--text); white-space: pre-line; font-family: 'Georgia', serif; min-height: 200px;">
+          ${result.analysis || result.summary || ''}
+        </div>
+        
+        <!-- Подпись таролога -->
+        <div style="margin-top: 25px; padding-top: 20px; border-top: 1px dashed rgba(138, 43, 226, 0.2); text-align: right;">
+          <div style="font-size: 14px; color: var(--text-light); font-style: italic;">
+            С уважением,<br>
+            <strong style="color: var(--primary); font-size: 16px;">${reader.name}</strong><br>
+            <span style="font-size: 13px;">Таролог • ${reader.specialty}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Краткое резюме -->
+      ${result.summary ? `
+      <div style="background: rgba(0, 206, 209, 0.1); border-radius: 12px; padding: 15px; margin: 20px; border-left: 4px solid var(--secondary);">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="width: 32px; height: 32px; background: var(--secondary); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">
+            <i class="fas fa-sparkles"></i>
+          </div>
+          <div>
+            <div style="font-size: 12px; color: var(--secondary); font-weight: 600; margin-bottom: 5px;">Ключевой инсайт</div>
+            <div style="font-size: 14px; color: var(--text); font-weight: 500;">${result.summary}</div>
+          </div>
+        </div>
+      </div>
       ` : ''}
 
-      <div style="font-size:14px; color:var(--primary); font-weight:600; margin-bottom:12px;">
-        Карты в раскладе (${result.cards.length}):
-      </div>
-
-      <div style="max-height: 220px; overflow-y: auto; margin-bottom: 16px;">
-        ${cardsHtml}
-      </div>
-
-      <div class="analysis-section">
-        <h4 style="font-size: 16px; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-chart-line"></i> Анализ
-        </h4>
-        <div style="font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-line;">
-          ${result.analysis || result.summary || ''}
+      <!-- Сохранено в архив -->
+      <div style="text-align: center; padding: 15px 20px; background: rgba(138, 43, 226, 0.05); border-radius: 0 0 16px 16px; margin-top: 20px;">
+        <div style="font-size: 12px; color: var(--text-light); display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <i class="fas fa-archive"></i>
+          Сохранено в архив • Консультация завершена
+          ${result.isAI === false ? ' • <span style="color: var(--warning);">Локальная трактовка</span>' : ''}
         </div>
       </div>
     </div>
   `;
 
+  // Добавляем стили для анимации карт
+  const style = document.createElement('style');
+  style.textContent = `
+    .spread-card-item {
+      animation: fadeInUp 0.5s ease-out forwards;
+      opacity: 0;
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .spread-card-number {
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 24px;
+      height: 24px;
+      background: var(--primary);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 2;
+      box-shadow: 0 2px 8px rgba(138, 43, 226, 0.3);
+    }
+  `;
+  document.head.appendChild(style);
+
   openModal(modal);
 }
 
-// ===== КОЛОДА С ПАГИНАЦИЕЙ И ФИЛЬТРАМИ =====
+// ===== КОЛОДА С ПАГИНАЦИЕЙ =====
 let currentDeckPage = 0;
 let currentDeckFilter = 'all';
 const CARDS_PER_PAGE = 12;
@@ -1316,72 +1351,6 @@ function openModal(modal) {
   };
 }
 
-// ===== КНОПКИ =====
-function initButtons() {
-  const openShopBtn = $('#open-shop-btn');
-  if (openShopBtn) {
-    openShopBtn.addEventListener('click', () => {
-      openShopModal();
-    });
-  }
-
-  const refreshBtn = $('#refresh-btn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      if (AppState.isLoading) return;
-      AppState.isLoading = true;
-      refreshBtn.classList.add('refreshing');
-
-      await loadCardOfDay();
-      showToast('Карта дня обновлена', 'success');
-
-      setTimeout(() => {
-        refreshBtn.classList.remove('refreshing');
-        AppState.isLoading = false;
-      }, 1000);
-    });
-  }
-
-  const questionBtn = $('#question-btn');
-  if (questionBtn) {
-    questionBtn.addEventListener('click', () => openQuestionModal());
-  }
-
-  $$('.question-type').forEach((typeEl) => {
-    typeEl.addEventListener('click', function () {
-      $$('.question-type').forEach((t) => t.classList.remove('active'));
-      this.classList.add('active');
-      AppState.questionType = this.getAttribute('data-type');
-    });
-  });
-
-  const askBtn = $('#ask-question-btn');
-  if (askBtn) {
-    askBtn.addEventListener('click', askQuestion);
-  }
-
-  const questionInput = $('#question-input');
-  const charCount = $('#char-count');
-  if (questionInput && charCount) {
-    questionInput.addEventListener('input', function () {
-      charCount.textContent = this.value.length;
-    });
-  }
-
-  const yesNoBtn = $('#yes-no-btn');
-  if (yesNoBtn) {
-    yesNoBtn.addEventListener('click', () => openYesNoModal());
-  }
-
-  const yesnoInput = $('#yesno-input');
-  const yesnoChar = $('#yesno-char-count');
-  if (yesnoInput && yesnoChar) {
-    yesnoInput.addEventListener('input', function () {
-      yesnoChar.textContent = this.value.length;
-    });
-  }
-}
-
 // ===== МОДАЛКА МАГАЗИНА =====
 function openShopModal() {
   const modal = $('#shop-modal');
@@ -1421,7 +1390,7 @@ function openShopModal() {
   });
 }
 
-// ===== СПРОСИТЬ ВСЕЛЕННУЮ / ДА-НЕТ =====
+// ===== СПРОСИТЬ ВСЕЛЕННУЮ =====
 function openQuestionModal() {
   const modal = $('#question-modal');
   if (!modal) return;
@@ -1438,6 +1407,7 @@ function openQuestionModal() {
   };
 }
 
+// ===== ДА-НЕТ =====
 async function openYesNoModal() {
   const modal = $('#yesno-modal');
   if (!modal) return;
@@ -1502,6 +1472,7 @@ async function openYesNoModal() {
   };
 }
 
+// ===== ЗАДАТЬ ВОПРОС ВСЕЛЕННОЙ =====
 async function askQuestion() {
   const input = $('#question-input');
   if (!input) return;
@@ -1529,7 +1500,8 @@ async function askQuestion() {
   const qm = $('#question-modal');
   if (qm) closeModal(qm);
 
-  showToast('🌀 Вселенная слышит ваш вопрос...', 'info');
+  // Показываем анимацию "таролог думает"
+  showThinkingAnimation('Вселенная слушает ваш вопрос...');
 
   setTimeout(async () => {
     const answers = {
@@ -1613,7 +1585,7 @@ function showAnswerModal(question, answer) {
   openModal(modal);
 }
 
-// ===== АРХИВ (иконки убраны у всех) =====
+// ===== АРХИВ =====
 function renderArchive() {
   const list = $('#archive-list');
   if (!list) return;
@@ -1847,6 +1819,295 @@ function updateStarsDisplay() {
   }
 }
 
+// ===== ТОСТ =====
+function showToast(message, type) {
+  if (!type) type = 'info';
+  const toast = $('#toast');
+  if (!toast) return;
+
+  toast.style.background =
+    type === 'error'
+      ? 'var(--danger)'
+      : type === 'success'
+      ? 'var(--success)'
+      : 'var(--primary)';
+
+  toast.textContent = message;
+  toast.classList.add('show');
+
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ===== АНИМАЦИИ =====
+class MysticAnimations {
+  constructor() {
+    this.initParticles();
+    this.initCardAnimations();
+    this.initButtonEffects();
+  }
+
+  initParticles() {
+    const container = $('.particles');
+    if (!container) return;
+
+    for (let i = 0; i < 10; i++) {
+      const particle = document.createElement('div');
+      particle.style.cssText = `
+        position: absolute;
+        width: ${2 + Math.random() * 3}px;
+        height: ${2 + Math.random() * 3}px;
+        background: ${i % 3 === 0 ? 'var(--primary)' : i % 3 === 1 ? 'var(--secondary)' : 'var(--accent)'};
+        border-radius: 50%;
+        top: ${Math.random() * 100}%;
+        left: ${Math.random() * 100}%;
+        opacity: ${0.05 + Math.random() * 0.1};
+        animation: floatParticle ${15 + Math.random() * 10}s linear infinite;
+        animation-delay: ${Math.random() * 5}s;
+      `;
+      container.appendChild(particle);
+    }
+  }
+
+  initCardAnimations() {
+    document.addEventListener('mouseover', (e) => {
+      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
+      if (card) {
+        card.style.transform = 'translateY(-10px)';
+        card.style.boxShadow = '0 20px 40px rgba(138, 43, 226, 0.3)';
+      }
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      const card = e.target.closest('.card-image-container, .deck-card, .card-image-container-full');
+      if (card) {
+        card.style.transform = 'translateY(0)';
+        card.style.boxShadow = '';
+      }
+    });
+  }
+
+  initButtonEffects() {
+    const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card, .btn-card-details');
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', (e) => this.createRippleEffect(e));
+    });
+  }
+
+  createRippleEffect(event) {
+    const btn = event.currentTarget;
+    const ripple = document.createElement('span');
+
+    const diameter = Math.max(btn.clientWidth, btn.clientHeight);
+    const radius = diameter / 2;
+
+    ripple.style.cssText = `
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(0);
+      animation: ripple 0.6s linear;
+      pointer-events: none;
+      width: ${diameter}px;
+      height: ${diameter}px;
+      left: ${event.clientX - btn.getBoundingClientRect().left - radius}px;
+      top: ${event.clientY - btn.getBoundingClientRect().top - radius}px;
+    `;
+
+    btn.style.position = 'relative';
+    btn.style.overflow = 'hidden';
+    btn.appendChild(ripple);
+
+    setTimeout(() => ripple.remove(), 600);
+  }
+}
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+async function initApp() {
+  try {
+    initTelegram();
+    cleanupHeaderStatus();
+
+    window.mysticAnimations = new MysticAnimations();
+
+    await loadUserStateFromServer();
+    updateStarsDisplay();
+    renderArchive();
+
+    await loadCardOfDay();
+    initFortuneWheel();
+    initSpreads();
+    initDeck();
+    initButtons();
+    initNavigation();
+    addAnimationStyles();
+    initDeckFilters();
+  } catch (error) {
+    console.error('Ошибка инициализации:', error);
+    showToast('Ошибка загрузки приложения', 'error');
+  }
+}
+
+// ===== TELEGRAM =====
+function initTelegram() {
+  if (window.Telegram && window.Telegram.WebApp) {
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+    if (user) {
+      AppState.user = {
+        name: user.first_name || 'Пользователь',
+        username: user.username || ''
+      };
+      AppState.userId = user.id;
+    }
+  }
+
+  if (!AppState.userId) {
+    AppState.user = { name: 'Гость', username: 'debug_user' };
+    AppState.userId = 999999;
+  }
+}
+
+function cleanupHeaderStatus() {
+  const amountEl = $('#stars-amount');
+  if (amountEl) amountEl.textContent = '0';
+}
+
+// ===== ЗАГРУЗКА/СОХРАНЕНИЕ СОСТОЯНИЯ =====
+async function loadUserStateFromServer() {
+  const userId = AppState.userId;
+  if (!userId) {
+    AppState.userStars = NEW_USER_STARS;
+    AppState.archive = [];
+    AppState.lastWheelSpin = null;
+    AppState.lastWheelText = '';
+    AppState.stateLoaded = true;
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/state?userId=' + encodeURIComponent(String(userId)));
+
+    if (res.status === 404) {
+      AppState.userStars = NEW_USER_STARS;
+      AppState.archive = [];
+      AppState.lastWheelSpin = null;
+      AppState.lastWheelText = '';
+      AppState.stateLoaded = true;
+      return;
+    }
+
+    if (!res.ok) throw new Error('Failed to load state');
+
+    const data = await res.json();
+
+    AppState.userStars =
+      typeof data.stars === 'number' && data.stars > 0 ? data.stars : NEW_USER_STARS;
+    AppState.archive = Array.isArray(data.archive) ? data.archive : [];
+    AppState.lastWheelSpin = data.wheelLastSpin ? new Date(data.wheelLastSpin) : null;
+    AppState.lastWheelText = data.lastWheelText || '';
+    AppState.stateLoaded = true;
+  } catch (err) {
+    console.error('Ошибка загрузки состояния:', err);
+    AppState.userStars = NEW_USER_STARS;
+    AppState.archive = [];
+    AppState.lastWheelSpin = null;
+    AppState.lastWheelText = '';
+    AppState.stateLoaded = true;
+  }
+}
+
+async function saveUserStateToServer() {
+  const userId = AppState.userId;
+  if (!userId) return;
+
+  const payload = {
+    userId: String(userId),
+    stars: AppState.userStars,
+    archive: AppState.archive,
+    wheelLastSpin: AppState.lastWheelSpin ? AppState.lastWheelSpin.toISOString() : null,
+    lastWheelText: AppState.lastWheelText || ''
+  };
+
+  try {
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error('Ошибка сохранения состояния:', err);
+  }
+}
+
+// ===== КНОПКИ =====
+function initButtons() {
+  const openShopBtn = $('#open-shop-btn');
+  if (openShopBtn) {
+    openShopBtn.addEventListener('click', () => {
+      openShopModal();
+    });
+  }
+
+  const refreshBtn = $('#refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      if (AppState.isLoading) return;
+      AppState.isLoading = true;
+      refreshBtn.classList.add('refreshing');
+
+      await loadCardOfDay();
+      showToast('Карта дня обновлена', 'success');
+
+      setTimeout(() => {
+        refreshBtn.classList.remove('refreshing');
+        AppState.isLoading = false;
+      }, 1000);
+    });
+  }
+
+  const questionBtn = $('#question-btn');
+  if (questionBtn) {
+    questionBtn.addEventListener('click', () => openQuestionModal());
+  }
+
+  $$('.question-type').forEach((typeEl) => {
+    typeEl.addEventListener('click', function () {
+      $$('.question-type').forEach((t) => t.classList.remove('active'));
+      this.classList.add('active');
+      AppState.questionType = this.getAttribute('data-type');
+    });
+  });
+
+  const askBtn = $('#ask-question-btn');
+  if (askBtn) {
+    askBtn.addEventListener('click', askQuestion);
+  }
+
+  const questionInput = $('#question-input');
+  const charCount = $('#char-count');
+  if (questionInput && charCount) {
+    questionInput.addEventListener('input', function () {
+      charCount.textContent = this.value.length;
+    });
+  }
+
+  const yesNoBtn = $('#yes-no-btn');
+  if (yesNoBtn) {
+    yesNoBtn.addEventListener('click', () => openYesNoModal());
+  }
+
+  const yesnoInput = $('#yesno-input');
+  const yesnoChar = $('#yesno-char-count');
+  if (yesnoInput && yesnoChar) {
+    yesnoInput.addEventListener('input', function () {
+      yesnoChar.textContent = this.value.length;
+    });
+  }
+}
+
 // ===== ДОП. СТИЛИ АНИМАЦИЙ =====
 function addAnimationStyles() {
   const style = document.createElement('style');
@@ -1869,25 +2130,6 @@ function addAnimationStyles() {
     }
   `;
   document.head.appendChild(style);
-}
-
-// ===== ТОСТ =====
-function showToast(message, type) {
-  if (!type) type = 'info';
-  const toast = $('#toast');
-  if (!toast) return;
-
-  toast.style.background =
-    type === 'error'
-      ? 'var(--danger)'
-      : type === 'success'
-      ? 'var(--success)'
-      : 'var(--primary)';
-
-  toast.textContent = message;
-  toast.classList.add('show');
-
-  setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
 // ===== ЗАПУСК =====
