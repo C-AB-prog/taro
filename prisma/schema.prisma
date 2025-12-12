@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TxType {
+  topup
+  spend
+  grant
+}
+
+enum TxProvider {
+  tg_stars
+  system
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tgId      String   @unique
+  username  String?
+  firstName String?
+  balance   Int      @default(250)
+  createdAt DateTime @default(now())
+
+  wheelSpins      WheelSpin[]
+  spreadPurchases SpreadPurchase[]
+  transactions    Transaction[]
+}
+
+model Card {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  titleRu   String   @default("")
+  meaningRu String   @default("")
+  adviceRu  String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model DailyCard {
+  date   DateTime @id
+  cardId String
+  card   Card     @relation(fields: [cardId], references: [id])
+}
+
+model WheelSpin {
+  id     String   @id @default(cuid())
+  userId String
+  date   DateTime
+  cardId String
+
+  user User @relation(fields: [userId], references: [id])
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@unique([userId, date])
+}
+
+model Spread {
+  id         String @id @default(cuid())
+  key        String @unique
+  titleRu    String
+  cardsCount Int
+  price      Int
+}
+
+model SpreadPurchase {
+  id             String   @id @default(cuid())
+  userId         String
+  spreadId       String
+  paidAmount     Int
+  cardsJson      Json
+  interpretation String
+  createdAt      DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  spread Spread @relation(fields: [spreadId], references: [id])
+}
+
+model Transaction {
+  id              String     @id @default(cuid())
+  userId          String
+  type            TxType
+  amount          Int
+  provider        TxProvider
+  providerPayload Json?
+  createdAt       DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
