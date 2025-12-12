@@ -2,6 +2,87 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+// ===== СКРОЛЛ-ЛОК ДЛЯ МОДАЛОК (чтобы фон не листался) =====
+let __scrollLockY = 0;
+
+function lockBodyScroll() {
+  if (document.body.classList.contains('modal-open')) return;
+  __scrollLockY = window.scrollY || 0;
+  document.body.classList.add('modal-open');
+  document.body.style.top = `-${__scrollLockY}px`;
+}
+
+function unlockBodyScroll() {
+  if (!document.body.classList.contains('modal-open')) return;
+  document.body.classList.remove('modal-open');
+  document.body.style.top = '';
+  window.scrollTo(0, __scrollLockY);
+  __scrollLockY = 0;
+}
+
+function anyModalActive() {
+  return !!document.querySelector('.modal.active');
+}
+
+function activateModal(modal) {
+  if (!modal) return;
+  modal.classList.add('active');
+  lockBodyScroll();
+
+  // На мобилке: если свайп по затемнению — не даём “пробить” фон
+  const preventBackdropScroll = (e) => {
+    if (e.target === modal) e.preventDefault();
+  };
+  modal.__preventBackdropScroll = preventBackdropScroll;
+  modal.addEventListener('touchmove', preventBackdropScroll, { passive: false });
+}
+
+function closeModal(modal) {
+  if (!modal) return;
+  modal.classList.remove('active');
+
+  if (modal.__preventBackdropScroll) {
+    modal.removeEventListener('touchmove', modal.__preventBackdropScroll);
+    modal.__preventBackdropScroll = null;
+  }
+
+  if (!anyModalActive()) unlockBodyScroll();
+}
+
+// ===== ФИКС ДЛЯ JPG/PNG: УМНЫЙ onerror =====
+function handleCardImgError(imgEl) {
+  if (!imgEl) return;
+  const src = imgEl.getAttribute('src') || '';
+  const step = Number(imgEl.dataset.fallbackStep || 0);
+
+  // 0: пробуем сменить расширение
+  if (step === 0) {
+    if (/\.png(\?|#|$)/i.test(src)) {
+      imgEl.dataset.fallbackStep = '1';
+      imgEl.src = src.replace(/\.png(\?|#|$)/i, '.jpg$1');
+      return;
+    }
+    if (/\.jpe?g(\?|#|$)/i.test(src)) {
+      imgEl.dataset.fallbackStep = '1';
+      imgEl.src = src.replace(/\.jpe?g(\?|#|$)/i, '.png$1');
+      return;
+    }
+  }
+
+  // 1+: дефолт
+  imgEl.dataset.fallbackStep = '2';
+  imgEl.onerror = null;
+  imgEl.src = 'cards/default-card.jpg';
+}
+window.handleCardImgError = handleCardImgError;
+
+// ===== МЕЛКИЕ УТИЛИТЫ =====
+function truncateText(text, max = 140) {
+  const t = String(text || '').trim();
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1) + '…';
+}
+
 // ===== СОСТОЯНИЕ =====
 const AppState = {
   user: null,
@@ -41,7 +122,7 @@ const CARD_META = {
 
 // Дополняем META для всех карт
 for (let i = 12; i <= 77; i++) {
-  CARD_META[i] = { 
+  CARD_META[i] = {
     score: Math.floor(Math.random() * 3) - 1,
     tags: getRandomTags(),
     vibe: getRandomVibe()
@@ -71,34 +152,6 @@ function getRandomVibe() {
   return vibes[Math.floor(Math.random() * vibes.length)];
 }
 
-// ===== ГЛОБАЛЬНАЯ ОБРАБОТКА ОШИБОК КАРТОЧНЫХ КАРТИНОК (png/jpg) =====
-window.handleCardImageError = function handleCardImageError(img) {
-  if (!img) return;
-  const src = img.getAttribute('src') || '';
-  if (!src) return;
-
-  const lower = src.toLowerCase();
-
-  // Один раз пробуем альтернативное расширение
-  if (!img.dataset.altTried) {
-    img.dataset.altTried = '1';
-
-    if (lower.endsWith('.png')) {
-      img.src = src.replace(/\.png$/i, '.jpg');
-      return;
-    }
-
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-      img.src = src.replace(/\.jpe?g$/i, '.png');
-      return;
-    }
-  }
-
-  // Если не сработало — ставим дефолт
-  img.onerror = null;
-  img.src = 'cards/default-card.jpg';
-};
-
 // ===== РАСКЛАДЫ ИЗ cards-data.js в едином формате =====
 var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
   id: s.id,
@@ -114,9 +167,7 @@ var SPREADS = (window.TAROT_SPREADS || []).map((s) => ({
       : Number(s.cards) || s.requiredCards || 0
 }));
 
-// ===== УДАЛЯЕМ ФУНКЦИИ ИИ (по просьбе пользователя) =====
-// Вместо ИИ используем улучшенный базовый анализ
-
+// ===== ВМЕСТО ИИ — УЛУЧШЕННЫЙ БАЗОВЫЙ АНАЛИЗ =====
 function getSpreadAnalysis(spread, cards, question = '') {
   return {
     analysis: generateSpreadAnalysis(spread, cards, question),
@@ -133,17 +184,17 @@ function generateSpreadAnalysis(spread, cards, question = '') {
   const swordsCount = cards.filter(c => c.suit === 'swords').length;
   const pentaclesCount = cards.filter(c => c.suit === 'pentacles').length;
   const wandsCount = cards.filter(c => c.suit === 'wands').length;
-  
+
   let analysis = `📊 АНАЛИЗ РАСКЛАДА "${spread.title}"\n\n`;
-  
+
   if (question) {
     analysis += `Вопрос: "${question}"\n\n`;
   }
-  
+
   analysis += `Карты в раскладе: ${cardNames}\n\n`;
-  
+
   analysis += `🔍 ОБЩАЯ ЭНЕРГЕТИКА:\n`;
-  
+
   if (majorCount > cards.length / 2) {
     analysis += `Сильное влияние Старших Арканов (${majorCount} из ${cards.length}) — период значительных перемен и судьбоносных событий.\n\n`;
   } else if (cupsCount > 0 && swordsCount === 0) {
@@ -153,7 +204,7 @@ function generateSpreadAnalysis(spread, cards, question = '') {
   } else {
     analysis += `Сбалансированный расклад с разнообразными энергиями.\n\n`;
   }
-  
+
   analysis += `💫 ОСНОВНЫЕ ТЕМЫ:\n`;
   const themes = [];
   if (cupsCount > 0) themes.push('эмоции и отношения');
@@ -161,15 +212,15 @@ function generateSpreadAnalysis(spread, cards, question = '') {
   if (pentaclesCount > 0) themes.push('материальные вопросы');
   if (wandsCount > 0) themes.push('творчество и действие');
   if (majorCount > 0) themes.push('важные жизненные уроки');
-  
+
   analysis += themes.join(', ') + '.\n\n';
-  
+
   analysis += `🌟 РЕКОМЕНДАЦИИ:\n`;
   analysis += `1. Рассмотрите каждую карту как часть единой картины\n`;
   analysis += `2. Обратите внимание на повторяющиеся символы или цвета\n`;
   analysis += `3. Доверьтесь своей интуиции при интерпретации\n`;
   analysis += `4. Возвращайтесь к этому раскладу в течение недели\n\n`;
-  
+
   analysis += `📝 КЛЮЧЕВОЙ СОВЕТ:\n`;
   const advice = [
     "Используйте энергию этого расклада для осознанных действий.",
@@ -179,7 +230,7 @@ function generateSpreadAnalysis(spread, cards, question = '') {
     "Используйте полученные инсайты для практических шагов."
   ];
   analysis += advice[Math.floor(Math.random() * advice.length)];
-  
+
   return analysis;
 }
 
@@ -189,13 +240,13 @@ function generateBasicSummary(cards) {
     const meta = CARD_META[c.cardId || c.id];
     return meta && meta.score > 0;
   }).length;
-  
+
   if (majorArcana > cards.length / 2) {
-    return 'Расклад с сильным влиянием старших арканов — период значительных перемен.';
+    return 'Сильное влияние старших арканов — период значимых перемен.';
   } else if (positiveCards > cards.length / 2) {
-    return 'Преобладают поддерживающие энергии — благоприятный период для действий.';
+    return 'Преобладают поддерживающие энергии — хороший период для действий.';
   } else {
-    return 'Сбалансированный расклад, требующий внимательного рассмотрения всех аспектов.';
+    return 'Сбалансированный расклад, важно учитывать все нюансы.';
   }
 }
 
@@ -248,7 +299,7 @@ class MysticAnimations {
   }
 
   initButtonEffects() {
-    const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card');
+    const buttons = $$('.refresh-btn, .spin-btn, .ask-btn, .action-card, .btn-card-details');
     buttons.forEach((btn) => {
       btn.addEventListener('click', (e) => this.createRippleEffect(e));
     });
@@ -331,26 +382,26 @@ function buildSpreadSummary(spread, cards) {
   let themeText = '';
   switch (topTag) {
     case 'relationships':
-      themeText = 'Главная тема — сфера отношений, взаимодействие с людьми и эмоциональные связи.';
+      themeText = 'Главная тема — отношения и эмоциональные связи.';
       break;
     case 'career':
-      themeText = 'Главная тема — реализация, работа, цели и внешние достижения.';
+      themeText = 'Главная тема — реализация, работа и цели.';
       break;
     case 'inner':
-      themeText = 'Главная тема — внутренние процессы, интуиция и личное взросление.';
+      themeText = 'Главная тема — внутренние процессы и интуиция.';
       break;
     case 'change':
-      themeText = 'Расклад подчёркивает период перемен и смену этапа в вашей жизни.';
+      themeText = 'Период перемен и смены этапа.';
       break;
     case 'material':
-      themeText = 'Сильный акцент идёт на материальную сферу, стабильность и вопросы ресурса.';
+      themeText = 'Акцент на материальную сферу и ресурсы.';
       break;
     case 'karma':
     case 'fate':
-      themeText = 'В раскладе чувствуется кармический оттенок: важные уроки и судьбоносные события.';
+      themeText = 'Чувствуется кармический оттенок: важные уроки.';
       break;
     default:
-      themeText = 'Карты затрагивают несколько сфер одновременно, без доминирования одной темы.';
+      themeText = 'Затронуто несколько сфер одновременно.';
   }
 
   const vibesSample = vibes.slice(0, 3).join('; ');
@@ -359,7 +410,7 @@ function buildSpreadSummary(spread, cards) {
     `В целом ${tone}.`,
     themeText,
     `По ощущениям карт это про: ${vibesSample}.`,
-    `Сейчас важно отнестись к происходящему осознанно и использовать сильные стороны расклада, а не зацикливаться на возможных сложностях.`
+    `Важно действовать осознанно и не зацикливаться на сложностях.`
   ].join(' ');
 }
 
@@ -449,6 +500,7 @@ async function initApp() {
     initButtons();
     initNavigation();
     addAnimationStyles();
+    initDeckFilters();
   } catch (error) {
     console.error('Ошибка инициализации:', error);
     showToast('Ошибка загрузки приложения', 'error');
@@ -483,7 +535,18 @@ function cleanupHeaderStatus() {
   if (amountEl) amountEl.textContent = '0';
 }
 
-// ===== КАРТА ДНЯ =====
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КАРТ =====
+function getSuitName(suit) {
+  switch (suit) {
+    case 'swords': return 'Мечи';
+    case 'cups': return 'Чаши';
+    case 'pentacles': return 'Пентакли';
+    case 'wands': return 'Жезлы';
+    default: return '';
+  }
+}
+
+// ===== КАРТА ДНЯ (на главной только имя + значение, детали под кнопкой) =====
 async function loadCardOfDay() {
   const container = $('#card-day-content');
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
@@ -492,61 +555,64 @@ async function loadCardOfDay() {
   const day = today.getDate();
   const month = today.getMonth() + 1;
   const year = today.getFullYear();
-  
+
   const uniqueSeed = day + month * 100 + year;
   const cardIndex = uniqueSeed % window.TAROT_CARDS.length;
   const card = window.TAROT_CARDS[cardIndex];
-  
-  if (!card) return;
 
+  if (!card) return;
   AppState.currentCard = card;
+
+  const meaning = card.keyword || card.upright || card.description || '';
+  const shortMeaning = truncateText(meaning, 140);
 
   container.innerHTML = `
     <div class="card-display-full">
-      <div class="card-image-container-full" onclick="showCardModalById(${card.id})">
+      <div class="card-image-container-full" onclick="showCardDayModalById(${card.id})">
         <img src="${card.image}"
              alt="${card.name}"
              class="card-image-full"
              onload="this.classList.add('loaded')"
-             onerror="handleCardImageError(this)">
+             onerror="handleCardImgError(this)">
       </div>
+
       <div class="card-info-full">
         <div class="card-name-row">
           <div class="card-name">${card.name}</div>
           ${card.roman ? `<div class="card-roman">${card.roman}</div>` : ''}
         </div>
-        <div class="card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
-        <div class="card-keyword">${card.keyword || ''}</div>
 
-        <button class="btn-card-details" id="card-day-toggle">
-          <i class="fas fa-search btn-card-details-icon"></i>
-          <span class="btn-card-details-text">Подробное описание</span>
-          <span class="btn-card-details-chevron">
-            <i class="fas fa-chevron-down"></i>
-          </span>
+        <div class="card-day-meaning">
+          ${shortMeaning}
+        </div>
+
+        <button class="btn-card-details btn-card-details--toggle" id="card-day-toggle-btn" aria-expanded="false">
+          <span>Подробности</span>
+          <i class="fas fa-chevron-down"></i>
         </button>
 
-        <div class="card-details-collapsible" id="card-day-details">
-          <div class="card-description">${card.description || 'Описание карты'}</div>
-          
+        <div class="card-day-details" id="card-day-details">
+          <div class="card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
+          ${card.description ? `<div class="card-description">${card.description}</div>` : ''}
+
           <div class="card-meanings">
             <div class="meaning-group">
               <div class="meaning-title">Прямое положение:</div>
-              <div class="meaning-text">${card.upright || 'Позитивные аспекты карты'}</div>
+              <div class="meaning-text">${card.upright || '—'}</div>
             </div>
             <div class="meaning-group">
               <div class="meaning-title">Перевёрнутое положение:</div>
-              <div class="meaning-text">${card.reversed || 'Теневая сторона карты'}</div>
+              <div class="meaning-text">${card.reversed || '—'}</div>
             </div>
           </div>
-          
+
           <div class="card-advice-section">
             <div class="advice-icon">
               <i class="fas fa-lightbulb"></i>
             </div>
             <div class="advice-text">${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}</div>
           </div>
-          
+
           <div class="card-date">
             <i class="fas fa-calendar-alt"></i>
             ${today.toLocaleDateString('ru-RU', {
@@ -561,136 +627,133 @@ async function loadCardOfDay() {
     </div>
   `;
 
-  initCardDayDetailsToggle();
-}
-
-function initCardDayDetailsToggle() {
-  const toggleBtn = $('#card-day-toggle');
+  // Тоггл подробностей
+  const btn = $('#card-day-toggle-btn');
   const details = $('#card-day-details');
-  if (!toggleBtn || !details) return;
+  if (btn && details) {
+    details.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
 
-  const chevronIcon = toggleBtn.querySelector('.btn-card-details-chevron i');
-  const textSpan = toggleBtn.querySelector('.btn-card-details-text');
-  let isOpen = false;
-
-  toggleBtn.addEventListener('click', () => {
-    isOpen = !isOpen;
-    details.classList.toggle('open', isOpen);
-    toggleBtn.classList.toggle('open', isOpen);
-
-    if (chevronIcon) {
-      chevronIcon.classList.toggle('fa-chevron-down', !isOpen);
-      chevronIcon.classList.toggle('fa-chevron-up', isOpen);
-    }
-    if (textSpan) {
-      textSpan.textContent = isOpen ? 'Скрыть подробности' : 'Подробное описание';
-    }
-  });
-}
-
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КАРТ =====
-function getSuitName(suit) {
-  switch(suit) {
-    case 'swords': return 'Мечи';
-    case 'cups': return 'Чаши';
-    case 'pentacles': return 'Пентакли';
-    case 'wands': return 'Жезлы';
-    default: return '';
+    btn.onclick = () => {
+      const isOpen = details.classList.toggle('open');
+      btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      btn.classList.toggle('is-open', isOpen);
+    };
   }
 }
 
-// Глобальная функция для показа модалки по ID карты
-window.showCardModalById = function(cardId) {
+// Глобальная функция для показа модалки по ID карты (компактная — для "Колоды")
+window.showCardModalById = function (cardId) {
   const card = window.TAROT_CARDS.find(c => c.id === cardId);
-  if (card) showCardModal(card);
+  if (card) showCardModal(card, { mode: 'deck' });
+};
+
+// Модалка "Карта дня" (полная)
+window.showCardDayModalById = function (cardId) {
+  const card = window.TAROT_CARDS.find(c => c.id === cardId);
+  if (card) showCardModal(card, { mode: 'day' });
 };
 
 // ===== МОДАЛКА КАРТЫ =====
-function showCardModal(card) {
+// mode: 'day' => полная (с советом), 'deck' => краткая (без советов)
+function showCardModal(card, opts = { mode: 'deck' }) {
   const modal = $('#card-modal');
   const body = $('#card-modal-body');
   if (!modal || !body) return;
 
-  body.innerHTML = `
-    <div class="card-modal-full">
-      <div class="card-modal-image">
-        <img src="${card.image}"
-             alt="${card.name}"
-             onerror="handleCardImageError(this)">
-      </div>
-      
-      <div class="card-modal-content">
-        <h3 class="card-modal-title">
-          ${card.name}
-          ${card.roman ? `<span class="card-modal-roman">${card.roman}</span>` : ''}
-        </h3>
-        
-        <div class="card-modal-meta">
-          <span class="meta-category">${card.category}</span>
-          ${card.suit ? `<span class="meta-suit">${getSuitName(card.suit)}</span>` : ''}
+  const isDay = opts.mode === 'day';
+
+  if (isDay) {
+    body.innerHTML = `
+      <div class="card-modal-full">
+        <div class="card-modal-image card-modal-image--day">
+          <img src="${card.image}"
+               alt="${card.name}"
+               onerror="handleCardImgError(this)">
         </div>
-        
-        <div class="card-modal-keyword">
-          <i class="fas fa-key"></i>
-          ${card.keyword || ''}
-        </div>
-        
-        <div class="card-modal-description">
-          ${card.description || 'Описание карты'}
-        </div>
-        
-        <div class="card-modal-sections">
-          <div class="section">
-            <h4><i class="fas fa-sun"></i> Прямое положение</h4>
-            <p>${card.upright || 'Позитивные аспекты карты'}</p>
+
+        <div class="card-modal-content">
+          <h3 class="card-modal-title">
+            ${card.name}
+            ${card.roman ? `<span class="card-modal-roman">${card.roman}</span>` : ''}
+          </h3>
+
+          <div class="card-modal-meta">
+            <span class="meta-category">${card.category}</span>
+            ${card.suit ? `<span class="meta-suit">${getSuitName(card.suit)}</span>` : ''}
           </div>
-          
-          <div class="section">
-            <h4><i class="fas fa-moon"></i> Перевёрнутое положение</h4>
-            <p>${card.reversed || 'Теневая сторона карты'}</p>
-          </div>
-          
-          <div class="section section-advice">
-            <h4><i class="fas fa-lightbulb"></i> Совет карты</h4>
-            <p>${card.advice || 'Доверьтесь своей интуиции и наблюдайте за знаками.'}</p>
-          </div>
-        </div>
-        
-        <div class="card-modal-tips">
-          <div class="tip">
-            <i class="fas fa-brain"></i>
-            <span>В медитации: ${getMeditationTip(card)}</span>
-          </div>
-          <div class="tip">
-            <i class="fas fa-question-circle"></i>
-            <span>Если выпала: ${getReadingTip(card)}</span>
+
+          ${card.keyword ? `
+            <div class="card-modal-keyword">
+              <i class="fas fa-key"></i>
+              ${card.keyword}
+            </div>
+          ` : ''}
+
+          ${card.description ? `
+            <div class="card-modal-description">
+              ${card.description}
+            </div>
+          ` : ''}
+
+          <div class="card-modal-sections">
+            <div class="section">
+              <h4><i class="fas fa-sun"></i> Прямое положение</h4>
+              <p>${card.upright || '—'}</p>
+            </div>
+
+            <div class="section">
+              <h4><i class="fas fa-moon"></i> Перевёрнутое положение</h4>
+              <p>${card.reversed || '—'}</p>
+            </div>
+
+            <div class="section section-advice">
+              <h4><i class="fas fa-lightbulb"></i> Совет карты</h4>
+              <p>${card.advice || 'Доверьтесь процессу и наблюдайте за знаками.'}</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  `;
+    `;
+  } else {
+    // КОЛОДА: только “что за карта” + краткое описание, без советов и без доп.блоков
+    body.innerHTML = `
+      <div class="card-modal-full">
+        <div class="card-modal-image">
+          <img src="${card.image}"
+               alt="${card.name}"
+               onerror="handleCardImgError(this)">
+        </div>
+
+        <div class="card-modal-content">
+          <h3 class="card-modal-title">
+            ${card.name}
+            ${card.roman ? `<span class="card-modal-roman">${card.roman}</span>` : ''}
+          </h3>
+
+          <div class="card-modal-meta">
+            <span class="meta-category">${card.category}</span>
+            ${card.suit ? `<span class="meta-suit">${getSuitName(card.suit)}</span>` : ''}
+          </div>
+
+          ${card.keyword ? `
+            <div class="card-modal-keyword">
+              <i class="fas fa-key"></i>
+              ${card.keyword}
+            </div>
+          ` : ''}
+
+          ${card.description ? `
+            <div class="card-modal-description">
+              ${truncateText(card.description, 320)}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
 
   openModal(modal);
-}
-
-function getMeditationTip(card) {
-  if (card.suit === 'major') return 'Сосредоточьтесь на внутренних переменах';
-  if (card.suit === 'cups') return 'Обратите внимание на свои чувства';
-  if (card.suit === 'swords') return 'Проанализируйте свои мысли';
-  if (card.suit === 'pentacles') return 'Сосредоточьтесь на материальной стабильности';
-  if (card.suit === 'wands') return 'Ищите творческое вдохновение';
-  return 'Наблюдайте за знаками в течение дня';
-}
-
-function getReadingTip(card) {
-  const tips = {
-    'major': 'Обратите внимание на важные жизненные уроки',
-    'cups': 'Проследите за эмоциональными паттернами',
-    'swords': 'Проанализируйте ментальные установки',
-    'pentacles': 'Оцените материальные аспекты',
-    'wands': 'Ищите области для творческого роста'
-  };
-  return tips[card.suit] || 'Рассмотрите карту в контексте вопроса';
 }
 
 // ===== КОЛЕСО ФОРТУНЫ =====
@@ -808,7 +871,7 @@ function initFortuneWheel() {
           <img src="${card.image}"
                alt="${card.name}"
                style="width:120px;height:180px;object-fit:cover;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);margin-bottom:12px;"
-               onerror="handleCardImageError(this)">
+               onerror="handleCardImgError(this)">
           <div style="font-size:16px; margin-bottom:6px;">Выпала карта:</div>
           <div style="font-size:20px; font-weight:700; color:var(--primary); margin-bottom:4px;">
             ${card.name}${card.roman ? ` (${card.roman})` : ''}
@@ -817,10 +880,7 @@ function initFortuneWheel() {
             ${card.keyword || ''}
           </div>
           <div style="font-size:13px; color:var(--text); margin-bottom:8px;">
-            ${card.description || ''}
-          </div>
-          <div style="font-size:13px; color:var(--text-light); font-style:italic;">
-            Совет: ${card.advice || 'Доверьтесь процессу и наблюдайте за знаками.'}
+            ${truncateText(card.description || '', 160)}
           </div>
         </div>
       `;
@@ -851,7 +911,7 @@ function initFortuneWheel() {
   });
 }
 
-// ===== РАСКЛАДЫ С УЛУЧШЕННЫМ АНАЛИЗОМ (БЕЗ НАДПИСЕЙ "УЛУЧШЕННЫЙ АНАЛИЗ / С ПЕРСОНАЛИЗАЦИЕЙ" В СПИСКЕ) =====
+// ===== РАСКЛАДЫ (убраны надписи “улучшенный анализ/персонализация”, цена красивее) =====
 function initSpreads() {
   const container = $('#spreads-grid');
   if (!container) return;
@@ -859,16 +919,16 @@ function initSpreads() {
   container.innerHTML = SPREADS.map(
     (spread) => `
     <div class="spread-item" data-id="${spread.id}">
-      <div class="spread-header">
-        <div class="spread-title">
-          ${spread.title}
+      <div class="spread-title-row">
+        <div class="spread-title">${spread.title}</div>
+        <div class="spread-price">
+          <span class="spread-price-num">${spread.price}</span>
+          <span class="spread-price-star">★</span>
         </div>
-        <div class="spread-price">${spread.price}</div>
       </div>
       <div class="spread-description">${spread.description}</div>
       <div class="spread-meta">
-        <span><i class="fas fa-cards"></i> ${spread.cardsCount} карт</span>
-        <span><i class="fas fa-brain"></i> Анализ карт</span>
+        <span><i class="fas fa-layer-group"></i> ${spread.cardsCount} карт</span>
       </div>
     </div>
   `
@@ -890,14 +950,14 @@ function initSpreads() {
 
       const question = await openQuestionModalForSpread(spread);
       if (question === undefined) return;
-      
+
       const ok = await openConfirmModal({
         title: 'Покупка расклада',
         message: `Купить расклад "${title}" за ${price} ★?${question ? '\n\nС вопросом: ' + question : ''}`,
         okText: 'Купить',
         cancelText: 'Отмена'
       });
-      
+
       if (!ok) return;
 
       AppState.userStars -= price;
@@ -906,27 +966,23 @@ function initSpreads() {
       showToast('🎴 Создаём расклад...', 'info');
 
       const result = await performSpread(spread, question);
-      
+
       AppState.archive = [result, ...(AppState.archive || [])];
       await saveUserStateToServer();
       renderArchive();
 
       showSpreadResultModal(result);
-      
+
       showToast(`Расклад "${title}" готов!`, 'success');
     });
   });
 }
 
-// ФИКС: модалка вопроса для расклада без inline-обработчиков
+// ===== ФИКС: модалка вопроса расклада (без inline resolve в HTML) =====
 async function openQuestionModalForSpread(spread) {
   return new Promise((resolve) => {
-    const existing = document.getElementById('spread-question-modal');
-    if (existing) existing.remove();
-
     const modal = document.createElement('div');
     modal.className = 'modal';
-    modal.id = 'spread-question-modal';
     modal.innerHTML = `
       <div class="modal-content">
         <button class="modal-close" type="button">&times;</button>
@@ -947,52 +1003,38 @@ async function openQuestionModalForSpread(spread) {
             style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px;"
           ></textarea>
           <div class="modal-actions">
-            <button class="btn-secondary" type="button" id="spread-question-skip-btn">Без вопроса</button>
-            <button class="btn-primary" type="button" id="spread-question-continue-btn">Продолжить</button>
+            <button class="btn-secondary" id="spread-no-question-btn" type="button">Без вопроса</button>
+            <button class="btn-primary" id="spread-continue-btn" type="button">Продолжить</button>
           </div>
         </div>
       </div>
     `;
 
     document.body.appendChild(modal);
+    activateModal(modal);
 
     setTimeout(() => {
-      modal.classList.add('active');
       const textarea = modal.querySelector('#spread-question-input');
       if (textarea) textarea.focus();
     }, 10);
 
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      modal.classList.remove('active');
-      setTimeout(() => modal.remove(), 200);
-      resolve(value || '');
+    const closeBtn = modal.querySelector('.modal-close');
+    const noBtn = modal.querySelector('#spread-no-question-btn');
+    const contBtn = modal.querySelector('#spread-continue-btn');
+    const input = modal.querySelector('#spread-question-input');
+
+    const done = (val) => {
+      closeModal(modal);
+      modal.remove();
+      resolve(val);
     };
 
-    const skipBtn = modal.querySelector('#spread-question-skip-btn');
-    const continueBtn = modal.querySelector('#spread-question-continue-btn');
-    const closeBtn = modal.querySelector('.modal-close');
-
-    if (skipBtn) {
-      skipBtn.addEventListener('click', () => finish(''));
-    }
-
-    if (continueBtn) {
-      continueBtn.addEventListener('click', () => {
-        const input = modal.querySelector('#spread-question-input');
-        const val = (input && input.value.trim()) || '';
-        finish(val);
-      });
-    }
-
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => finish(''));
-    }
+    if (closeBtn) closeBtn.onclick = () => done('');
+    if (noBtn) noBtn.onclick = () => done('');
+    if (contBtn) contBtn.onclick = () => done((input && input.value.trim()) || '');
 
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) finish('');
+      if (e.target === modal) done('');
     });
   });
 }
@@ -1052,13 +1094,13 @@ function showSpreadResultModal(result) {
 
   const cardsHtml = (result.cards || [])
     .map(
-      (card, index) => `
+      (card) => `
     <div class="spread-card-item">
       <img src="${card.image}"
            alt="${card.name}"
            class="spread-card-image"
            onload="this.classList.add('loaded')"
-           onerror="handleCardImageError(this)">
+           onerror="handleCardImgError(this)">
       <div class="spread-card-content">
         <div class="spread-card-name">${card.name}${card.roman ? ` (${card.roman})` : ''}</div>
         <div class="spread-card-category">${card.category} ${card.suit ? `• ${getSuitName(card.suit)}` : ''}</div>
@@ -1069,14 +1111,6 @@ function showSpreadResultModal(result) {
     )
     .join('');
 
-  const enhancedIcon = result.isEnhanced ? 
-    '<i class="fas fa-star" style="color: #FFD700;"></i>' : 
-    '<i class="fas fa-brain" style="color: var(--text-light);"></i>';
-  
-  const enhancedLabel = result.isEnhanced ? 
-    '<span style="color: #FF8C00; font-weight: 600;">Улучшенный анализ</span>' : 
-    '<span style="color: var(--text-light);">Базовый анализ</span>';
-
   body.innerHTML = `
     <div style="text-align:left;">
       <h3 style="font-size:20px; color:var(--primary); margin-bottom:8px;">${result.title}</h3>
@@ -1085,46 +1119,27 @@ function showSpreadResultModal(result) {
         ${result.question ? `<br><i class="fas fa-question-circle"></i> Вопрос: "${result.question}"` : ''}
       </div>
 
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.05); border-radius: 12px;">
-        ${enhancedIcon}
-        <div>
-          <div style="font-size: 14px; font-weight: 500;">${enhancedLabel}</div>
-          ${result.summary ? `<div style="font-size: 12px; color: var(--text); margin-top: 4px;">${result.summary}</div>` : ''}
+      ${result.summary ? `
+        <div class="result-summary-box">
+          <div class="result-summary-title">Короткий вывод</div>
+          <div class="result-summary-text">${result.summary}</div>
         </div>
-      </div>
+      ` : ''}
 
       <div style="font-size:14px; color:var(--primary); font-weight:600; margin-bottom:12px;">
         Карты в раскладе (${result.cards.length}):
       </div>
 
-      <div style="max-height: 200px; overflow-y: auto; margin-bottom: 20px;">
+      <div style="max-height: 220px; overflow-y: auto; margin-bottom: 16px;">
         ${cardsHtml}
       </div>
 
       <div class="analysis-section">
         <h4 style="font-size: 16px; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-chart-line"></i> Детальный анализ
+          <i class="fas fa-chart-line"></i> Анализ
         </h4>
         <div style="font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-line;">
-          ${result.analysis || result.summary}
-        </div>
-        ${result.isEnhanced ? `
-          <div style="margin-top: 12px; font-size: 11px; color: var(--text-light); font-style: italic; border-top: 1px dashed rgba(138, 43, 226, 0.2); padding-top: 8px;">
-            <i class="fas fa-star"></i> Анализ создан с учётом сочетания всех карт
-          </div>
-        ` : ''}
-      </div>
-
-      <div style="
-        background: rgba(255, 215, 0, 0.05);
-        border-radius: 12px;
-        padding: 12px;
-        border: 1px solid rgba(255, 215, 0, 0.2);
-        margin-top: 16px;
-      ">
-        <div style="font-size: 13px; color: var(--text);">
-          <i class="fas fa-lightbulb" style="color: #FFD700;"></i>
-          <b>Совет:</b> Возвращайтесь к этому анализу в течение недели. Записывайте инсайты.
+          ${result.analysis || result.summary || ''}
         </div>
       </div>
     </div>
@@ -1143,7 +1158,7 @@ function initDeck() {
   if (!container || !window.TAROT_CARDS || !window.TAROT_CARDS.length) return;
 
   const filterHtml = `
-    <div class="deck-filters">
+    <div class="deck-filters modern-chips">
       <button class="filter-btn active" data-filter="all">Все</button>
       <button class="filter-btn" data-filter="major">Старшие</button>
       <button class="filter-btn" data-filter="cups">Чаши</button>
@@ -1152,7 +1167,7 @@ function initDeck() {
       <button class="filter-btn" data-filter="wands">Жезлы</button>
     </div>
   `;
-  
+
   container.insertAdjacentHTML('beforebegin', filterHtml);
   renderDeckPage();
   initCardClickHandlers();
@@ -1164,7 +1179,7 @@ function renderDeckPage() {
   if (!container) return;
 
   let filteredCards = window.TAROT_CARDS;
-  
+
   if (currentDeckFilter !== 'all') {
     filteredCards = window.TAROT_CARDS.filter(card => {
       if (currentDeckFilter === 'major') return card.suit === 'major';
@@ -1190,7 +1205,7 @@ function renderDeckPage() {
                alt="${card.name}"
                class="deck-card-image"
                onload="this.classList.add('loaded')"
-               onerror="handleCardImageError(this)">
+               onerror="handleCardImgError(this)">
           <div class="deck-card-overlay">
             <div class="overlay-content">
               <div class="card-category-small">${card.category}</div>
@@ -1216,10 +1231,10 @@ function initDeckFilters() {
   if (!filterBtns.length) return;
 
   filterBtns.forEach(btn => {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', function () {
       filterBtns.forEach(b => b.classList.remove('active'));
       this.classList.add('active');
-      
+
       currentDeckFilter = this.dataset.filter;
       currentDeckPage = 0;
       renderDeckPage();
@@ -1230,7 +1245,7 @@ function initDeckFilters() {
 function renderDeckPagination(totalCards) {
   const totalPages = Math.ceil(totalCards / CARDS_PER_PAGE);
   let pagination = $('.deck-pagination');
-  
+
   if (!pagination) {
     pagination = document.createElement('div');
     pagination.className = 'deck-pagination';
@@ -1261,10 +1276,7 @@ function renderDeckPagination(totalCards) {
   `;
 }
 
-window.changeDeckPage = function(page) {
-  const container = $('#deck-grid');
-  if (!container) return;
-
+window.changeDeckPage = function (page) {
   let filteredCards = window.TAROT_CARDS;
   if (currentDeckFilter !== 'all') {
     filteredCards = window.TAROT_CARDS.filter(card => {
@@ -1285,21 +1297,22 @@ function initCardClickHandlers() {
     cardEl.addEventListener('click', function () {
       const cardId = parseInt(this.getAttribute('data-id'), 10);
       const cardData = window.TAROT_CARDS.find((c) => c.id === cardId);
-      if (cardData) showCardModal(cardData);
+      if (cardData) showCardModal(cardData, { mode: 'deck' });
     });
   });
 }
 
+// ===== УНИВЕРСАЛЬНОЕ ОТКРЫТИЕ МОДАЛКИ =====
 function openModal(modal) {
-  modal.classList.add('active');
+  activateModal(modal);
 
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
-    closeBtn.onclick = () => modal.classList.remove('active');
+    closeBtn.onclick = () => closeModal(modal);
   }
 
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) closeModal(modal);
   };
 }
 
@@ -1374,15 +1387,15 @@ function openShopModal() {
   const modal = $('#shop-modal');
   if (!modal) return;
 
-  modal.classList.add('active');
+  activateModal(modal);
 
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
-    closeBtn.onclick = () => modal.classList.remove('active');
+    closeBtn.onclick = () => closeModal(modal);
   }
 
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) closeModal(modal);
   };
 
   $$('.shop-pack').forEach((card) => {
@@ -1402,8 +1415,8 @@ function openShopModal() {
       updateStarsDisplay();
       await saveUserStateToServer();
       showToast(`Начислено ${amount} звёзд`, 'success');
-      
-      modal.classList.remove('active');
+
+      closeModal(modal);
     });
   });
 }
@@ -1413,15 +1426,15 @@ function openQuestionModal() {
   const modal = $('#question-modal');
   if (!modal) return;
 
-  modal.classList.add('active');
+  activateModal(modal);
 
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
-    closeBtn.onclick = () => modal.classList.remove('active');
+    closeBtn.onclick = () => closeModal(modal);
   }
 
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) closeModal(modal);
   };
 }
 
@@ -1434,15 +1447,15 @@ async function openYesNoModal() {
   if (input) input.value = '';
   if (counter) counter.textContent = '0';
 
-  modal.classList.add('active');
+  activateModal(modal);
 
   const closeBtn = modal.querySelector('.modal-close');
   if (closeBtn) {
-    closeBtn.onclick = () => modal.classList.remove('active');
+    closeBtn.onclick = () => closeModal(modal);
   }
 
   modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
+    if (e.target === modal) closeModal(modal);
   };
 
   const submitBtn = $('#yesno-submit-btn');
@@ -1484,7 +1497,7 @@ async function openYesNoModal() {
     await saveUserStateToServer();
     renderArchive();
 
-    modal.classList.remove('active');
+    closeModal(modal);
     showAnswerModal(question, randomAnswer);
   };
 }
@@ -1514,7 +1527,7 @@ async function askQuestion() {
   await saveUserStateToServer();
 
   const qm = $('#question-modal');
-  if (qm) qm.classList.remove('active');
+  if (qm) closeModal(qm);
 
   showToast('🌀 Вселенная слышит ваш вопрос...', 'info');
 
@@ -1580,17 +1593,17 @@ function showAnswerModal(question, answer) {
       <div class="modal-icon" style="margin: 0 auto 20px;">
         <i class="fas fa-stars"></i>
       </div>
-      <h3 style="font-size: 20px; color: var(--primary); margin-bottom: 16px;">Ответ Вселенной</h3>
-      
+      <h3 style="font-size: 20px; color: var(--primary); margin-bottom: 16px;">Ответ</h3>
+
       <div style="background: rgba(138, 43, 226, 0.1); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
         <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
         <div style="font-style: italic; color: var(--text);">"${question}"</div>
       </div>
-      
+
       <div style="font-size: 18px; color: var(--primary); font-weight: 600; margin-bottom: 16px;">
         ${answer}
       </div>
-      
+
       <div style="font-size: 14px; color: var(--text-light);">
         <i class="fas fa-lightbulb"></i> Совет: зафиксируйте это сообщение и возвращайтесь к нему в течение недели.
       </div>
@@ -1600,7 +1613,7 @@ function showAnswerModal(question, answer) {
   openModal(modal);
 }
 
-// ===== АРХИВ =====
+// ===== АРХИВ (иконки убраны у всех) =====
 function renderArchive() {
   const list = $('#archive-list');
   if (!list) return;
@@ -1626,7 +1639,7 @@ function renderArchive() {
 
       let subtitle = '';
       if (entry.type === 'spread') {
-        subtitle = `${(entry.cards || []).length} карт • Анализ расклада`;
+        subtitle = `${(entry.cards || []).length} карт • Расклад`;
       } else if (entry.type === 'wheel') {
         subtitle = `Колесо фортуны • ${entry.card ? entry.card.name : ''}`;
       } else if (entry.type === 'yesno') {
@@ -1641,7 +1654,7 @@ function renderArchive() {
         <div class="spread-item archive-item" data-index="${index}">
           <div class="spread-header">
             <div class="spread-title">${title}</div>
-            <div class="spread-price" style="font-size:14px;">
+            <div class="spread-price" style="font-size:14px; background: transparent; box-shadow:none; padding:0;">
               ${dateStr}
             </div>
           </div>
@@ -1699,18 +1712,15 @@ function showArchiveEntryModal(entry) {
         <img src="${card.image}"
              alt="${card.name}"
              style="width:200px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;"
-             onerror="handleCardImageError(this)">
+             onerror="handleCardImgError(this)">
         <div style="font-size:18px; font-weight:600; color:var(--primary); margin-bottom:6px;">
           ${card.name}${card.roman ? ` (${card.roman})` : ''}
         </div>
-        <div style="font-size:14px; color:var(--secondary); margin-bottom:8px;">${
-          card.keyword || ''
-        }</div>
-        <div style="font-size:13px; color:var(--text); margin-bottom:8px;">${
-          card.description || ''
-        }</div>
-        <div style="font-size:13px; color:var(--text-light); font-style:italic;">
-          Совет: ${card.advice || ''}
+        <div style="font-size:14px; color:var(--secondary); margin-bottom:8px;">
+          ${card.keyword || ''}
+        </div>
+        <div style="font-size:13px; color:var(--text); margin-bottom:8px;">
+          ${truncateText(card.description || '', 240)}
         </div>
       </div>
     `;
@@ -1732,7 +1742,7 @@ function showArchiveEntryModal(entry) {
           <div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">Ваш вопрос:</div>
           <div style="font-style: italic; color: var(--text);">"${entry.question || ''}"</div>
         </div>
-        
+
         <div style="font-size: 18px; color: var(--primary); font-weight: 600; margin-bottom: 16px;">
           ${entry.answer || ''}
         </div>
@@ -1744,8 +1754,7 @@ function showArchiveEntryModal(entry) {
 
   body.innerHTML = `
     <div style="padding:20px;">
-      <h3 style="font-size:20px; color:var(--primary); margin-bottom:6px;">${entry.title ||
-        'Запись архива'}</h3>
+      <h3 style="font-size:20px; color:var(--primary); margin-bottom:6px;">${entry.title || 'Запись архива'}</h3>
       <div style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
         <i class="fas fa-calendar-alt"></i> ${dateStr} <i class="far fa-clock" style="margin-left:10px;"></i> ${timeStr}
       </div>
@@ -1774,11 +1783,11 @@ function openConfirmModal({ title, message, okText = 'ОК', cancelText = 'От�
   titleEl.textContent = title || 'Подтверждение';
   msgEl.textContent = message || '';
 
-  modal.classList.add('active');
+  activateModal(modal);
 
   return new Promise((resolve) => {
     const cleanup = () => {
-      modal.classList.remove('active');
+      closeModal(modal);
       okBtn.onclick = null;
       cancelBtn.onclick = null;
       if (closeBtn) closeBtn.onclick = null;
