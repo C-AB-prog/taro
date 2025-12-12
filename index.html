@@ -15,7 +15,7 @@
   <div id="app">
     <!-- Частицы -->
     <div class="particles"></div>
-    
+
     <!-- Главный контейнер -->
     <div class="container">
       <!-- Хедер -->
@@ -27,10 +27,12 @@
               <p class="logo-subtitle"></p>
             </div>
           </div>
-          
+
           <div class="user-status">
             <div class="status-indicator">
-              <span class="status-text"><span id="stars-amount">0</span> ★</span>
+              <i class="fas fa-star status-star-icon"></i>
+              <!-- убрали белую ★, оставили только иконку -->
+              <span class="status-text"><span id="stars-amount">0</span></span>
               <button class="status-plus-btn" id="open-shop-btn">
                 <i class="fas fa-plus"></i>
               </button>
@@ -117,12 +119,10 @@
                 <p class="section-subtitle">Результат — карта из колоды</p>
               </div>
             </div>
-            
+
             <div class="fortune-wheel-container">
               <div class="wheel-wrapper">
-                <div class="fortune-wheel" id="fortune-wheel">
-                  <!-- Секции колеса -->
-                </div>
+                <div class="fortune-wheel" id="fortune-wheel"></div>
                 <div class="wheel-center">
                   <div class="wheel-glow"></div>
                   <i class="fas fa-star"></i>
@@ -131,13 +131,13 @@
                   <i class="fas fa-caret-down"></i>
                 </div>
               </div>
-              
+
               <button class="spin-btn" id="spin-wheel-btn">
                 <i class="fas fa-play"></i>
                 <span>Крутить колесо</span>
                 <div class="spin-glow"></div>
               </button>
-              
+
               <div class="wheel-result" id="wheel-result">
                 Колесо ещё не крутили сегодня
               </div>
@@ -155,9 +155,7 @@
               </div>
             </div>
 
-            <div class="spreads-grid" id="spreads-grid">
-              <!-- Расклады будут здесь -->
-            </div>
+            <div class="spreads-grid" id="spreads-grid"></div>
           </div>
         </section>
 
@@ -171,9 +169,7 @@
               </div>
             </div>
 
-            <div class="deck-grid" id="deck-grid">
-              <!-- Карты колоды будут здесь -->
-            </div>
+            <div class="deck-grid" id="deck-grid"></div>
           </div>
         </section>
 
@@ -187,27 +183,25 @@
               </div>
             </div>
 
-            <div class="spreads-grid" id="archive-list">
-              <!-- Элементы архива -->
-            </div>
+            <div class="spreads-grid" id="archive-list"></div>
           </div>
         </section>
 
         <!-- Модальное окно "Спросить Вселенную" -->
         <div class="modal" id="question-modal">
           <div class="modal-content">
-            <button class="modal-close">&times;</button>
+            <button class="modal-close" type="button">&times;</button>
             <div class="modal-header">
               <div class="modal-icon">
                 <i class="fas fa-question-circle"></i>
               </div>
               <h3>Спросить Вселенную</h3>
             </div>
-            
+
             <div class="modal-body">
               <div class="question-input-container">
-                <textarea 
-                  id="question-input" 
+                <textarea
+                  id="question-input"
                   placeholder="Задайте свой вопрос Вселенной..."
                   maxlength="200"
                   rows="3"></textarea>
@@ -215,7 +209,7 @@
                   <span id="char-count">0</span>/200
                 </div>
               </div>
-              
+
               <div class="question-types">
                 <div class="question-type active" data-type="love">
                   <i class="fas fa-heart"></i>
@@ -234,7 +228,7 @@
                   <span>Выбор</span>
                 </div>
               </div>
-              
+
               <button class="ask-btn" id="ask-question-btn">
                 <i class="fas fa-stars"></i>
                 <span>Спросить за ★ 35</span>
@@ -246,7 +240,7 @@
         <!-- Модальное окно Да/Нет -->
         <div class="modal" id="yesno-modal">
           <div class="modal-content">
-            <button class="modal-close">&times;</button>
+            <button class="modal-close" type="button">&times;</button>
             <div class="modal-header">
               <div class="modal-icon">
                 <i class="fas fa-check"></i>
@@ -255,8 +249,8 @@
             </div>
             <div class="modal-body">
               <div class="question-input-container">
-                <textarea 
-                  id="yesno-input" 
+                <textarea
+                  id="yesno-input"
                   placeholder="Задайте свой вопрос (Да/Нет)..."
                   maxlength="200"
                   rows="3"></textarea>
@@ -275,7 +269,7 @@
         <!-- Модальное окно магазина звезд -->
         <div class="modal" id="shop-modal">
           <div class="modal-content">
-            <button class="modal-close">&times;</button>
+            <button class="modal-close" type="button">&times;</button>
             <div class="modal-header">
               <div class="modal-icon">
                 <i class="fas fa-shopping-cart"></i>
@@ -284,7 +278,7 @@
             </div>
             <div class="modal-body">
               <p style="text-align:center; margin-bottom:20px; color:var(--text-light);">Пополните баланс звёздами</p>
-              
+
               <div class="shop-packs">
                 <div class="shop-pack" data-stars="150">
                   <div class="pack-icon">
@@ -296,7 +290,7 @@
                   </div>
                   <div class="pack-price">150 ★</div>
                 </div>
-                
+
                 <div class="shop-pack" data-stars="350">
                   <div class="pack-icon">
                     <i class="fas fa-star"></i>
@@ -307,7 +301,7 @@
                   </div>
                   <div class="pack-price">350 ★</div>
                 </div>
-                
+
                 <div class="shop-pack" data-stars="800">
                   <div class="pack-icon">
                     <i class="fas fa-star"></i>
@@ -318,7 +312,7 @@
                   </div>
                   <div class="pack-price">800 ★</div>
                 </div>
-                
+
                 <div class="shop-pack" data-stars="1000">
                   <div class="pack-icon">
                     <i class="fas fa-star"></i>
@@ -330,7 +324,7 @@
                   <div class="pack-price">1000 ★</div>
                 </div>
               </div>
-              
+
               <div style="text-align:center; margin-top:20px; font-size:12px; color:var(--text-light);">
                 <i class="fas fa-info-circle"></i> Звёзды используются для покупки раскладов и вопросов
               </div>
@@ -341,7 +335,7 @@
         <!-- Модальное окно подтверждения покупки -->
         <div class="modal" id="confirm-modal">
           <div class="modal-content">
-            <button class="modal-close">&times;</button>
+            <button class="modal-close" type="button">&times;</button>
             <div class="modal-header">
               <div class="modal-icon">
                 <i class="fas fa-circle-question"></i>
@@ -351,8 +345,8 @@
             <div class="modal-body">
               <p id="confirm-message" style="font-size:14px; color:var(--text); margin-bottom:10px;"></p>
               <div class="modal-actions">
-                <button class="btn-secondary" id="confirm-cancel-btn">Отмена</button>
-                <button class="btn-primary" id="confirm-ok-btn">ОК</button>
+                <button class="btn-secondary" id="confirm-cancel-btn" type="button">Отмена</button>
+                <button class="btn-primary" id="confirm-ok-btn" type="button">ОК</button>
               </div>
             </div>
           </div>
@@ -361,10 +355,8 @@
         <!-- Модальное окно карты / архива / ответа -->
         <div class="modal" id="card-modal">
           <div class="modal-content">
-            <button class="modal-close">&times;</button>
-            <div class="modal-body" id="card-modal-body">
-              <!-- Контент карты или архива будет здесь -->
-            </div>
+            <button class="modal-close" type="button">&times;</button>
+            <div class="modal-body" id="card-modal-body"></div>
           </div>
         </div>
       </main>
