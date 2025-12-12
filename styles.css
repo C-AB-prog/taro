@@ -23,6 +23,14 @@
   --shadow-hover: 0 8px 30px rgba(138, 43, 226, 0.15);
   --gold: #FFD700;
   --silver: #C0C0C0;
+
+  /* “магический” фон — очень нежно, чтобы не менять дизайн */
+  --soft-glow-1: rgba(138, 43, 226, 0.06);
+  --soft-glow-2: rgba(0, 206, 209, 0.05);
+}
+
+html, body {
+  height: 100%;
 }
 
 body {
@@ -31,17 +39,25 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* ВАЖНО: фикс скролла на iOS при модалках (JS ставит top) */
 body.modal-open {
   overflow: hidden;
   touch-action: none;
+  position: fixed;
+  width: 100%;
+  left: 0;
+  right: 0;
 }
 
 #app {
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .container {
@@ -70,6 +86,7 @@ body.modal-open {
   color: white;
   position: relative;
   overflow: hidden;
+  padding-top: calc(20px + env(safe-area-inset-top));
 }
 
 .header::before {
@@ -79,7 +96,12 @@ body.modal-open {
   left: 0;
   right: 0;
   height: 100%;
-  background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255,255,255,0.1) 50%,
+    transparent 70%
+  );
   animation: shine 3s ease-in-out infinite;
 }
 
@@ -138,6 +160,11 @@ body.modal-open {
   gap: 8px;
 }
 
+.status-star-icon {
+  color: var(--gold);
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.25));
+}
+
 .status-text {
   font-size: 14px;
   font-weight: 600;
@@ -171,6 +198,7 @@ body.modal-open {
   gap: 8px;
   padding: 0 8px;
   margin-top: 20px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .nav-btn {
@@ -224,6 +252,7 @@ body.modal-open {
 /* ===== ОСНОВНОЙ КОНТЕНТ ===== */
 .main-content {
   padding: 20px 16px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
 }
 
 .screen {
@@ -277,6 +306,11 @@ body.modal-open {
   border: 1px solid var(--border);
   position: relative;
   overflow: hidden;
+
+  /* легкий “смысловой” блеск внутри карточки */
+  background-image:
+    radial-gradient(circle at 12% 10%, var(--soft-glow-1) 0, transparent 55%),
+    radial-gradient(circle at 88% 0%, var(--soft-glow-2) 0, transparent 45%);
 }
 
 .card-of-day::before {
@@ -325,6 +359,7 @@ body.modal-open {
   height: 400px;
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
 }
 
 .card-image-container-full:hover {
@@ -374,6 +409,43 @@ body.modal-open {
   text-transform: uppercase;
   letter-spacing: 1px;
   opacity: 0.8;
+}
+
+/* На главной (Карта дня): короткое значение */
+.card-day-meaning {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 14px 16px;
+  background: rgba(138, 43, 226, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(138, 43, 226, 0.08);
+}
+
+/* Блок подробностей на главной (по кнопке) */
+.card-day-details {
+  margin-top: 4px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.card-day-details.open {
+  max-height: 1200px; /* достаточно, чтобы раскрыть всё */
+}
+
+.btn-card-details--toggle {
+  width: 100%;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-card-details--toggle i {
+  transition: transform 0.25s ease;
+}
+
+.btn-card-details--toggle.is-open i {
+  transform: rotate(180deg);
 }
 
 .card-keyword {
@@ -493,9 +565,11 @@ body.modal-open {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
+  position: relative;
+  overflow: hidden;
 }
 
 .btn-card-details i {
@@ -507,20 +581,6 @@ body.modal-open {
   box-shadow: 0 8px 25px rgba(138, 43, 226, 0.4);
 }
 
-/* ===== УЛУЧШЕННЫЙ БЭДЖ ===== */
-.enhanced-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #FF8C00, #FFD700);
-  color: white;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-left: 8px;
-}
-
 /* ===== МАГИЧЕСКИЕ ДЕЙСТВИЯ ===== */
 .magic-actions {
   background: var(--card-bg);
@@ -529,6 +589,9 @@ body.modal-open {
   margin-bottom: 24px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
+
+  background-image:
+    radial-gradient(circle at 80% 20%, var(--soft-glow-2) 0, transparent 55%);
 }
 
 .actions-grid {
@@ -649,6 +712,9 @@ body.modal-open {
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
   margin-bottom: 24px;
+
+  background-image:
+    radial-gradient(circle at 20% 80%, var(--soft-glow-1) 0, transparent 55%);
 }
 
 .fortune-wheel-container {
@@ -682,7 +748,7 @@ body.modal-open {
     #EE5A24 300deg 330deg,
     #A3CB38 330deg 360deg
   );
-  box-shadow: 
+  box-shadow:
     0 0 60px rgba(138, 43, 226, 0.3),
     0 20px 40px rgba(0, 0, 0, 0.2),
     inset 0 0 30px rgba(255, 255, 255, 0.1);
@@ -690,6 +756,7 @@ body.modal-open {
   transition: transform 4s cubic-bezier(0.2, 0.8, 0.3, 1);
   position: relative;
   z-index: 1;
+  will-change: transform;
 }
 
 .fortune-wheel::before {
@@ -824,6 +891,7 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   animation: resultPulse 2s ease-in-out infinite;
+  overscroll-behavior: contain;
 }
 
 @keyframes resultPulse {
@@ -831,19 +899,38 @@ body.modal-open {
   50% { opacity: 1; }
 }
 
-/* ===== РАСКЛАДЫ ===== */
+/* ===== РАСКЛАДЫ / АРХИВ (контейнер тянем по высоте — меньше “пустого места”) ===== */
 .spreads-container {
   background: var(--card-bg);
   border-radius: 24px;
   padding: 24px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
+
+  min-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+
+  background-image:
+    radial-gradient(circle at 15% 25%, var(--soft-glow-1) 0, transparent 55%),
+    radial-gradient(circle at 90% 70%, var(--soft-glow-2) 0, transparent 55%);
 }
 
 .spreads-grid {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+}
+
+/* ВАЖНО: в JS у раскладов используется .spread-title-row, а у архива .spread-header */
+.spread-title-row,
+.spread-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  gap: 10px;
 }
 
 .spread-item {
@@ -859,13 +946,6 @@ body.modal-open {
   transform: translateX(5px);
   box-shadow: var(--shadow-hover);
   border-color: var(--primary-light);
-}
-
-.spread-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
 }
 
 .spread-title {
@@ -896,6 +976,10 @@ body.modal-open {
   font-size: 18px;
 }
 
+.spread-price-num {
+  line-height: 1;
+}
+
 .spread-description {
   font-size: 14px;
   color: var(--text);
@@ -920,8 +1004,8 @@ body.modal-open {
 
 /* ===== СЕКЦИЯ АНАЛИЗА ===== */
 .analysis-section {
-  background: linear-gradient(135deg, 
-    rgba(138, 43, 226, 0.03), 
+  background: linear-gradient(135deg,
+    rgba(138, 43, 226, 0.03),
     rgba(0, 206, 209, 0.03)
   );
   border: 1px solid rgba(138, 43, 226, 0.1);
@@ -1018,6 +1102,13 @@ body.modal-open {
   padding: 24px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
+
+  min-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+
+  background-image:
+    radial-gradient(circle at 20% 10%, var(--soft-glow-2) 0, transparent 55%);
 }
 
 .deck-filters {
@@ -1055,6 +1146,8 @@ body.modal-open {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
+  flex: 1;
+  align-content: start;
 }
 
 .deck-card {
@@ -1067,6 +1160,7 @@ body.modal-open {
   position: relative;
   animation: cardFloat 3s ease-in-out infinite;
   animation-delay: calc(var(--card-index) * 0.1s);
+  will-change: transform;
 }
 
 @keyframes cardFloat {
@@ -1076,7 +1170,7 @@ body.modal-open {
 
 .deck-card:hover {
   transform: translateY(-15px) scale(1.05);
-  box-shadow: 
+  box-shadow:
     0 20px 40px rgba(138, 43, 226, 0.3),
     0 0 30px rgba(255, 215, 0, 0.2);
   border-color: var(--primary-light);
@@ -1223,6 +1317,7 @@ body.modal-open {
 .archive-date i {
   font-size: 10px;
   color: var(--primary);
+  opacity: 0.9;
 }
 
 /* ===== МОДАЛЬНЫЕ ОКНА ===== */
@@ -1238,14 +1333,20 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 20px;
+
+  /* безопасные отступы */
+  padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
   animation: fadeIn 0.3s ease;
+
+  /* предотвращаем “пробивание” скролла (scroll chaining) */
+  overscroll-behavior: contain;
 }
 
 .modal.active {
   display: flex;
 }
 
+/* Фикс “крестик гуляет”: теперь скролл не на .modal-content, а на .modal-body */
 .modal-content {
   background: var(--card-bg);
   border-radius: 24px;
@@ -1253,11 +1354,14 @@ body.modal-open {
   max-width: 500px;
   width: 100%;
   max-height: 80vh;
-  overflow-y: auto;
   position: relative;
   border: 2px solid var(--primary);
   box-shadow: 0 20px 60px rgba(138, 43, 226, 0.4);
   animation: modalAppear 0.3s ease;
+
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* важно */
 }
 
 @keyframes modalAppear {
@@ -1281,6 +1385,7 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
+  z-index: 2; /* поверх скролла */
 }
 
 .modal-close:hover {
@@ -1291,6 +1396,7 @@ body.modal-open {
 .modal-header {
   text-align: center;
   margin-bottom: 24px;
+  flex: 0 0 auto;
 }
 
 .modal-icon {
@@ -1310,6 +1416,28 @@ body.modal-open {
   font-size: 24px;
   font-weight: 700;
   color: var(--text);
+}
+
+/* Скроллим именно тело модалки */
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0; /* чтобы overflow работал в flex */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 2px; /* чтобы текст не прилипал к скроллбару */
+}
+
+/* Скрытый/аккуратный скроллбар (не ломаем дизайн) */
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(138, 43, 226, 0.25);
+  border-radius: 999px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .modal-actions {
@@ -1349,8 +1477,9 @@ body.modal-open {
 
 /* ===== ПОЛНАЯ МОДАЛКА КАРТЫ ===== */
 .card-modal-full {
-  max-height: 80vh;
-  overflow-y: auto;
+  /* больше не делаем второй скролл — он уже на .modal-body */
+  max-height: none;
+  overflow: visible;
 }
 
 .card-modal-image {
@@ -1483,31 +1612,6 @@ body.modal-open {
   color: #FF8C00;
 }
 
-.card-modal-tips {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(138, 43, 226, 0.05);
-  border-radius: 12px;
-  border: 1px solid rgba(138, 43, 226, 0.1);
-}
-
-.tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.tip i {
-  color: var(--primary);
-  font-size: 14px;
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
 /* ===== МАГАЗИН ЗВЕЗД ===== */
 .shop-packs {
   display: flex;
@@ -1611,6 +1715,7 @@ body.modal-open {
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
+  user-select: none;
 }
 
 .question-type.active {
@@ -1655,7 +1760,7 @@ body.modal-open {
 /* ===== ТОСТЫ ===== */
 .toast {
   position: fixed;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%) translateY(100px);
   background: var(--primary);
@@ -1694,50 +1799,59 @@ body.modal-open {
   opacity: 1;
 }
 
+/* ===== ФОКУС (чуть аккуратнее на мобиле) ===== */
+:focus-visible {
+  outline: 3px solid rgba(0, 206, 209, 0.35);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 480px) {
   .container {
     padding: 0;
   }
-  
+
   .card-image-container-full {
     height: 350px;
   }
-  
+
   .card-modal-image {
     height: 250px;
   }
-  
+
   .card-modal-title {
     font-size: 24px;
   }
-  
+
   .wheel-wrapper {
     width: 250px;
     height: 250px;
   }
-  
+
   .actions-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .deck-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
   }
-  
+
   .deck-card-inner {
     height: 180px;
   }
-  
+
   .header {
     padding: 16px 12px 0;
+    padding-top: calc(16px + env(safe-area-inset-top));
   }
-  
+
   .main-content {
     padding: 16px 12px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
-  
+
   .card-of-day,
   .magic-actions,
   .fortune-section,
@@ -1745,72 +1859,73 @@ body.modal-open {
   .deck-container {
     padding: 20px;
   }
-  
+
   .modal-content {
     padding: 20px;
     margin: 0 12px;
     max-width: 90%;
   }
-  
+
   .question-types {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .logo-text h1 {
     font-size: 28px;
   }
-  
+
   .spread-card-image {
     width: 70px;
     height: 105px;
   }
-  
+
   .spread-card-name {
     font-size: 14px;
   }
-  
+
   .spread-card-description {
     font-size: 11px;
   }
-  
+
   .card-modal-sections .section {
     padding: 14px;
   }
-  
+
   .deck-filters {
     gap: 6px;
   }
-  
+
   .filter-btn {
     padding: 6px 12px;
     font-size: 11px;
   }
-  
+
   .card-modal-keyword {
     font-size: 16px;
     padding: 10px 14px;
   }
-  
+
   .card-modal-description {
     font-size: 14px;
     padding: 14px;
   }
-  
+
   .spread-meta {
     gap: 10px;
   }
-  
+
   .spread-meta span {
     font-size: 11px;
   }
-  
-  .enhanced-badge {
-    font-size: 10px;
-    padding: 3px 8px;
-  }
-  
-  .spread-header {
+
+  .spread-header,
+  .spread-title-row {
     flex-wrap: wrap;
+  }
+
+  .spreads-container,
+  .deck-container {
+    min-height: calc(100vh - 230px);
   }
 }
 
@@ -1818,25 +1933,35 @@ body.modal-open {
   .deck-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .actions-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .nav-btn span {
     font-size: 10px;
   }
-  
+
   .question-types {
     grid-template-columns: 1fr;
   }
-  
+
   .deck-filters {
     overflow-x: auto;
     padding-bottom: 8px;
   }
-  
+
   .filter-btn {
     flex-shrink: 0;
+  }
+}
+
+/* ===== ДОСТУПНОСТЬ: уменьшение анимаций по настройке системы ===== */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
