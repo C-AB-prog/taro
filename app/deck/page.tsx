@@ -29,10 +29,7 @@ function suitOf(slug: string): DeckFilter | null {
 
 export default function DeckPage() {
   const allCards = useMemo<DeckCard[]>(
-    () =>
-      CARD_SLUGS
-        .filter((s) => s !== "card-back") // на всякий случай
-        .map((slug) => ({ slug, image: cardImage(slug) })),
+    () => CARD_SLUGS.map((slug) => ({ slug, image: cardImage(slug) })),
     []
   );
 
@@ -62,7 +59,7 @@ export default function DeckPage() {
 
         <div style={{ height: 10 }} />
 
-        {/* ✅ фильтры одинакового размера */}
+        {/* фильтры одинакового размера */}
         <div className="segRow segRowEqual">
           <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
             Все
@@ -144,8 +141,7 @@ export default function DeckPage() {
                 {ruTitleFromSlug(picked.slug)}
               </div>
               <p className="text" style={{ marginTop: 8 }}>
-                Эта карта говорит через образы. Если хочешь — добавим короткое “значение”
-                для каждой карты в отдельном словаре.
+                Эта карта говорит через образы. Если хочешь — добавим короткое “значение” для каждой карты в отдельном словаре.
               </p>
             </div>
           </div>
