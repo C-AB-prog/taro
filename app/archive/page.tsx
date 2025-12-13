@@ -6,11 +6,17 @@ import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
 import { RitualHeader } from "@/components/RitualHeader";
-import { IconChevronRight } from "@/components/Icons";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 type WheelItem = {
   date: string;
-  card: { titleRu: string; meaningRu: string; adviceRu: string; image: string };
+  card: {
+    slug?: string; // может прийти, может нет
+    titleRu: string;
+    meaningRu: string;
+    adviceRu: string;
+    image: string;
+  };
 };
 
 type SpreadItem = {
@@ -47,7 +53,9 @@ export default function ArchivePage() {
   function openWheel(item: WheelItem) {
     setSpreadItem(null);
     setWheelItem(item);
-    setModalTitle(`${fmt(item.date)} • Колесо`);
+
+    const t = item.card.slug ? ruTitleFromSlug(item.card.slug) : item.card.titleRu;
+    setModalTitle(`${fmt(item.date)} • ${t}`);
     setOpen(true);
   }
 
@@ -122,27 +130,35 @@ export default function ArchivePage() {
           </div>
         ) : (
           <div className="archiveList">
-            {wheel.map((w, i) => (
-              <motion.button
-                key={i}
-                className="card pressable archiveItem"
-                style={{ textAlign: "left", cursor: "pointer" }}
-                whileTap={{ scale: 0.99 }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
-                onClick={() => openWheel(w)}
-              >
-                <div className="archiveRow">
-                  <img className="thumb" src={w.card.image} alt={w.card.titleRu} loading="lazy" decoding="async" />
-                  <div className="archiveMain">
-                    <div className="archiveTitle">{w.card.titleRu}</div>
-                    <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
+            {wheel.map((w, i) => {
+              const title = w.card.slug ? ruTitleFromSlug(w.card.slug) : w.card.titleRu;
+              return (
+                <motion.button
+                  key={i}
+                  className="card pressable archiveItem"
+                  style={{ textAlign: "left", cursor: "pointer" }}
+                  whileTap={{ scale: 0.99 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
+                  onClick={() => openWheel(w)}
+                >
+                  <div className="archiveRow">
+                    <img
+                      className="thumb"
+                      src={w.card.image}
+                      alt={title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <div className="archiveMain">
+                      <div className="archiveTitle">{title}</div>
+                      <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
+                    </div>
                   </div>
-                  <IconChevronRight className="chev" />
-                </div>
-              </motion.button>
-            ))}
+                </motion.button>
+              );
+            })}
           </div>
         )
       ) : spreads.length === 0 ? (
@@ -169,9 +185,15 @@ export default function ArchivePage() {
               >
                 <div className="archiveRow">
                   <div className="thumbStack">
-                    {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
-                    {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
-                    {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[0] ? (
+                      <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
+                    {preview[1] ? (
+                      <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
+                    {preview[2] ? (
+                      <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
                   </div>
 
                   <div className="archiveMain">
@@ -180,8 +202,6 @@ export default function ArchivePage() {
                       {fmt(s.createdAt)} • {s.cards.length} карт • списано {s.paidAmount}
                     </div>
                   </div>
-
-                  <IconChevronRight className="chev" />
                 </div>
               </motion.button>
             );
@@ -192,9 +212,11 @@ export default function ArchivePage() {
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {wheelItem ? (
           <div className="row">
-            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} loading="lazy" decoding="async" />
+            <img className="img" src={wheelItem.card.image} alt="" loading="lazy" decoding="async" />
             <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>{wheelItem.card.titleRu}</div>
+              <div className="title" style={{ fontSize: 16 }}>
+                {wheelItem.card.slug ? ruTitleFromSlug(wheelItem.card.slug) : wheelItem.card.titleRu}
+              </div>
               <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
               <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
               <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.adviceRu}</p>
