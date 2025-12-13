@@ -113,21 +113,13 @@ function getInitData() {
     : "";
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, ms: number) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(input, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 async function postJSON(url: string, body: any, timeoutMs = 6500) {
   const initData = getInitData();
-  const r = await fetchWithTimeout(
-    url,
-    {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+  try {
+    const r = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -136,41 +128,29 @@ async function postJSON(url: string, body: any, timeoutMs = 6500) {
       },
       body: JSON.stringify({ ...(body ?? {}), initData }),
       cache: "no-store",
-    },
-    timeoutMs
-  );
-  const data = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data };
+      signal: ctrl.signal,
+    });
+
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data };
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 function extractView(resData: any, fallbackPositions: string[]) {
+  // ✅ сервер кладёт результат в data.view
+  const root = resData?.view ?? resData?.result?.view ?? resData?.purchase?.view ?? resData;
+
   const cards =
-    (resData?.cards ??
-      resData?.result?.cards ??
-      resData?.purchase?.cards ??
-      resData?.data?.cards ??
+    (root?.cards ??
+      root?.result?.cards ??
       []) as { slug: string; image: string }[];
 
-  const interpretation = String(
-    resData?.interpretation ??
-      resData?.result?.interpretation ??
-      resData?.purchase?.interpretation ??
-      resData?.data?.interpretation ??
-      ""
-  );
+  const interpretation = String(root?.interpretation ?? "");
+  const positions = (root?.positions ?? fallbackPositions) as string[];
 
-  const positions =
-    (resData?.positions ??
-      resData?.result?.positions ??
-      resData?.purchase?.positions ??
-      fallbackPositions) as string[];
-
-  return { cards, positions, interpretation };
-}
-
-function isBuyFailed(d: any) {
-  const code = String(d?.error ?? d?.data?.error ?? d?.message ?? "").toUpperCase();
-  return code === "BUY_FAILED";
+  return { cards, positions, interpretation, spreadTitle: String(root?.spreadTitle ?? "") };
 }
 
 function keyVariants(def: SpreadDef) {
@@ -181,7 +161,6 @@ function keyVariants(def: SpreadDef) {
 
   if (def.id === "three") extra.push("three_cards", "three-cards", "Три карты");
   if (def.id === "couple_future") extra.push("future_pair", "futurePair", "coupleFuture", "Будущее пары");
-
   if (def.id === "station_for_two") extra.push("station-for-two", "Вокзал для двоих");
   if (def.id === "money_tree") extra.push("money-tree", "Денежное дерево");
   if (def.id === "money_on_barrel") extra.push("money-on-barrel", "Деньги на бочку");
@@ -193,7 +172,7 @@ function keyVariants(def: SpreadDef) {
 }
 
 export default function SpreadsPage() {
-  const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
+  const [filter, setFilter] = useState<SpreadDef["tag"] | "all">("all");
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -207,6 +186,7 @@ export default function SpreadsPage() {
 
   async function buy(def: SpreadDef) {
     if (busyId) return;
+
     setBusyId(def.id);
     setActiveId(def.id);
     setErrs((m) => ({ ...m, [def.id]: null }));
@@ -214,15 +194,11 @@ export default function SpreadsPage() {
 
     try {
       const keys = keyVariants(def);
-
-      // важное: BUY_FAILED считаем “попробуй другой ключ/тело”, не стопим на первом
       const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
       const bodyVariants = (k: string) => [
-        { spreadId: k },
-        { spreadId: k, price: def.price },
-        { spreadId: k, cost: def.price },
-        { id: k },
         { spreadKey: k },
+        { spreadId: k },
+        { id: k },
         { slug: k },
         { key: k },
       ];
@@ -235,57 +211,56 @@ export default function SpreadsPage() {
             const r = await postJSON(ep, body, 6500);
             last = { ep, body, ok: r.ok, status: r.status, data: r.data };
 
-            if (r.ok) {
-              if (isBuyFailed(r.data)) continue; // даже если 200, но error BUY_FAILED
+            // если сервер вернул явную ошибку — пробуем другой ключ
+            const errCode = String(r.data?.error ?? r.data?.message ?? "").toUpperCase();
+            if (errCode === "BUY_FAILED") continue;
 
-              const extracted = extractView(r.data, def.positions);
-              if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
-                setViews((m) => ({
-                  ...m,
-                  [def.id]: {
-                    title: def.title,
-                    cards: extracted.cards,
-                    positions: extracted.positions ?? def.positions,
-                    interpretation: extracted.interpretation ?? "",
-                    resetToken: `${def.id}-${Date.now()}`,
-                  },
-                }));
-                window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-                break outer;
-              }
-
-              // если “успех” без карт — для тебя это пока не успех
-              setErrs((m) => ({
-                ...m,
-                [def.id]: {
-                  text: "Сервер ответил, но не вернул карты/трактовку.",
-                  debug: JSON.stringify(last, null, 2),
-                },
-              }));
+            if (!r.ok) {
+              // 404/unknown — попробуем дальше
+              const s = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
+              const unknown = r.status === 404 || s.includes("unknown") || s.includes("not found") || s.includes("не найден");
+              if (unknown) continue;
               break outer;
             }
 
-            // 400 BUY_FAILED — пробуем дальше (может быть неверный ключ)
-            if (r.status === 400 && isBuyFailed(r.data)) continue;
+            const extracted = extractView(r.data, def.positions);
 
-            // 404/unknown — пробуем дальше
-            const s = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
-            const unknown = r.status === 404 || s.includes("unknown") || s.includes("not found") || s.includes("не найден");
-            if (unknown) continue;
+            // ✅ успех: есть карты
+            if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
+              setViews((m) => ({
+                ...m,
+                [def.id]: {
+                  title: def.title,
+                  cards: extracted.cards,
+                  positions: extracted.positions ?? def.positions,
+                  interpretation: extracted.interpretation ?? "",
+                  resetToken: `${def.id}-${Date.now()}`,
+                },
+              }));
+              window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+              break outer;
+            }
 
-            // остальное — стоп
+            // ok, но без карт — считаем ошибкой
+            setErrs((m) => ({
+              ...m,
+              [def.id]: {
+                text: "Сервер ответил, но не вернул карты/трактовку.",
+                debug: JSON.stringify(last, null, 2),
+              },
+            }));
             break outer;
           }
         }
       }
 
-      // если всё ещё ничего — покажем последнюю ошибку
-      if (!views[def.id]) {
-        const code = String(last?.data?.error ?? last?.data?.message ?? "BUY_FAILED");
+      // если ничего не получилось — показываем последнюю ошибку
+      const v = views[def.id];
+      if (!v && !errs[def.id]) {
         setErrs((m) => ({
           ...m,
           [def.id]: {
-            text: code,
+            text: String(last?.data?.error ?? last?.data?.message ?? "Не получилось"),
             debug: last ? JSON.stringify(last, null, 2) : "",
           },
         }));
@@ -305,18 +280,43 @@ export default function SpreadsPage() {
       <RitualHeader label="Расклады" />
 
       <div className="card">
+        {/* ✅ кнопки без “Все”, но по умолчанию показываем все */}
         <div className="segRow segRowEqual">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>Ситуация</button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>Отношения</button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>Финансы</button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
+          <button
+            className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter(filter === "general" ? "all" : "general")}
+          >
+            Ситуация
+          </button>
+          <button
+            className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter(filter === "love" ? "all" : "love")}
+          >
+            Отношения
+          </button>
+          <button
+            className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter(filter === "money" ? "all" : "money")}
+          >
+            Финансы
+          </button>
+          <button
+            className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter(filter === "health" ? "all" : "health")}
+          >
+            Здоровье
+          </button>
+        </div>
+
+        <div className="small" style={{ marginTop: 10 }}>
+          Нажми категорию, чтобы отфильтровать. Нажми активную ещё раз — вернёшься ко всем.
         </div>
       </div>
 
       <div style={{ height: 12 }} />
 
-      <div className="spreadList">
+      {/* ✅ расстояние между раскладами */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {list.map((s) => {
           const isBusy = busyId === s.id;
           const isActive = activeId === s.id;
@@ -348,7 +348,6 @@ export default function SpreadsPage() {
                 {isBusy ? "Готовлю…" : "Сделать расклад"}
               </button>
 
-              {/* результат прямо “на месте” расклада */}
               {isActive && (v || err) ? <div style={{ height: 12 }} /> : null}
 
               {isActive && v ? (
