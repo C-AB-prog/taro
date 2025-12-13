@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
@@ -11,12 +11,10 @@ type CardMeaning = { slug: string; titleRu: string; meaningRu: string; image: st
 type FilterKey = "all" | "major" | "wands" | "cups" | "swords" | "pentacles";
 
 function hapticSelect() {
-  const h = window.Telegram?.WebApp?.HapticFeedback;
-  h?.selectionChanged?.();
+  window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
 }
 
 function groupFromSlug(slug: string): FilterKey {
-  // Старшие арканы: начинаются с "0-" ... "21-"
   if (/^\d{1,2}-/.test(slug)) return "major";
   if (slug.includes("-of-wands-")) return "wands";
   if (slug.includes("-of-cups-")) return "cups";
@@ -34,14 +32,19 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "pentacles", label: "Пентакли" },
 ];
 
+const PAGE = 24;
+
 export default function DeckPage() {
   const [cards, setCards] = useState<CardListItem[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [visible, setVisible] = useState(PAGE);
 
   const [open, setOpen] = useState(false);
   const [card, setCard] = useState<CardMeaning | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -55,6 +58,11 @@ export default function DeckPage() {
     }
     load();
   }, []);
+
+  // сбрасываем пагинацию при смене фильтра/поиска
+  useEffect(() => {
+    setVisible(PAGE);
+  }, [filter, query]);
 
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = {
@@ -74,20 +82,34 @@ export default function DeckPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-
     return cards.filter((c) => {
       const g = groupFromSlug(c.slug);
-
-      const byFilter =
-        filter === "all"
-          ? true
-          : g === filter;
-
+      const byFilter = filter === "all" ? true : g === filter;
       const byQuery = !q ? true : (c.titleRu || c.slug).toLowerCase().includes(q);
-
       return byFilter && byQuery;
     });
   }, [cards, query, filter]);
+
+  const shown = useMemo(() => filtered.slice(0, visible), [filtered, visible]);
+  const canMore = shown.length < filtered.length;
+
+  // авто-подгрузка при скролле вниз
+  useEffect(() => {
+    if (!canMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0];
+        if (e.isIntersecting) setVisible((v) => Math.min(v + PAGE, filtered.length));
+      },
+      { rootMargin: "250px" }
+    );
+
+    io.observe(el);
+    return () => io.disconnect();
+  }, [canMore, filtered.length]);
 
   async function openCard(slug: string) {
     const r = await fetch(`/api/cards/${slug}`, { cache: "no-store" });
@@ -104,10 +126,10 @@ export default function DeckPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Фильтры</div>
-            <div className="small">Выбери масть или старшие арканы</div>
+            <div className="small">Масти и старшие арканы</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>
-            {filtered.length} / {cards.length}
+            {shown.length} / {filtered.length}
           </div>
         </div>
 
@@ -163,34 +185,44 @@ export default function DeckPage() {
           ))}
         </div>
       ) : (
-        <div className="grid">
-          {filtered.map((c, i) => (
-            <motion.button
-              key={c.slug}
-              className="card"
-              style={{ padding: 8, textAlign: "left", cursor: "pointer" }}
-              whileTap={{ scale: 0.98 }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: Math.min(i, 18) * 0.02 }}
-              onClick={() => openCard(c.slug)}
-            >
-              <motion.img
-                className="img"
-                src={c.image}
-                alt={c.titleRu}
-                loading="lazy"
-                style={{ width: "100%", height: 160 }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2 }}
-              />
-              <div className="small" style={{ marginTop: 8, fontWeight: 950 }}>
-                {c.titleRu}
-              </div>
-            </motion.button>
-          ))}
-        </div>
+        <>
+          <div className="grid">
+            {shown.map((c, i) => (
+              <motion.button
+                key={c.slug}
+                className="card"
+                style={{ padding: 8, textAlign: "left", cursor: "pointer" }}
+                whileTap={{ scale: 0.98 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: Math.min(i, 18) * 0.02 }}
+                onClick={() => openCard(c.slug)}
+              >
+                <img
+                  className="img"
+                  src={c.image}
+                  alt={c.titleRu}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ width: "100%", height: 160 }}
+                />
+                <div className="small" style={{ marginTop: 8, fontWeight: 950 }}>
+                  {c.titleRu}
+                </div>
+              </motion.button>
+            ))}
+          </div>
+
+          <div ref={sentinelRef} style={{ height: 1 }} />
+
+          {canMore ? (
+            <div style={{ marginTop: 12 }}>
+              <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setVisible((v) => Math.min(v + PAGE, filtered.length))}>
+                Показать ещё
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
 
       <Modal open={open} title={card?.titleRu ?? "Карта"} onClose={() => setOpen(false)}>
@@ -198,21 +230,10 @@ export default function DeckPage() {
           <p className="text">…</p>
         ) : (
           <div className="row">
-            <motion.img
-              className="img"
-              src={card.image}
-              alt={card.titleRu}
-              loading="lazy"
-              initial={{ opacity: 0, rotateY: 25, y: 6 }}
-              animate={{ opacity: 1, rotateY: 0, y: 0 }}
-              transition={{ duration: 0.25 }}
-            />
+            <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
               <div className="small">Что означает</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
-              <div className="small" style={{ marginTop: 8 }}>
-                Подсказка: смотри на ощущения — они часто точнее слов.
-              </div>
             </div>
           </div>
         )}
