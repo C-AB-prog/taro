@@ -1,135 +1,140 @@
 import "server-only";
+import { z } from "zod";
+import { zodTextFormat } from "openai/helpers/zod";
 import { openai, OPENAI_MODEL } from "@/lib/openai.server";
 
-function clean(s: string) {
-  return String(s || "").trim();
-}
+const CardSchema = z.object({
+  meaningRu: z.string(),
+  adviceRu: z.string(),
+});
 
-function safeJsonParse<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+const SpreadSchema = z.object({
+  interpretationRu: z.string(),
+  adviceRu: z.string(),
+});
+
+function clean(s: unknown) {
+  return String(s ?? "").trim();
 }
 
 export async function generateCardReadingRu(opts: {
-  titleRu: string; // русское название карты
+  titleRu: string;
   kind: "daily" | "wheel";
 }) {
-  // Fallback если ключа нет / API недоступно
+  // fallback (если ключ не задан)
   if (!process.env.OPENAI_API_KEY) {
     return {
-      meaningRu: `Сегодня карта «${opts.titleRu}» напоминает: у событий есть скрытый рисунок, и ты уже ближе к развязке, чем кажется.`,
-      adviceRu: "Действуй мягко и внимательно к знакам — и нужная дверь откроется сама.",
+      meaningRu: `«${opts.titleRu}» — знак дня: многое проясняется мягко и постепенно.`,
+      adviceRu: "Не торопи события: сделай один спокойный шаг и прислушайся к ощущениям.",
     };
   }
 
-  const sys =
-    `Ты — опытный таролог. Пиши ТОЛЬКО на русском. ` +
+  const system =
+    `Ты — опытный таролог. Пиши ТОЛЬКО по-русски. ` +
     `Стиль: мягко, поддерживающе, мистически-поэтично. ` +
-    `Никаких упоминаний ИИ, моделей, подсказок, промптов. ` +
-    `Не используй латиницу. ` +
-    `Ответ дай строго в JSON (это важно).`;
+    `Никаких упоминаний ИИ/моделей/подсказок. ` +
+    `Не используй латиницу (если название вдруг с латиницей — перепиши по-русски).`;
 
   const user =
-    `Нужно трактование для ${opts.kind === "daily" ? "«Карты дня»" : "«Колеса фортуны»"}.\n` +
+    `Сделай трактовку для ${opts.kind === "daily" ? "«Карты дня»" : "«Колеса фортуны»"}.\n` +
     `Карта: «${opts.titleRu}».\n\n` +
-    `Верни JSON формата:\n` +
-    `{ "meaningRu": "...", "adviceRu": "..." }\n\n` +
+    `Верни JSON:\n{ "meaningRu": "...", "adviceRu": "..." }\n\n` +
     `Правила:\n` +
-    `- meaningRu: 2–4 предложения, без запугивания, без категоричных приговоров.\n` +
+    `- meaningRu: 2–4 предложения, без запугивания и приговоров.\n` +
     `- adviceRu: 1–2 предложения, конкретно и бережно.\n` +
-    `- Можно намекнуть на энергию дня/тенденцию, но без "100% будет".`;
+    `- В тексте должно быть слово JSON.`;
 
-  const resp = await openai.responses.create({
-    model: OPENAI_MODEL,
-    input: [
-      { role: "system", content: sys },
-      { role: "user", content: user },
-    ],
-    text: { format: { type: "json_object" } },
-  });
+  try {
+    const resp = await openai.responses.parse({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      text: { format: zodTextFormat(CardSchema, "card_reading") },
+    });
 
-  const raw = clean((resp as any).output_text || "");
-  const obj = safeJsonParse<{ meaningRu: string; adviceRu: string }>(raw);
-
-  if (!obj?.meaningRu || !obj?.adviceRu) {
-    // fallback мягкий
+    const parsed = resp.output_parsed;
     return {
-      meaningRu: `«${opts.titleRu}» — это тонкий знак: сейчас важно беречь своё внутреннее равновесие и не торопить события.`,
-      adviceRu: "Сделай один небольшой шаг в верном направлении — и остальное начнёт складываться само.",
+      meaningRu: clean(parsed.meaningRu),
+      adviceRu: clean(parsed.adviceRu),
+    };
+  } catch {
+    return {
+      meaningRu: `«${opts.titleRu}» — тонкий знак: сейчас важно беречь внутреннее равновесие и не торопить развязку.`,
+      adviceRu: "Сделай один небольшой шаг туда, где ощущается больше спокойствия.",
     };
   }
-
-  return { meaningRu: clean(obj.meaningRu), adviceRu: clean(obj.adviceRu) };
 }
 
 export async function generateSpreadReadingRu(opts: {
   spreadTitle: string;
-  positions: string[];      // подписи позиций
-  cardTitlesRu: string[];   // русские названия карт, по порядку
+  positions: string[];
+  cardTitlesRu: string[];
   tag?: "general" | "love" | "money" | "health";
 }) {
   if (!process.env.OPENAI_API_KEY) {
-    const lines = opts.positions.map((p, i) => `• ${p} — «${opts.cardTitlesRu[i] || "Карта"}»: мягкий намёк на важную деталь ситуации.`);
+    const lines = opts.positions
+      .map((p, i) => `• ${p} — «${opts.cardTitlesRu[i] || "Карта"}»: здесь спрятан важный ключ.`)
+      .join("\n");
+
     return {
-      interpretationRu: `✨ Расклад «${opts.spreadTitle}»\n\n${lines.join("\n")}\n\nМистический вывод: сейчас всё ведёт тебя к большей ясности и спокойной силе.`,
-      adviceRu: "Сфокусируйся на одном шаге, который ты можешь сделать уже сегодня — остальное подтянется.",
+      interpretationRu: `✨ Расклад «${opts.spreadTitle}»\n\n${lines}\n\nМистический вывод: всё ведёт тебя к большей ясности и внутренней опоре.`,
+      adviceRu: "Выбери один практичный шаг на сегодня — и сделай его спокойно, без давления.",
     };
   }
-
-  const sys =
-    `Ты — опытный таролог. Пиши ТОЛЬКО на русском. ` +
-    `Стиль: мистически-поэтично и одновременно поддерживающе, без драматизации. ` +
-    `Никаких упоминаний ИИ, моделей, подсказок, промптов. ` +
-    `Не используй латиницу. ` +
-    `Не давай медицинских назначений и диагнозов. ` +
-    `Ответ дай строго в JSON.`;
-
-  const pairs = opts.positions.map((p, i) => `- ${p}: «${opts.cardTitlesRu[i] || "Карта"}»`).join("\n");
 
   const tagLine =
     opts.tag === "health"
-      ? "Тема здоровья: трактуй бережно, как метафору состояния и привычек. В конце добавь мягкую оговорку, что это не заменяет врача."
+      ? "Тема здоровья: трактуй бережно, без диагнозов. В конце добавь мягкую оговорку, что это не заменяет врача."
       : opts.tag === "money"
-      ? "Тема финансов: говори про установки, возможности, осторожность, конкретные шаги без обещаний."
+      ? "Тема финансов: говори про установки, осторожность, возможности и реальные шаги, без обещаний."
       : opts.tag === "love"
-      ? "Тема отношений: избегай категоричных приговоров, больше про чувства, границы, диалог."
-      : "Тема общая: про путь, тенденции и выбор.";
+      ? "Тема отношений: без приговоров, больше про чувства, границы и диалог."
+      : "Тема общая: тенденции, выбор и путь.";
+
+  const pairs = opts.positions
+    .map((p, i) => `- ${p}: «${opts.cardTitlesRu[i] || "Карта"}»`)
+    .join("\n");
+
+  const system =
+    `Ты — опытный таролог. Пиши ТОЛЬКО по-русски. ` +
+    `Стиль: мистически-поэтично и поддерживающе. ` +
+    `Никаких упоминаний ИИ/моделей/подсказок. ` +
+    `Не используй латиницу.`;
 
   const user =
-    `Сделай трактовку расклада «${opts.spreadTitle}».\n` +
-    `${tagLine}\n\n` +
+    `Сделай трактовку расклада «${opts.spreadTitle}».\n${tagLine}\n\n` +
     `Позиции и карты:\n${pairs}\n\n` +
-    `Верни JSON формата:\n` +
-    `{ "interpretationRu": "...", "adviceRu": "..." }\n\n` +
+    `Верни JSON:\n{ "interpretationRu": "...", "adviceRu": "..." }\n\n` +
     `Правила:\n` +
-    `- interpretationRu: 8–14 предложений. Структура:\n` +
-    `  1) Заголовок "✨ Расклад «...»"\n` +
-    `  2) По каждой позиции отдельная строка "• Позиция — карта: трактовка"\n` +
-    `  3) Короткий "Мистический вывод:" (1–2 предложения)\n` +
-    `- adviceRu: 1–3 предложения, очень практично и бережно.\n`;
+    `- interpretationRu: заголовок + строки по позициям вида "• Позиция — карта: ...", затем "Мистический вывод: ...".\n` +
+    `- adviceRu: 1–3 предложения, практично и бережно.\n` +
+    `- В тексте должно быть слово JSON.`;
 
-  const resp = await openai.responses.create({
-    model: OPENAI_MODEL,
-    input: [
-      { role: "system", content: sys },
-      { role: "user", content: user },
-    ],
-    text: { format: { type: "json_object" } },
-  });
+  try {
+    const resp = await openai.responses.parse({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      text: { format: zodTextFormat(SpreadSchema, "spread_reading") },
+    });
 
-  const raw = clean((resp as any).output_text || "");
-  const obj = safeJsonParse<{ interpretationRu: string; adviceRu: string }>(raw);
-
-  if (!obj?.interpretationRu || !obj?.adviceRu) {
-    const lines = opts.positions.map((p, i) => `• ${p} — «${opts.cardTitlesRu[i] || "Карта"}»: здесь спрятан ключ к твоей ситуации.`);
+    const parsed = resp.output_parsed;
     return {
-      interpretationRu: `✨ Расклад «${opts.spreadTitle}»\n\n${lines.join("\n")}\n\nМистический вывод: события ведут тебя к ясности и внутренней опоре.`,
-      adviceRu: "Сделай паузу, собери мысли и выбери один честный шаг — он станет твоим талисманом.",
+      interpretationRu: clean(parsed.interpretationRu),
+      adviceRu: clean(parsed.adviceRu),
+    };
+  } catch {
+    const lines = opts.positions
+      .map((p, i) => `• ${p} — «${opts.cardTitlesRu[i] || "Карта"}»: здесь спрятан важный ключ.`)
+      .join("\n");
+
+    return {
+      interpretationRu: `✨ Расклад «${opts.spreadTitle}»\n\n${lines}\n\nМистический вывод: события ведут тебя к ясности и спокойной силе.`,
+      adviceRu: "Сделай паузу, выдохни и выбери один честный шаг — он станет твоей опорой.",
     };
   }
-
-  return { interpretationRu: clean(obj.interpretationRu), adviceRu: clean(obj.adviceRu) };
 }
