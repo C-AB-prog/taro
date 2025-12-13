@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
+import { apiPostTryBodies, apiJson } from "@/lib/api";
 
 type SpreadDef = {
   id: string;
@@ -30,8 +31,7 @@ const SPREADS: SpreadDef[] = [
     price: 125,
     cardsCount: 3,
     tag: "general",
-    brief:
-      "Прошлое • Настоящее • Будущее — быстрый расклад, чтобы понять, откуда всё началось, что происходит сейчас и к чему ведёт.",
+    brief: "Прошлое • Настоящее • Будущее — быстрый расклад на ситуацию.",
     positions: ["Прошлое", "Настоящее", "Будущее"],
   },
   {
@@ -40,13 +40,8 @@ const SPREADS: SpreadDef[] = [
     price: 125,
     cardsCount: 3,
     tag: "love",
-    brief:
-      "Перспектива отношений: мысли партнёра, что между вами сейчас и его чувства. Удобно для новичков.",
-    positions: [
-      "Мысли партнёра об отношениях",
-      "Что происходит между вами сейчас",
-      "Чувства партнёра к тебе",
-    ],
+    brief: "Мысли партнёра, что между вами сейчас, и его чувства.",
+    positions: ["Мысли партнёра", "Что между вами сейчас", "Чувства партнёра"],
   },
   {
     id: "station_for_two",
@@ -54,9 +49,8 @@ const SPREADS: SpreadDef[] = [
     price: 250,
     cardsCount: 2,
     tag: "love",
-    brief:
-      "Про отношения в паре: что у тебя в голове и что у партнёра. Помогает увидеть разницу взглядов без драм.",
-    positions: ["Твои мысли", "Мысли партнёра / его взгляд на отношения"],
+    brief: "Твои мысли и мысли партнёра — как вы видите отношения.",
+    positions: ["Твои мысли", "Мысли партнёра"],
   },
   {
     id: "money_on_barrel",
@@ -64,15 +58,8 @@ const SPREADS: SpreadDef[] = [
     price: 350,
     cardsCount: 5,
     tag: "money",
-    brief:
-      "Отношение к деньгам: привычки трат, сценарии, установки и что поменять, чтобы стало спокойнее и стабильнее.",
-    positions: [
-      "Моё отношение к деньгам",
-      "Как я расходую",
-      "Что меня ограничивает",
-      "Что мне поможет",
-      "Итог / направление",
-    ],
+    brief: "Отношения с деньгами: траты, установки, что поможет.",
+    positions: ["Отношение", "Как трачу", "Что ограничивает", "Что поможет", "Итог"],
   },
   {
     id: "money_tree",
@@ -80,15 +67,8 @@ const SPREADS: SpreadDef[] = [
     price: 450,
     cardsCount: 5,
     tag: "money",
-    brief:
-      "Финансы как система: корень (прошлое), ствол (настоящее), помощники, блоки и итог — где рост и где утечки.",
-    positions: [
-      "Корень — прошлое / причины",
-      "Ствол — настоящее",
-      "Ветвь плодородия — помощники",
-      "Ветвь проблем — помехи / страхи",
-      "Плоды — итог / ответ",
-    ],
+    brief: "Про деньги системно: корень, ствол, помощники, блоки, итог.",
+    positions: ["Корень", "Ствол", "Помощники", "Блоки", "Плоды/итог"],
   },
   {
     id: "my_health",
@@ -96,17 +76,8 @@ const SPREADS: SpreadDef[] = [
     price: 550,
     cardsCount: 7,
     tag: "health",
-    brief:
-      "Самодиагностика: реальное состояние, что может ухудшать, что помогает восстановлению и на что стоит обратить внимание.",
-    positions: [
-      "S — Сигнификатор (я сейчас)",
-      "Физическое состояние",
-      "Эмоциональный фон",
-      "Что истощает",
-      "Что поддержит",
-      "Рекомендация",
-      "Тенденция / итог",
-    ],
+    brief: "Мягкая самодиагностика: что влияет, что поддержит, тенденция.",
+    positions: ["S", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация", "Тенденция"],
   },
   {
     id: "aibolit",
@@ -114,19 +85,8 @@ const SPREADS: SpreadDef[] = [
     price: 800,
     cardsCount: 9,
     tag: "health",
-    brief:
-      "Комплексный взгляд на здоровье: что важно прямо сейчас, что влияет, где слабое место и как мягко поддержать организм.",
-    positions: [
-      "1 — Состояние сейчас",
-      "2 — Скрытый фактор",
-      "3 — Поддержка (верх 1)",
-      "4 — Поддержка (верх 2)",
-      "5 — Поддержка (верх 3)",
-      "6 — Поддержка (верх 4)",
-      "7 — Уязвимость (низ 1)",
-      "8 — Уязвимость (низ 2)",
-      "9 — Уязвимость (низ 3)",
-    ],
+    brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
+    positions: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
   },
   {
     id: "celtic_cross",
@@ -134,20 +94,8 @@ const SPREADS: SpreadDef[] = [
     price: 1500,
     cardsCount: 10,
     tag: "general",
-    brief:
-      "Глубокий универсальный расклад на ситуацию: причины, скрытые влияния, развитие и вероятный исход. Подходит, когда хочется ясности.",
-    positions: [
-      "1 — Суть ситуации",
-      "2 — Препятствие / вызов",
-      "3 — Основание / причина",
-      "4 — Прошлое (что привело)",
-      "5 — Возможный рост / потенциал",
-      "6 — Ближайшее будущее",
-      "7 — Ты в ситуации",
-      "8 — Окружение / влияние извне",
-      "9 — Надежды и страхи",
-      "10 — Итог / вероятный исход",
-    ],
+    brief: "Глубоко и подробно: причины, скрытые влияния, развитие, исход.",
+    positions: ["1","2","3","4","5","6","7","8","9","10"],
   },
 ];
 
@@ -165,24 +113,12 @@ function tagGlyph(tag: SpreadDef["tag"]) {
   return "✶";
 }
 
-async function postTry(url: string, body: any) {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  const data = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data };
-}
-
-function humanizeError(e: any) {
-  const raw = String(e?.message ?? e?.error ?? e ?? "");
+function humanizeError(d: any) {
+  const raw = String(d?.message ?? d?.error ?? d ?? "");
   const code = raw.trim().toUpperCase();
-
-  if (code === "BUY_FAILED") return "Покупка не прошла. Обычно это временно или из-за формата запроса. Попробуй ещё раз.";
+  if (code === "BUY_FAILED") return "Покупка не прошла. Попробуй ещё раз — иногда это временно.";
   if (code.includes("INSUFFICIENT") || raw.toLowerCase().includes("недостат"))
     return "Недостаточно валюты для этого расклада.";
-  if (code.includes("ALREADY")) return "Этот расклад уже есть в архиве.";
   return raw || "Не удалось выполнить действие.";
 }
 
@@ -193,8 +129,6 @@ export default function SpreadsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [shopOpen, setShopOpen] = useState(false);
-
-  // красивое окно ошибок вместо alert()
   const [errOpen, setErrOpen] = useState(false);
   const [errText, setErrText] = useState("");
 
@@ -210,58 +144,34 @@ export default function SpreadsPage() {
     setBusyId(def.id);
 
     try {
-      // ✅ ключевой момент: сервер может ожидать РАЗНЫЙ body.
-      // Пробуем несколько вариантов от самого "узкого" к более подробному.
       const bodies = [
         { spreadId: def.id },
         { id: def.id },
-        { spreadId: def.id, spreadTitle: def.title },
         { spreadId: def.id, title: def.title },
-        // если сервер ожидает цену/позиции — это последний (самый широкий) вариант
+        { spreadId: def.id, spreadTitle: def.title },
         { spreadId: def.id, spreadTitle: def.title, paidAmount: def.price, cardsCount: def.cardsCount, positions: def.positions },
       ];
 
-      const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
+      // пробуем buy -> purchase
+      let res = await apiPostTryBodies("/api/spreads/buy", bodies);
+      if (res.status === 404) res = await apiPostTryBodies("/api/spreads/purchase", bodies);
 
-      let res: { ok: boolean; status: number; data: any } | null = null;
-
-      for (const ep of endpoints) {
-        for (const b of bodies) {
-          const r = await postTry(ep, b);
-          // если эндпоинта нет — пробуем следующий
-          if (r.status === 404) continue;
-          // если успех — выходим
-          if (r.ok) { res = r; break; }
-          // если это валидация/формат — пробуем следующий body
-          res = r;
-        }
-        if (res?.ok) break;
-      }
-
-      if (!res || !res.ok) {
-        const msg = humanizeError(res?.data ?? "BUY_FAILED");
+      if (!res.ok) {
+        const msg = humanizeError(res.data);
         setErrText(msg);
         setErrOpen(true);
-
-        // если похоже на недостаток — откроем магазин
         if (msg.toLowerCase().includes("недостат")) setShopOpen(true);
         return;
       }
 
-      // сервер может вернуть по-разному — нормализуем
       const cards = (res.data?.cards ?? res.data?.result?.cards ?? []) as { slug: string; image: string }[];
       const interpretation = String(res.data?.interpretation ?? res.data?.result?.interpretation ?? "");
       const positions = (res.data?.positions ?? res.data?.result?.positions ?? def.positions) as string[];
 
-      setView({
-        cards,
-        positions,
-        interpretation,
-        resetToken: `${def.id}-${Date.now()}`,
-      });
-
+      setView({ cards, positions, interpretation, resetToken: `${def.id}-${Date.now()}` });
       setModalTitle(def.title);
       setOpen(true);
+
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
     } finally {
       setBusyId(null);
@@ -277,7 +187,7 @@ export default function SpreadsPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Категории</div>
-            <div className="small">Короткое объяснение каждого расклада</div>
+            <div className="small">Короткое описание + мистическая трактовка</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
         </div>
@@ -285,21 +195,11 @@ export default function SpreadsPage() {
         <div style={{ height: 10 }} />
 
         <div className="segRow">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
-            Все
-          </button>
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>
-            Ситуация
-          </button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>
-            Отношения
-          </button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>
-            Финансы
-          </button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>
-            Здоровье
-          </button>
+          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
+          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>Ситуация</button>
+          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>Отношения</button>
+          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>Финансы</button>
+          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
         </div>
       </div>
 
@@ -340,7 +240,6 @@ export default function SpreadsPage() {
         ))}
       </div>
 
-      {/* Просмотр расклада */}
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {!view ? (
           <p className="text">…</p>
@@ -354,7 +253,6 @@ export default function SpreadsPage() {
         )}
       </Modal>
 
-      {/* Красивое окно ошибки вместо alert */}
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
         <div style={{ height: 12 }} />
@@ -363,7 +261,6 @@ export default function SpreadsPage() {
         </button>
       </Modal>
 
-      {/* Магазин-заглушка */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
         <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
         <div style={{ height: 10 }} />
