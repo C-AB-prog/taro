@@ -517,3 +517,21 @@ html.modalOpen, body.modalOpen{
   overscroll-behavior: none;
 }
 .chev { opacity: .25; transform: scale(.85); }
+/* --- Fix: gold glow must stay BEHIND content (not above images) --- */
+.card::before,
+.card::after,
+.modal::before{
+  z-index: 0;
+}
+
+.card > *,
+.modal > *{
+  position: relative;
+  z-index: 1;
+}
+
+/* сделаем свечение слабее */
+.card::after{ opacity: .22; }
+
+/* блик на перевороте карты тоже чуть тише */
+.flipShine{ opacity: .28; }
