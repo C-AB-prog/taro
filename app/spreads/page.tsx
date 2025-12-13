@@ -1,258 +1,339 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
-import { SpreadReveal } from "@/components/SpreadReveal";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
-type SpreadDef = {
-  id: string;
+type SpreadKey =
+  | "three_cards"
+  | "celtic_cross"
+  | "vokzal_dlya_dvoih"
+  | "doctor_aibolit"
+  | "my_health"
+  | "money_tree"
+  | "money_on_barrel";
+
+type SpreadMeta = {
+  key: SpreadKey;
   title: string;
-  price: number;
+  about: string; // краткое описание
   cardsCount: number;
-  brief: string;
-  positions: string[];
-  tag: "general" | "love" | "money" | "health";
+  price: number;
 };
 
-type View = {
-  title: string;
-  cards: { slug: string; image: string }[];
+type SpreadCard = {
+  slug: string;
+  image: string;
+};
+
+type SpreadView = {
+  spreadTitle: string;
+  paidAmount: number;
   positions: string[];
+  cards: SpreadCard[];
   interpretation: string;
-  resetToken: string;
 };
 
-type Err = { text: string; debug?: string };
+function splitInterpretation(text: string) {
+  const t = String(text || "").trim();
+  if (!t) return { main: "", advice: "" };
 
-const SPREADS: SpreadDef[] = [
-  {
-    id: "three",
-    title: "Три карты",
-    price: 125,
-    cardsCount: 3,
-    tag: "general",
-    brief: "Прошлое • Настоящее • Будущее — быстрый расклад на ситуацию.",
-    positions: ["Прошлое", "Настоящее", "Будущее"],
-  },
-  {
-    id: "station_for_two",
-    title: "Вокзал для двоих",
-    price: 250,
-    cardsCount: 2,
-    tag: "love",
-    brief: "Твои мысли и мысли партнёра — как вы видите отношения.",
-    positions: ["Твои мысли", "Мысли партнёра"],
-  },
-  {
-    id: "money_on_barrel",
-    title: "Деньги на бочку",
-    price: 350,
-    cardsCount: 5,
-    tag: "money",
-    brief: "Отношение к деньгам: траты, установки, что поможет.",
-    positions: ["Отношение", "Как трачу", "Что ограничивает", "Что поможет", "Итог"],
-  },
-  {
-    id: "money_tree",
-    title: "Денежное дерево",
-    price: 450,
-    cardsCount: 5,
-    tag: "money",
-    brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
-    positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
-  },
-  {
-    id: "my_health",
-    title: "Моё здоровье",
-    price: 550,
-    cardsCount: 6,
-    tag: "health",
-    brief: "Самодиагностика: состояние, что истощает, что поддержит и рекомендация.",
-    positions: ["Текущее состояние", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация"],
-  },
-  {
-    id: "aibolit",
-    title: "Доктор Айболит",
-    price: 800,
-    cardsCount: 9,
-    tag: "health",
-    brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
-    positions: ["1","2","3","4","5","6","7","8","9"],
-  },
-  {
-    id: "celtic_cross",
-    title: "Кельтский крест",
-    price: 1500,
-    cardsCount: 10,
-    tag: "general",
-    brief: "Глубоко: причины, скрытые влияния, развитие, исход.",
-    positions: ["1","2","3","4","5","6","7","8","9","10"],
-  },
-];
-
-function tagLabel(tag: SpreadDef["tag"]) {
-  if (tag === "love") return "Отношения";
-  if (tag === "money") return "Финансы";
-  if (tag === "health") return "Здоровье";
-  return "Ситуация";
-}
-
-function getInitData() {
-  return (globalThis as any)?.Telegram?.WebApp?.initData
-    ? String((globalThis as any).Telegram.WebApp.initData)
-    : "";
-}
-
-async function postJSON(url: string, body: any, timeoutMs = 6500) {
-  const initData = getInitData();
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-
-  try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-telegram-init-data": initData,
-        "x-telegram-webapp-init-data": initData,
-      },
-      body: JSON.stringify({ ...(body ?? {}), initData }),
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-
-    const data = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data };
-  } finally {
-    clearTimeout(t);
+  // ищем "Совет:" (мы его добавляли в конце на сервере)
+  const idx = t.toLowerCase().lastIndexOf("совет:");
+  if (idx >= 0) {
+    const main = t.slice(0, idx).trim();
+    const advice = t.slice(idx).replace(/^совет:\s*/i, "").trim();
+    return { main, advice };
   }
+  return { main: t, advice: "" };
 }
 
-function extractView(resData: any, fallbackPositions: string[]) {
-  const root = resData?.view ?? resData?.result?.view ?? resData?.purchase?.view ?? resData;
-  const cards = (root?.cards ?? []) as { slug: string; image: string }[];
-  const interpretation = String(root?.interpretation ?? "");
-  const positions = (root?.positions ?? fallbackPositions) as string[];
-  return { cards, positions, interpretation };
+function gridCols(n: number) {
+  if (n <= 2) return 2;
+  if (n === 3) return 3;
+  if (n === 4) return 2;
+  if (n === 5) return 3;
+  if (n === 6) return 3;
+  if (n === 9) return 3;
+  if (n === 10) return 2; // кельтский крест обычно красивее 2 колонки в модалке
+  return 3;
 }
 
-function keyVariants(def: SpreadDef) {
-  const base = def.id;
-  const kebab = base.replace(/_/g, "-");
-  const camel = base.replace(/_([a-z])/g, (_, ch) => String(ch).toUpperCase());
-  const extra: string[] = [];
+function SpreadReveal({
+  view,
+  resetToken,
+}: {
+  view: SpreadView;
+  resetToken: string;
+}) {
+  const n = view.cards.length;
+  const cols = gridCols(n);
 
-  if (def.id === "three") extra.push("three_cards", "three-cards", "Три карты");
-  if (def.id === "station_for_two") extra.push("station-for-two", "Вокзал для двоих");
-  if (def.id === "money_tree") extra.push("money-tree", "Денежное дерево");
-  if (def.id === "money_on_barrel") extra.push("money-on-barrel", "Деньги на бочку");
-  if (def.id === "my_health") extra.push("my-health", "Моё здоровье");
-  if (def.id === "aibolit") extra.push("doctor_aibolit", "doctor-aibolit", "Доктор Айболит");
-  if (def.id === "celtic_cross") extra.push("celtic-cross", "celticcross", "Кельтский крест");
+  const [revealed, setRevealed] = useState<boolean[]>(() => Array(n).fill(false));
 
-  return Array.from(new Set([base, kebab, camel, def.title, ...extra].filter(Boolean)));
+  // авто-показ: по одной карте
+  useEffect(() => {
+    setRevealed(Array(n).fill(false));
+
+    let alive = true;
+    (async () => {
+      for (let i = 0; i < n; i++) {
+        if (!alive) return;
+        await new Promise((r) => setTimeout(r, 220));
+        if (!alive) return;
+        setRevealed((prev) => {
+          const next = prev.slice();
+          next[i] = true;
+          return next;
+        });
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [resetToken, n]);
+
+  const allOpen = revealed.every(Boolean);
+  const { main, advice } = useMemo(() => splitInterpretation(view.interpretation), [view.interpretation]);
+
+  return (
+    <div>
+      <div className="card" style={{ marginTop: 10 }}>
+        <div className="small" style={{ opacity: 0.9 }}>
+          Карты уже выбраны. Запись сохранится в архиве и не изменится.
+        </div>
+      </div>
+
+      <div style={{ height: 12 }} />
+
+      <div
+        className="deckGrid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gap: 10,
+        }}
+      >
+        {view.cards.map((c, i) => {
+          const isOpen = revealed[i];
+          const titleRu = ruTitleFromSlug(c.slug);
+          const pos = view.positions?.[i] ?? `Карта ${i + 1}`;
+
+          return (
+            <button
+              key={`${c.slug}-${i}`}
+              className="pressable"
+              type="button"
+              onClick={() =>
+                setRevealed((prev) => {
+                  const next = prev.slice();
+                  next[i] = !next[i];
+                  return next;
+                })
+              }
+              style={{
+                border: "1px solid rgba(20,16,10,.10)",
+                background: "rgba(255,255,255,.75)",
+                borderRadius: 16,
+                padding: 8,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+              aria-label={pos}
+            >
+              <div className="small" style={{ fontWeight: 900, marginBottom: 6 }}>
+                {pos}
+              </div>
+
+              <div className="flipWrap" style={{ width: "100%" }}>
+                <div
+                  className="flipInner"
+                  style={{
+                    transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
+                    transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                  }}
+                >
+                  <div className="flipFace">
+                    <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" />
+                    <div className="flipShine" />
+                  </div>
+
+                  <div className="flipFace flipBack">
+                    <img src={c.image} alt={titleRu} loading="lazy" decoding="async" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="small" style={{ marginTop: 8, fontWeight: 900 }}>
+                {isOpen ? titleRu : "…"}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ height: 12 }} />
+
+      <div className="card">
+        <div className="title" style={{ fontSize: 16 }}>
+          Трактовка
+        </div>
+
+        <div className="small" style={{ marginTop: 4 }}>
+          {allOpen ? "Смотри целиком — как настоящий таролог." : "Можно переворачивать карты — трактовка уже готова."}
+        </div>
+
+        <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+          {main || view.interpretation}
+        </p>
+
+        {advice ? (
+          <div className="adviceBox" style={{ marginTop: 12 }}>
+            <div className="adviceTitle">Совет</div>
+            <div className="adviceText">{advice}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 export default function SpreadsPage() {
-  const [filter, setFilter] = useState<SpreadDef["tag"] | "all">("all");
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const spreads = useMemo<SpreadMeta[]>(
+    () => [
+      {
+        key: "three_cards",
+        title: "Три карты",
+        cardsCount: 3,
+        price: 125,
+        about:
+          "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
+      },
+      {
+        key: "celtic_cross",
+        title: "Кельтский крест",
+        cardsCount: 10,
+        price: 1500,
+        about:
+          "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
+      },
+      {
+        key: "vokzal_dlya_dvoih",
+        title: "Вокзал для двоих",
+        cardsCount: 2,
+        price: 250,
+        about:
+          "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
+      },
+      {
+        key: "doctor_aibolit",
+        title: "Доктор Айболит",
+        cardsCount: 9,
+        price: 900,
+        about:
+          "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
+      },
+      {
+        key: "my_health",
+        title: "Моё здоровье",
+        cardsCount: 6,
+        price: 450,
+        about:
+          "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
+      },
+      {
+        key: "money_tree",
+        title: "Денежное дерево",
+        cardsCount: 5,
+        price: 500,
+        about:
+          "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
+      },
+      {
+        key: "money_on_barrel",
+        title: "Деньги на бочку",
+        cardsCount: 5,
+        price: 600,
+        about:
+          "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
+      },
+    ],
+    []
+  );
 
-  const [views, setViews] = useState<Record<string, View | null>>({});
-  const [errs, setErrs] = useState<Record<string, Err | null>>({});
+  const [loadingKey, setLoadingKey] = useState<SpreadKey | null>(null);
+  const [view, setView] = useState<SpreadView | null>(null);
+  const [open, setOpen] = useState(false);
+  const [resetToken, setResetToken] = useState(String(Date.now()));
 
-  const list = useMemo(() => {
-    return filter === "all" ? SPREADS : SPREADS.filter((s) => s.tag === filter);
-  }, [filter]);
+  const [err, setErr] = useState<string | null>(null);
 
-  function collapseIfActive(id: string) {
-    if (activeId === id) setActiveId(null);
-  }
+  const abortRef = useRef<AbortController | null>(null);
 
-  async function buy(def: SpreadDef) {
-    if (busyId) return;
+  async function buy(spreadKey: SpreadKey) {
+    if (loadingKey) return;
 
-    setBusyId(def.id);
-    setActiveId(def.id);
-    setErrs((m) => ({ ...m, [def.id]: null }));
-    setViews((m) => ({ ...m, [def.id]: null }));
-
-    const keys = keyVariants(def);
-    const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
-    const bodyVariants = (k: string) => [
-      { spreadKey: k },
-      { spreadId: k },
-      { id: k },
-      { slug: k },
-      { key: k },
-    ];
-
-    let last: any = null;
+    setErr(null);
+    setLoadingKey(spreadKey);
 
     try {
-      outer: for (const ep of endpoints) {
-        for (const k of keys) {
-          for (const body of bodyVariants(k)) {
-            const r = await postJSON(ep, body, 6500);
-            last = { ep, body, ok: r.ok, status: r.status, data: r.data };
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
 
-            const errCode = String(r.data?.error ?? r.data?.message ?? "").toUpperCase();
-            if (errCode === "BUY_FAILED") continue;
+      // ✅ увеличили таймаут, чтобы Celtic Cross успевал
+      const t = setTimeout(() => ctrl.abort(), 60000);
 
-            if (!r.ok) {
-              const s = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
-              const unknown =
-                r.status === 404 || s.includes("unknown") || s.includes("not found") || s.includes("не найден");
-              if (unknown) continue;
-              break outer;
-            }
+      const r = await fetch("/api/spreads/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        signal: ctrl.signal,
+        body: JSON.stringify({ spreadKey }),
+      });
 
-            const extracted = extractView(r.data, def.positions);
+      clearTimeout(t);
 
-            if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
-              setViews((m) => ({
-                ...m,
-                [def.id]: {
-                  title: def.title,
-                  cards: extracted.cards,
-                  positions: extracted.positions ?? def.positions,
-                  interpretation: extracted.interpretation ?? "",
-                  resetToken: `${def.id}-${Date.now()}`,
-                },
-              }));
+      const d = await r.json().catch(() => ({}));
 
-              window.dispatchEvent(new Event("balance:refresh"));
-              window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-              return;
-            }
-
-            setErrs((m) => ({
-              ...m,
-              [def.id]: {
-                text: "Сервер ответил, но не вернул карты/трактовку.",
-                debug: JSON.stringify(last, null, 2),
-              },
-            }));
-            return;
-          }
+      if (!r.ok) {
+        if (r.status === 401) {
+          setErr("Нет сессии. Открой мини-приложение через Telegram и попробуй снова.");
+        } else if (r.status === 402 || d?.error === "NOT_ENOUGH_BALANCE") {
+          setErr("Недостаточно баланса. Нажми «+» сверху, чтобы пополнить.");
+        } else {
+          setErr("Не удалось сделать расклад. Попробуй ещё раз.");
         }
+        setLoadingKey(null);
+        return;
       }
 
-      setErrs((m) => ({
-        ...m,
-        [def.id]: {
-          text: String(last?.data?.error ?? last?.data?.message ?? "Не получилось"),
-          debug: last ? JSON.stringify(last, null, 2) : "",
-        },
-      }));
+      if (!d?.ok || !d?.view) {
+        setErr("Не удалось сделать расклад. Попробуй ещё раз.");
+        setLoadingKey(null);
+        return;
+      }
+
+      setView(d.view as SpreadView);
+      setResetToken(String(Date.now()));
+      setOpen(true);
+
+      // обновить баланс в шапке
+      window.dispatchEvent(new Event("balance:refresh"));
+
+      (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
     } catch (e: any) {
-      setErrs((m) => ({
-        ...m,
-        [def.id]: { text: "Сеть шалит. Попробуй ещё раз.", debug: String(e?.name ?? e) },
-      }));
+      if (e?.name === "AbortError") {
+        setErr("Расклад готовится дольше обычного. Попробуй ещё раз (или проверь интернет).");
+      } else {
+        setErr("Ошибка сети. Попробуй ещё раз.");
+      }
     } finally {
-      setBusyId(null);
+      setLoadingKey(null);
     }
   }
 
@@ -261,90 +342,64 @@ export default function SpreadsPage() {
       <RitualHeader label="Расклады" />
 
       <div className="card">
-        <div className="segRow segRowEqual">
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter(filter === "general" ? "all" : "general")}>
-            Ситуация
-          </button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter(filter === "love" ? "all" : "love")}>
-            Отношения
-          </button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter(filter === "money" ? "all" : "money")}>
-            Финансы
-          </button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter(filter === "health" ? "all" : "health")}>
-            Здоровье
-          </button>
-        </div>
-
-        <div className="small" style={{ marginTop: 10 }}>
-          Нажми категорию — отфильтруем. Нажми активную ещё раз — вернёшься ко всем.
+        <div className="small">
+          Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.
         </div>
       </div>
 
       <div style={{ height: 12 }} />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {list.map((s) => {
-          const isBusy = busyId === s.id;
-          const isActive = activeId === s.id;
-          const v = views[s.id] ?? null;
-          const err = errs[s.id] ?? null;
+      {err ? (
+        <div className="card">
+          <div className="small">
+            <b>Ошибка:</b> {err}
+          </div>
+        </div>
+      ) : null}
 
-          return (
-            <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
-              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-                <div className="title">{s.title}</div>
-                <div className="spreadPrice">{s.price}</div>
+      <div style={{ height: err ? 12 : 0 }} />
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {spreads.map((s) => (
+          <div key={s.key} className="card" style={{ padding: 14 }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+              <div>
+                <div className="title" style={{ fontSize: 16 }}>
+                  {s.title}
+                </div>
+                <div className="small" style={{ marginTop: 2, opacity: 0.9 }}>
+                  {s.cardsCount} карт • {s.price} валюты
+                </div>
               </div>
-
-              <div className="small" style={{ marginTop: 6 }}>
-                <span className="spreadTag">{tagLabel(s.tag)}</span>
-                <span style={{ marginLeft: 10 }}>{s.cardsCount} карт</span>
-              </div>
-
-              <div className="small" style={{ marginTop: 8 }}>{s.brief}</div>
-
-              <div style={{ height: 10 }} />
 
               <button
-                className={`btn ${isBusy ? "btnGhost" : "btnPrimary"}`}
-                style={{ width: "100%" }}
-                onClick={() => buy(s)}
-                disabled={!!busyId}
+                className="btn btnPrimary"
+                onClick={() => buy(s.key)}
+                disabled={!!loadingKey}
+                style={{ padding: "10px 12px" }}
               >
-                {isBusy ? "Готовлю…" : "Сделать расклад"}
+                {loadingKey === s.key ? "Готовлю…" : "Сделать"}
               </button>
-
-              {isActive && (v || err) ? (
-                <div style={{ marginTop: 10 }}>
-                  <button type="button" className="btn btnGhost" style={{ width: "100%" }} onClick={() => collapseIfActive(s.id)}>
-                    Свернуть
-                  </button>
-                </div>
-              ) : null}
-
-              {isActive && v ? (
-                <div style={{ marginTop: 12, touchAction: "pan-y" }} onClick={(e) => e.stopPropagation()}>
-                  <SpreadReveal cards={v.cards} positions={v.positions} interpretation={v.interpretation} resetToken={v.resetToken} />
-                </div>
-              ) : null}
-
-              {isActive && err ? (
-                <div className="card" style={{ marginTop: 12, padding: 12 }}>
-                  <div className="title" style={{ fontSize: 14 }}>Не получилось</div>
-                  <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{err.text}</div>
-                  {err.debug ? (
-                    <details style={{ marginTop: 10 }}>
-                      <summary className="small" style={{ cursor: "pointer" }}>Показать детали</summary>
-                      <pre className="small" style={{ whiteSpace: "pre-wrap", margin: 0, marginTop: 8 }}>{err.debug}</pre>
-                    </details>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
-          );
-        })}
+
+            <p className="text" style={{ marginTop: 10 }}>
+              {s.about}
+            </p>
+          </div>
+        ))}
       </div>
+
+      <Modal
+        open={open}
+        title={view ? view.spreadTitle : "Расклад"}
+        onClose={() => setOpen(false)}
+      >
+        {!view ? (
+          <p className="text">…</p>
+        ) : (
+          <SpreadReveal view={view} resetToken={resetToken} />
+        )}
+      </Modal>
     </AppShell>
   );
 }
