@@ -81,7 +81,13 @@ export default function SpreadsPage() {
               <b>{view.spreadTitle}</b> • списано {view.paidAmount}
             </div>
             <div style={{ height: 10 }} />
-            <SpreadReveal cards={view.cards} interpretation={view.interpretation} resetToken={resetToken} />
+           <SpreadReveal
+  cards={view.cards}
+  positions={view.positions ?? view.cards.map((_, i) => `Позиция ${i + 1}`)}
+  interpretation={view.interpretation}
+  resetToken={resetToken}
+/>
+
           </>
         )}
       </Modal>
