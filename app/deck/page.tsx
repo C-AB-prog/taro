@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
 import { RitualHeader } from "@/components/RitualHeader";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 type CardListItem = { slug: string; titleRu: string; image: string };
 type CardMeaning = { slug: string; titleRu: string; meaningRu: string; image: string };
@@ -37,7 +38,6 @@ const PAGE = 24;
 
 export default function DeckPage() {
   const [cards, setCards] = useState<CardListItem[]>([]);
-  const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [visible, setVisible] = useState(PAGE);
 
@@ -62,7 +62,7 @@ export default function DeckPage() {
 
   useEffect(() => {
     setVisible(PAGE);
-  }, [filter, query]);
+  }, [filter]);
 
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = {
@@ -81,14 +81,11 @@ export default function DeckPage() {
   }, [cards]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return cards.filter((c) => {
       const g = groupFromSlug(c.slug);
-      const byFilter = filter === "all" ? true : g === filter;
-      const byQuery = !q ? true : (c.titleRu || c.slug).toLowerCase().includes(q);
-      return byFilter && byQuery;
+      return filter === "all" ? true : g === filter;
     });
-  }, [cards, query, filter]);
+  }, [cards, filter]);
 
   const shown = useMemo(() => filtered.slice(0, visible), [filtered, visible]);
   const canMore = shown.length < filtered.length;
@@ -113,7 +110,9 @@ export default function DeckPage() {
   async function openCard(slug: string) {
     const r = await fetch(`/api/cards/${slug}`, { cache: "no-store" });
     const d = await r.json();
-    setCard(d.card);
+    const c = d.card as CardMeaning;
+    // titleRu принудительно делаем русским
+    setCard({ ...c, titleRu: ruTitleFromSlug(slug) });
     setOpen(true);
   }
 
@@ -150,26 +149,6 @@ export default function DeckPage() {
             </button>
           ))}
         </div>
-
-        <div style={{ height: 12 }} />
-
-        <div className="title">Поиск</div>
-        <div style={{ height: 8 }} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Например: fool, magician, cups…"
-          style={{
-            width: "100%",
-            padding: "12px 12px",
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,.10)",
-            outline: "none",
-            background: "rgba(0,0,0,.30)",
-            color: "rgba(243,238,227,.92)",
-            fontWeight: 900,
-          }}
-        />
       </div>
 
       <div style={{ height: 12 }} />
@@ -201,13 +180,13 @@ export default function DeckPage() {
                 <img
                   className="img"
                   src={c.image}
-                  alt={c.titleRu}
+                  alt={ruTitleFromSlug(c.slug)}
                   loading="lazy"
                   decoding="async"
                   style={{ width: "100%", height: 160 }}
                 />
                 <div className="small" style={{ marginTop: 8, fontWeight: 950 }}>
-                  {c.titleRu}
+                  {ruTitleFromSlug(c.slug)}
                 </div>
               </motion.button>
             ))}
