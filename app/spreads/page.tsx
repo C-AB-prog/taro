@@ -79,7 +79,7 @@ const SPREADS: SpreadDef[] = [
     brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
     positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
   },
-  // ✅ FIX: 6 карт, как реально выдаёт бэк
+  // ✅ FIX: реально 6 карт
   {
     id: "my_health",
     title: "Моё здоровье",
@@ -122,63 +122,17 @@ function getInitData() {
     : "";
 }
 
-function toTime(ts: string) {
-  const t = new Date(ts || 0).getTime();
-  return Number.isFinite(t) ? t : 0;
-}
-
-function idVariants(def: SpreadDef) {
-  const base = def.id;
-  const kebab = base.replace(/_/g, "-");
-  const snake = base.replace(/-/g, "_");
-  const compact = base.replace(/[-_]/g, "");
-  const ru = def.title;
-
-  const camel = base.replace(/_([a-z])/g, (_, ch) => String(ch).toUpperCase());
-  const pascal = camel ? camel[0].toUpperCase() + camel.slice(1) : camel;
-
-  const aliases: string[] = [];
-
-  if (def.title === "Три карты") aliases.push("three_cards", "three-cards", "threecards", "threeCards", "ThreeCards");
-  if (def.title === "Кельтский крест") aliases.push("celtic", "celticcross", "celtic-cross", "celticCross", "CelticCross");
-  if (def.title === "Доктор Айболит") aliases.push("doctor_aibolit", "doctor-aibolit", "doctorAibolit", "DoctorAibolit", "doctor", "aibolit");
-
-  // ✅ Будущее пары — оставим расширение, но запросы будут с таймаутом + лимит по попыткам
-  if (def.title === "Будущее пары") {
-    aliases.push(
-      "future_couple",
-      "future-couple",
-      "futureCouple",
-      "FutureCouple",
-      "coupleFuture",
-      "CoupleFuture",
-      "future_pair",
-      "future-pair",
-      "futurePair",
-      "FuturePair",
-      "pair_future",
-      "pair-future",
-      "pairFuture",
-      "PairFuture"
-    );
-  }
-
-  return Array.from(new Set([base, kebab, snake, compact, camel, pascal, ...aliases, ru].filter(Boolean)));
-}
-
-// ✅ таймаут, чтобы “Готовлю…” не висело бесконечно
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, ms: number) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const r = await fetch(input, { ...init, signal: ctrl.signal });
-    return r;
+    return await fetch(input, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(t);
   }
 }
 
-async function postJSON(url: string, body: any, timeoutMs = 6500) {
+async function postJSON(url: string, body: any, timeoutMs = 4500) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -198,7 +152,7 @@ async function postJSON(url: string, body: any, timeoutMs = 6500) {
   return { ok: r.ok, status: r.status, data };
 }
 
-async function getJSON(url: string, timeoutMs = 6500) {
+async function getJSON(url: string, timeoutMs = 4500) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -216,7 +170,40 @@ async function getJSON(url: string, timeoutMs = 6500) {
   return { ok: r.ok, status: r.status, data };
 }
 
-function extractViewFromBuyResponse(resData: any, fallbackPositions: string[]) {
+function toTime(ts: string) {
+  const t = new Date(ts || 0).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: number): Promise<ArchiveSpreadItem | null> {
+  const r = await getJSON("/api/archive", 4500);
+  if (!r.ok) return null;
+
+  const spreads: ArchiveSpreadItem[] =
+    r.data?.spreads ?? r.data?.spreadPurchases ?? r.data?.purchases ?? [];
+
+  if (!Array.isArray(spreads) || spreads.length === 0) return null;
+
+  const sorted = spreads
+    .slice()
+    .sort((a, b) => toTime(String(b.createdAt ?? b.date ?? "")) - toTime(String(a.createdAt ?? a.date ?? "")));
+
+  // сначала — попытка найти запись этого расклада, созданную после начала покупки
+  const fresh = sorted.find((s) => {
+    const t = toTime(String(s.createdAt ?? s.date ?? ""));
+    const name = (s.spreadTitle || s.title || "").trim();
+    return name === preferTitle.trim() && t >= startedAtMs - 7000;
+  });
+  if (fresh) return fresh;
+
+  // затем — просто последнюю с таким названием
+  const any = sorted.find((s) => (s.spreadTitle || s.title || "").trim() === preferTitle.trim());
+  if (any) return any;
+
+  return sorted[0] ?? null;
+}
+
+function extractView(resData: any, fallbackPositions: string[]) {
   const cards =
     (resData?.cards ??
       resData?.result?.cards ??
@@ -241,51 +228,50 @@ function extractViewFromBuyResponse(resData: any, fallbackPositions: string[]) {
   return { cards, positions, interpretation };
 }
 
-async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: number): Promise<ArchiveSpreadItem | null> {
-  const r = await getJSON("/api/archive", 6500);
-  if (!r.ok) return null;
-
-  const spreads: ArchiveSpreadItem[] = r.data?.spreads ?? r.data?.spreadPurchases ?? r.data?.purchases ?? [];
-  if (!Array.isArray(spreads) || spreads.length === 0) return null;
-
-  const sorted = spreads
-    .slice()
-    .sort((a, b) => {
-      const ta = toTime(String(a.createdAt ?? a.date ?? ""));
-      const tb = toTime(String(b.createdAt ?? b.date ?? ""));
-      return tb - ta;
-    });
-
-  // 1) ищем свежую запись этого расклада после начала покупки
-  const foundFresh = sorted.find((s) => {
-    const t = toTime(String(s.createdAt ?? s.date ?? ""));
-    const name = (s.spreadTitle || s.title || "").trim();
-    return name === preferTitle.trim() && t >= startedAtMs - 5000; // небольшой люфт
-  });
-  if (foundFresh) return foundFresh;
-
-  // 2) если нет — просто последняя с таким названием
-  const foundAny = sorted.find((s) => (s.spreadTitle || s.title || "").trim() === preferTitle.trim());
-  if (foundAny) return foundAny;
-
-  // 3) иначе — самая последняя вообще
-  return sorted[0] ?? null;
-}
-
 function prettyErr(payload: any) {
   const msg = payload?.message ?? payload?.error ?? payload;
-  if (typeof msg === "string") {
-    if (msg.toUpperCase() === "BUY_FAILED") return "Покупка не прошла (BUY_FAILED). Сервер отклонил запрос.";
-    return msg;
-  }
-  if (msg && typeof msg === "object") return "Покупка не прошла. Сервер вернул ошибку.";
+  if (typeof msg === "string") return msg;
   return "Покупка не прошла. Сервер отклонил запрос.";
+}
+
+/**
+ * ✅ Ключевое: короткий список ключей, чтобы не висеть минутами.
+ * Если твой бэк ждёт другое — мы добавим в этот список 1 точное значение.
+ */
+function serverKeysFor(def: SpreadDef) {
+  switch (def.id) {
+    case "couple_future":
+      return [
+        "couple_future",
+        "future_pair",
+        "futurePair",
+        "coupleFuture",
+        "Будущее пары",
+      ];
+    case "station_for_two":
+      return ["station_for_two", "station-for-two", "Вокзал для двоих"];
+    case "three":
+      return ["three", "three_cards", "three-cards", "Три карты"];
+    case "money_tree":
+      return ["money_tree", "money-tree", "Денежное дерево"];
+    case "money_on_barrel":
+      return ["money_on_barrel", "money-on-barrel", "Деньги на бочку"];
+    case "my_health":
+      return ["my_health", "my-health", "Моё здоровье"];
+    case "aibolit":
+      return ["aibolit", "doctor_aibolit", "Доктор Айболит"];
+    case "celtic_cross":
+      return ["celtic_cross", "celtic-cross", "Кельтский крест"];
+    default:
+      return [def.id, def.title];
+  }
 }
 
 export default function SpreadsPage() {
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Расклад");
   const [view, setView] = useState<View | null>(null);
+
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [errOpen, setErrOpen] = useState(false);
@@ -306,78 +292,28 @@ export default function SpreadsPage() {
     const startedAt = Date.now();
 
     try {
-      const variants = idVariants(def);
-
-      // ✅ не даём уйти в бесконечность: ограничим количество попыток
-      const MAX_ATTEMPTS = def.title === "Будущее пары" ? 18 : 12;
-
+      const keys = serverKeysFor(def);
       let last: { ok: boolean; status: number; data: any } | null = null;
-      let attempts = 0;
 
-      for (const id of variants) {
-        const bodies = [{ spreadId: id }, { id }, { spreadKey: id }, { slug: id }, { key: id }];
+      for (const key of keys) {
+        try {
+          const r = await postJSON("/api/spreads/buy", { spreadId: key }, 4500);
+          last = r;
+          if (r.ok) break;
 
-        // POST /buy
-        for (const b of bodies) {
-          attempts++;
-          if (attempts > MAX_ATTEMPTS) break;
+          // если бэк пишет "unknown spread" — пробуем следующий ключ
+          const e = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
+          if (r.status === 404 || e.includes("unknown") || e.includes("not found")) continue;
 
-          try {
-            const r = await postJSON("/api/spreads/buy", b, 6500);
-            last = r;
-            if (r.ok) break;
-            if (r.status === 404) break;
-          } catch (e: any) {
-            last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name || e) } };
-          }
+          // другие ошибки (например недостаточно баланса) — останавливаемся
+          break;
+        } catch (e: any) {
+          last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name ?? e) } };
         }
-        if (last?.ok || attempts > MAX_ATTEMPTS) break;
-
-        // POST /purchase fallback
-        if (last?.status === 404) {
-          for (const b of bodies) {
-            attempts++;
-            if (attempts > MAX_ATTEMPTS) break;
-
-            try {
-              const r = await postJSON("/api/spreads/purchase", b, 6500);
-              last = r;
-              if (r.ok) break;
-              if (r.status === 404) break;
-            } catch (e: any) {
-              last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name || e) } };
-            }
-          }
-          if (last?.ok || attempts > MAX_ATTEMPTS) break;
-        }
-
-        // GET варианты
-        const qs = encodeURIComponent(id);
-        const getTry = [
-          `/api/spreads/buy?spreadId=${qs}`,
-          `/api/spreads/buy?id=${qs}`,
-          `/api/spreads/buy?spreadKey=${qs}`,
-          `/api/spreads/purchase?spreadId=${qs}`,
-          `/api/spreads/purchase?id=${qs}`,
-        ];
-
-        for (const u of getTry) {
-          attempts++;
-          if (attempts > MAX_ATTEMPTS) break;
-
-          try {
-            const r = await getJSON(u, 6500);
-            last = r;
-            if (r.ok) break;
-          } catch (e: any) {
-            last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name || e) } };
-          }
-        }
-        if (last?.ok || attempts > MAX_ATTEMPTS) break;
       }
 
       if (!last || !last.ok) {
-        // ✅ если из-за таймаута/сети — попробуем вытащить купленное из архива (вдруг списало)
+        // вдруг списало и просто ответ не дошёл — пробуем подхватить из архива
         const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
         if (arch?.cards?.length) {
           setView({
@@ -388,7 +324,6 @@ export default function SpreadsPage() {
           });
           setModalTitle(def.title);
           setOpen(true);
-          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
           return;
         }
 
@@ -398,9 +333,8 @@ export default function SpreadsPage() {
         return;
       }
 
-      const extracted = extractViewFromBuyResponse(last.data, def.positions);
+      const extracted = extractView(last.data, def.positions);
 
-      // ✅ обычный путь
       if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
         setView({
           cards: extracted.cards,
@@ -410,13 +344,11 @@ export default function SpreadsPage() {
         });
         setModalTitle(def.title);
         setOpen(true);
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
         return;
       }
 
-      // ✅ fallback: покупка прошла, но ответ пустой -> ищем запись в архиве
-      // Поллим 3 раза (бывает запись создаётся чуть позже)
-      for (let i = 0; i < 3; i++) {
+      // ✅ ответ пустой — ждём архив (чуть дольше, но быстро)
+      for (let i = 0; i < 5; i++) {
         const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
         if (arch?.cards?.length) {
           setView({
@@ -427,10 +359,9 @@ export default function SpreadsPage() {
           });
           setModalTitle(def.title);
           setOpen(true);
-          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
           return;
         }
-        await new Promise((res) => setTimeout(res, 900));
+        await new Promise((res) => setTimeout(res, 650));
       }
 
       setErrText("Покупка прошла, но данные расклада не пришли. Открой Архив — запись должна быть там.");
@@ -443,27 +374,15 @@ export default function SpreadsPage() {
 
   return (
     <AppShell>
-      <RitualHeader label="Выбери формат" />
+      <RitualHeader label="Расклады" />
 
       <div className="card">
-        <div className="title">Категории</div>
-        <div style={{ height: 10 }} />
         <div className="segRow">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
-            Все
-          </button>
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>
-            Ситуация
-          </button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>
-            Отношения
-          </button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>
-            Финансы
-          </button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>
-            Здоровье
-          </button>
+          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
+          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>Ситуация</button>
+          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>Отношения</button>
+          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>Финансы</button>
+          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
         </div>
       </div>
 
@@ -513,7 +432,6 @@ export default function SpreadsPage() {
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
-
         {errDebug ? (
           <>
             <div style={{ height: 10 }} />
@@ -522,7 +440,6 @@ export default function SpreadsPage() {
             </div>
           </>
         ) : null}
-
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
           Ок
