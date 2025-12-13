@@ -110,7 +110,7 @@ export async function buySpread(userId: string, spreadKey: string) {
   const picked = shuffled.slice(0, spread.cardsCount);
 
   // подгрузим тексты карт если пустые
-  const hydrated = [];
+  const hydrated: { id: string; slug: string; titleRu: string; meaningRu: string; adviceRu: string }[] = [];
   for (const c of picked) {
     const hc = await ensureCardTexts(c.id, c.slug);
     hydrated.push(hc ?? c);
