@@ -5,7 +5,6 @@ import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
-import { apiPostTryBodies, apiJson } from "@/lib/api";
 
 type SpreadDef = {
   id: string;
@@ -58,7 +57,7 @@ const SPREADS: SpreadDef[] = [
     price: 350,
     cardsCount: 5,
     tag: "money",
-    brief: "Отношения с деньгами: траты, установки, что поможет.",
+    brief: "Отношение к деньгам: траты, установки, что поможет.",
     positions: ["Отношение", "Как трачу", "Что ограничивает", "Что поможет", "Итог"],
   },
   {
@@ -67,8 +66,8 @@ const SPREADS: SpreadDef[] = [
     price: 450,
     cardsCount: 5,
     tag: "money",
-    brief: "Про деньги системно: корень, ствол, помощники, блоки, итог.",
-    positions: ["Корень", "Ствол", "Помощники", "Блоки", "Плоды/итог"],
+    brief: "Про деньги системно: корень, настоящее, помощники, блоки, итог.",
+    positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
   },
   {
     id: "my_health",
@@ -86,7 +85,7 @@ const SPREADS: SpreadDef[] = [
     cardsCount: 9,
     tag: "health",
     brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
-    positions: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    positions: ["1","2","3","4","5","6","7","8","9"],
   },
   {
     id: "celtic_cross",
@@ -106,20 +105,23 @@ function tagLabel(tag: SpreadDef["tag"]) {
   return "Ситуация";
 }
 
-function tagGlyph(tag: SpreadDef["tag"]) {
-  if (tag === "love") return "♡";
-  if (tag === "money") return "✦";
-  if (tag === "health") return "☤";
-  return "✶";
+function getInitData() {
+  return (globalThis as any)?.Telegram?.WebApp?.initData ? String((globalThis as any).Telegram.WebApp.initData) : "";
 }
 
-function humanizeError(d: any) {
-  const raw = String(d?.message ?? d?.error ?? d ?? "");
-  const code = raw.trim().toUpperCase();
-  if (code === "BUY_FAILED") return "Покупка не прошла. Попробуй ещё раз — иногда это временно.";
-  if (code.includes("INSUFFICIENT") || raw.toLowerCase().includes("недостат"))
-    return "Недостаточно валюты для этого расклада.";
-  return raw || "Не удалось выполнить действие.";
+async function postJSON(url: string, body: any) {
+  const initData = getInitData();
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-telegram-init-data": initData,
+      "x-telegram-webapp-init-data": initData,
+    },
+    body: JSON.stringify({ ...(body ?? {}), initData }),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
 }
 
 export default function SpreadsPage() {
@@ -128,9 +130,9 @@ export default function SpreadsPage() {
   const [view, setView] = useState<View | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [shopOpen, setShopOpen] = useState(false);
   const [errOpen, setErrOpen] = useState(false);
   const [errText, setErrText] = useState("");
+  const [errDebug, setErrDebug] = useState("");
 
   const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
 
@@ -144,23 +146,37 @@ export default function SpreadsPage() {
     setBusyId(def.id);
 
     try {
-      const bodies = [
-        { spreadId: def.id },
-        { id: def.id },
-        { spreadId: def.id, title: def.title },
-        { spreadId: def.id, spreadTitle: def.title },
-        { spreadId: def.id, spreadTitle: def.title, paidAmount: def.price, cardsCount: def.cardsCount, positions: def.positions },
-      ];
+      // максимально совместимый body (на случай как бэк ожидает поля)
+      const payload = {
+        spreadId: def.id,
+        id: def.id,
+        key: def.id,
+        slug: def.id,
 
-      // пробуем buy -> purchase
-      let res = await apiPostTryBodies("/api/spreads/buy", bodies);
-      if (res.status === 404) res = await apiPostTryBodies("/api/spreads/purchase", bodies);
+        title: def.title,
+        name: def.title,
+        spread: def.title,
+        spreadTitle: def.title,
+
+        price: def.price,
+        paidAmount: def.price,
+
+        cardsCount: def.cardsCount,
+        positions: def.positions,
+      };
+
+      let res = await postJSON("/api/spreads/buy", payload);
+      if (!res.ok && res.status === 404) res = await postJSON("/api/spreads/purchase", payload);
 
       if (!res.ok) {
-        const msg = humanizeError(res.data);
-        setErrText(msg);
+        const raw = res.data?.message ?? res.data?.error ?? "BUY_FAILED";
+        setErrText(
+          raw === "BUY_FAILED"
+            ? "Покупка не прошла. Скорее всего, бэк не узнаёт этот расклад (id/название)."
+            : String(raw)
+        );
+        setErrDebug(JSON.stringify(res.data, null, 2));
         setErrOpen(true);
-        if (msg.toLowerCase().includes("недостат")) setShopOpen(true);
         return;
       }
 
@@ -187,7 +203,7 @@ export default function SpreadsPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Категории</div>
-            <div className="small">Короткое описание + мистическая трактовка</div>
+            <div className="small">Короткое описание + трактовка</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
         </div>
@@ -208,34 +224,28 @@ export default function SpreadsPage() {
       <div className="spreadList">
         {list.map((s) => (
           <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
-            <div className="row" style={{ alignItems: "center" }}>
-              <div className="spreadGlyph">{tagGlyph(s.tag)}</div>
-
-              <div className="col" style={{ gap: 6 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-                  <div className="title">{s.title}</div>
-                  <div className="spreadPrice">{s.price}</div>
-                </div>
-
-                <div className="small">
-                  <span className="spreadTag">{tagLabel(s.tag)}</span>
-                  <span style={{ marginLeft: 8 }}>{s.cardsCount} карт</span>
-                </div>
-
-                <div className="small" style={{ marginTop: 2 }}>{s.brief}</div>
-
-                <div style={{ height: 8 }} />
-
-                <button
-                  className={`btn ${busyId === s.id ? "btnGhost" : "btnPrimary"}`}
-                  style={{ width: "100%" }}
-                  onClick={() => buy(s)}
-                  disabled={!!busyId}
-                >
-                  {busyId === s.id ? "Готовлю расклад…" : "Сделать расклад"}
-                </button>
-              </div>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+              <div className="title">{s.title}</div>
+              <div className="spreadPrice">{s.price}</div>
             </div>
+
+            <div className="small" style={{ marginTop: 6 }}>
+              <span className="spreadTag">{tagLabel(s.tag)}</span>
+              <span style={{ marginLeft: 10 }}>{s.cardsCount} карт</span>
+            </div>
+
+            <div className="small" style={{ marginTop: 8 }}>{s.brief}</div>
+
+            <div style={{ height: 10 }} />
+
+            <button
+              className={`btn ${busyId === s.id ? "btnGhost" : "btnPrimary"}`}
+              style={{ width: "100%" }}
+              onClick={() => buy(s)}
+              disabled={!!busyId}
+            >
+              {busyId === s.id ? "Готовлю…" : "Сделать расклад"}
+            </button>
           </div>
         ))}
       </div>
@@ -244,32 +254,26 @@ export default function SpreadsPage() {
         {!view ? (
           <p className="text">…</p>
         ) : (
-          <SpreadReveal
-            cards={view.cards}
-            positions={view.positions}
-            interpretation={view.interpretation}
-            resetToken={view.resetToken}
-          />
+          <SpreadReveal cards={view.cards} positions={view.positions} interpretation={view.interpretation} resetToken={view.resetToken} />
         )}
       </Modal>
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
+
+        {errDebug ? (
+          <>
+            <div style={{ height: 10 }} />
+            <div className="card" style={{ padding: 12 }}>
+              <div className="small" style={{ whiteSpace: "pre-wrap" }}>{errDebug}</div>
+            </div>
+          </>
+        ) : null}
+
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
           Ок
         </button>
-      </Modal>
-
-      <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
-        <div style={{ height: 10 }} />
-        <div className="card" style={{ padding: 12 }}>
-          <div className="title">Паки валюты</div>
-          <div className="small" style={{ marginTop: 6 }}>
-            99 ⭐ → 150 • 199 ⭐ → 350 • 399 ⭐ → 800 • 799 ⭐ → 1800
-          </div>
-        </div>
       </Modal>
     </AppShell>
   );
