@@ -125,14 +125,32 @@ export function AppShell({ children }: Props) {
   }
 
   useEffect(() => {
-    const tg = (globalThis as any)?.Telegram?.WebApp;
-    try {
-      tg?.ready?.();
-      tg?.expand?.();
-    } catch {}
+    const run = async () => {
+      const tg = (globalThis as any)?.Telegram?.WebApp;
+      try {
+        tg?.ready?.();
+        tg?.expand?.();
+      } catch {}
 
-    refreshBalance();
+      // ✅ авто-логин (создаёт пользователя и ставит session-cookie)
+      try {
+        const initData = tg?.initData;
+        if (initData) {
+          await fetch("/api/auth/telegram", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ initData }),
+          });
+        }
+      } catch {}
 
+      // ✅ затем обновляем баланс
+      await refreshBalance();
+    };
+
+    run();
+
+    // ✅ слушаем событие обновления баланса
     const on = () => refreshBalance();
     window.addEventListener("balance:refresh", on);
     return () => window.removeEventListener("balance:refresh", on);
@@ -159,9 +177,9 @@ export function AppShell({ children }: Props) {
           setBalance(b);
 
           if (before !== null) {
-            if (b >= before + expected) return { ok: true as const, newBalance: b, delta: b - before };
+            if (b >= before + expected) return { ok: true as const, delta: b - before };
           } else {
-            return { ok: true as const, newBalance: b, delta: expected };
+            return { ok: true as const, delta: expected };
           }
         }
         await sleep(900);
@@ -206,7 +224,6 @@ export function AppShell({ children }: Props) {
           window.dispatchEvent(new Event("balance:refresh"));
 
           const res = await pollBalance();
-
           if (res.ok) {
             setShopMsg(`Готово! +${res.delta} валюты ✨`);
             (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
@@ -325,11 +342,7 @@ export function AppShell({ children }: Props) {
           </div>
         ))}
 
-        {shopMsg ? (
-          <div className="small" style={{ marginTop: 10 }}>
-            {shopMsg}
-          </div>
-        ) : null}
+        {shopMsg ? <div className="small" style={{ marginTop: 10 }}>{shopMsg}</div> : null}
 
         {shopErr ? (
           <div className="small" style={{ marginTop: 10 }}>
