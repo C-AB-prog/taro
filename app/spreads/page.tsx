@@ -1,303 +1,279 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
-import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
-type SpreadDef = {
-  id: string; // предполагаемый ключ для бэка
-  title: string;
-  price: number;
-  cardsCount: number;
-  brief: string;
-  positions: string[];
-  tag: "general" | "love" | "money" | "health";
+type WheelCard = {
+  slug?: string;
+  titleRu?: string;
+  meaningRu: string;
+  adviceRu: string;
+  image: string;
 };
 
-type View = {
-  cards: { slug: string; image: string }[];
-  positions: string[];
+type WheelItem = {
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  card?: WheelCard;
+  slug?: string;
+  titleRu?: string;
+  meaningRu?: string;
+  adviceRu?: string;
+  image?: string;
+};
+
+type SpreadItem = {
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  spreadTitle?: string;
+  title?: string;
+  positions?: string[];
   interpretation: string;
-  resetToken: string;
+  cards: { slug: string; image: string }[];
 };
 
-const SPREADS: SpreadDef[] = [
-  { id: "three", title: "Три карты", price: 125, cardsCount: 3, tag: "general",
-    brief: "Прошлое • Настоящее • Будущее — быстрый расклад на ситуацию.",
-    positions: ["Прошлое","Настоящее","Будущее"],
-  },
-  { id: "couple_future", title: "Будущее пары", price: 125, cardsCount: 3, tag: "love",
-    brief: "Мысли партнёра, что между вами сейчас, и его чувства.",
-    positions: ["Мысли партнёра","Что между вами сейчас","Чувства партнёра"],
-  },
-  { id: "station_for_two", title: "Вокзал для двоих", price: 250, cardsCount: 2, tag: "love",
-    brief: "Твои мысли и мысли партнёра — как вы видите отношения.",
-    positions: ["Твои мысли","Мысли партнёра"],
-  },
-  { id: "money_on_barrel", title: "Деньги на бочку", price: 350, cardsCount: 5, tag: "money",
-    brief: "Отношение к деньгам: траты, установки, что поможет.",
-    positions: ["Отношение","Как трачу","Что ограничивает","Что поможет","Итог"],
-  },
-  { id: "money_tree", title: "Денежное дерево", price: 450, cardsCount: 5, tag: "money",
-    brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
-    positions: ["Корень","Настоящее","Помощники","Блоки","Итог"],
-  },
-  { id: "my_health", title: "Моё здоровье", price: 550, cardsCount: 7, tag: "health",
-    brief: "Самодиагностика: что влияет, что поддержит, тенденция.",
-    positions: ["S","Физика","Эмоции","Что истощает","Что поддержит","Рекомендация","Тенденция"],
-  },
-  { id: "aibolit", title: "Доктор Айболит", price: 800, cardsCount: 9, tag: "health",
-    brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
-    positions: ["1","2","3","4","5","6","7","8","9"],
-  },
-  { id: "celtic_cross", title: "Кельтский крест", price: 1500, cardsCount: 10, tag: "general",
-    brief: "Глубоко: причины, скрытые влияния, развитие, исход.",
-    positions: ["1","2","3","4","5","6","7","8","9","10"],
-  },
-];
+type Item =
+  | { kind: "spread"; ts: string; s: SpreadItem }
+  | { kind: "wheel"; ts: string; w: WheelItem };
 
-function tagLabel(tag: SpreadDef["tag"]) {
-  if (tag === "love") return "Отношения";
-  if (tag === "money") return "Финансы";
-  if (tag === "health") return "Здоровье";
-  return "Ситуация";
+function safeDate(ts: string) {
+  const t = ts ? new Date(ts) : null;
+  if (!t || Number.isNaN(t.getTime())) return "";
+  return t.toLocaleString("ru-RU", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
-function getInitData() {
-  return (globalThis as any)?.Telegram?.WebApp?.initData
-    ? String((globalThis as any).Telegram.WebApp.initData)
-    : "";
+function wheelCardOf(w: WheelItem): WheelCard | null {
+  const c = (w as any).card;
+  if (c && c.image) return c as WheelCard;
+
+  if ((w as any).image && (w as any).meaningRu && (w as any).adviceRu) {
+    return {
+      slug: (w as any).slug,
+      titleRu: (w as any).titleRu,
+      meaningRu: String((w as any).meaningRu),
+      adviceRu: String((w as any).adviceRu),
+      image: String((w as any).image),
+    };
+  }
+  return null;
 }
 
-async function postJSON(url: string, body: any) {
-  const initData = getInitData();
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-telegram-init-data": initData,
-      "x-telegram-webapp-init-data": initData,
-    },
-    body: JSON.stringify({ ...(body ?? {}), initData }),
-    cache: "no-store",
-  });
-  const data = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data };
+function wheelTitle(c: WheelCard | null) {
+  if (!c) return "Карта";
+  if (c.slug) return ruTitleFromSlug(c.slug);
+  return c.titleRu ?? "Карта";
 }
 
-async function getJSON(url: string) {
-  const initData = getInitData();
-  const r = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-telegram-init-data": initData,
-      "x-telegram-webapp-init-data": initData,
-    },
-    cache: "no-store",
-  });
-  const data = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data };
+function spreadTitle(s: SpreadItem) {
+  return s.spreadTitle || s.title || "Расклад";
 }
 
-function idVariants(def: SpreadDef) {
-  const base = def.id;
-  const kebab = base.replace(/_/g, "-");
-  const snake = base.replace(/-/g, "_");
-  const compact = base.replace(/[-_]/g, "");
-  const ru = def.title;
+export default function ArchivePage() {
+  const [raw, setRaw] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const aliases: string[] = [];
-  if (def.title === "Три карты") aliases.push("three_cards", "three-cards", "threecards");
-  if (def.title === "Кельтский крест") aliases.push("celtic", "celticcross", "celtic-cross");
-  if (def.title === "Доктор Айболит") aliases.push("doctor_aibolit", "doctor-aibolit");
+  const [filter, setFilter] = useState<"all" | "spreads" | "wheel">("all");
 
-  return Array.from(new Set([base, kebab, snake, compact, ...aliases, ru].filter(Boolean)));
-}
-
-function prettyErr(d: any) {
-  const raw = String(d?.message ?? d?.error ?? d ?? "BUY_FAILED");
-  if (raw.toUpperCase() === "BUY_FAILED") return "Покупка не прошла (BUY_FAILED). Сервер отклонил запрос.";
-  return raw;
-}
-
-export default function SpreadsPage() {
   const [open, setOpen] = useState(false);
-  const [modalTitle, setModalTitle] = useState("Расклад");
-  const [view, setView] = useState<View | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Item | null>(null);
+  const [resetToken, setResetToken] = useState("0");
 
-  const [errOpen, setErrOpen] = useState(false);
-  const [errText, setErrText] = useState("");
-  const [errDebug, setErrDebug] = useState("");
-
-  const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
-
-  const list = useMemo(() => {
-    if (filter === "all") return SPREADS;
-    return SPREADS.filter((s) => s.tag === filter);
-  }, [filter]);
-
-  async function buy(def: SpreadDef) {
-    if (busyId) return;
-    setBusyId(def.id);
-
-    try {
-      const variants = idVariants(def);
-      let last: { ok: boolean; status: number; data: any } | null = null;
-
-      for (const id of variants) {
-        // ✅ максимально безопасно: НЕ шлём цену/позиции (чтобы не было “несовпадений” на бэке)
-        const bodies = [
-          { spreadId: id },
-          { id },
-          { spreadKey: id },
-          { slug: id },
-          { key: id },
-        ];
-
-        // 1) POST /api/spreads/buy
-        for (const b of bodies) {
-          const r = await postJSON("/api/spreads/buy", b);
-          last = r;
-          if (r.ok) break;
-          if (r.status === 404) break;
-        }
-        if (last?.ok) break;
-
-        // 2) POST /api/spreads/purchase (fallback)
-        if (last?.status === 404) {
-          for (const b of bodies) {
-            const r = await postJSON("/api/spreads/purchase", b);
-            last = r;
-            if (r.ok) break;
-            if (r.status === 404) break;
-          }
-          if (last?.ok) break;
-        }
-
-        // 3) GET варианты (иногда бэк сделан так)
-        const qs = encodeURIComponent(id);
-        const getTry = [
-          `/api/spreads/buy?spreadId=${qs}`,
-          `/api/spreads/buy?id=${qs}`,
-          `/api/spreads/buy?spreadKey=${qs}`,
-          `/api/spreads/purchase?spreadId=${qs}`,
-          `/api/spreads/purchase?id=${qs}`,
-        ];
-        for (const u of getTry) {
-          const r = await getJSON(u);
-          last = r;
-          if (r.ok) break;
-        }
-        if (last?.ok) break;
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/archive", { cache: "no-store" });
+        const d = await r.json().catch(() => ({}));
+        setRaw(d);
+      } catch {
+        setRaw({ wheel: [], spreads: [] });
+      } finally {
+        setLoading(false);
       }
+    })();
+  }, []);
 
-      if (!last || !last.ok) {
-        setErrText(prettyErr(last?.data));
-        setErrDebug(last ? JSON.stringify(last.data, null, 2) : "");
-        setErrOpen(true);
-        return;
-      }
+  const itemsAll: Item[] = useMemo(() => {
+    const d = raw ?? {};
+    const wheelRaw: WheelItem[] = d.wheel ?? d.wheelSpins ?? d.wheelItems ?? [];
+    const spreadsRaw: SpreadItem[] = d.spreads ?? d.spreadPurchases ?? d.purchases ?? [];
 
-      const cards = (last.data?.cards ?? last.data?.result?.cards ?? []) as { slug: string; image: string }[];
-      const interpretation = String(last.data?.interpretation ?? last.data?.result?.interpretation ?? "");
-      const positions = (last.data?.positions ?? last.data?.result?.positions ?? def.positions) as string[];
+    const wheelItems: Item[] = (wheelRaw || []).map((w) => ({
+      kind: "wheel" as const,
+      ts: String(w.createdAt ?? w.date ?? ""),
+      w,
+    }));
 
-      setView({ cards, positions, interpretation, resetToken: `${def.id}-${Date.now()}` });
-      setModalTitle(def.title);
-      setOpen(true);
+    const spreadItems: Item[] = (spreadsRaw || []).map((s) => ({
+      kind: "spread" as const,
+      ts: String(s.createdAt ?? s.date ?? ""),
+      s,
+    }));
 
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-    } finally {
-      setBusyId(null);
-    }
+    const toTime = (it: Item) => {
+      const t = new Date(it.ts || 0).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    spreadItems.sort((a, b) => toTime(b) - toTime(a));
+    wheelItems.sort((a, b) => toTime(b) - toTime(a));
+
+    return [...spreadItems, ...wheelItems];
+  }, [raw]);
+
+  const items = useMemo(() => {
+    if (filter === "all") return itemsAll;
+    if (filter === "spreads") return itemsAll.filter((i) => i.kind === "spread");
+    return itemsAll.filter((i) => i.kind === "wheel");
+  }, [itemsAll, filter]);
+
+  function openItem(it: Item) {
+    setPicked(it);
+    setResetToken(String(Date.now()));
+    setOpen(true);
+    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   }
 
   return (
-    <AppShell title="Расклады">
-      <h1 className="h1">Расклады</h1>
-      <RitualHeader label="Выбери формат" />
+    <AppShell>
+      <div className="h1">Архив</div>
+      <div className="small">История колеса и купленных раскладов (не меняется).</div>
+
+      <div style={{ height: 12 }} />
 
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div className="title">Категории</div>
-            <div className="small">Короткое описание каждого расклада</div>
-          </div>
-          <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
-        </div>
-
+        <div className="title">Фильтр</div>
         <div style={{ height: 10 }} />
-
         <div className="segRow">
           <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>Ситуация</button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>Отношения</button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>Финансы</button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
+          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>Расклады</button>
+          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>Колесо</button>
         </div>
       </div>
 
       <div style={{ height: 12 }} />
 
-      <div className="spreadList">
-        {list.map((s) => (
-          <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-              <div className="title">{s.title}</div>
-              <div className="spreadPrice">{s.price}</div>
-            </div>
+      {loading ? (
+        <div className="card">
+          <div className="shimmer" style={{ height: 14, width: "70%" }} />
+          <div style={{ height: 10 }} />
+          <div className="shimmer" style={{ height: 12, width: "92%" }} />
+        </div>
+      ) : null}
 
-            <div className="small" style={{ marginTop: 6 }}>
-              <span className="spreadTag">{tagLabel(s.tag)}</span>
-              <span style={{ marginLeft: 10 }}>{s.cardsCount} карт</span>
-            </div>
+      {!loading && items.length === 0 ? (
+        <div className="card">
+          <div className="small">Пока пусто.</div>
+        </div>
+      ) : null}
 
-            <div className="small" style={{ marginTop: 8 }}>{s.brief}</div>
+      <div className="archiveList" style={{ marginTop: 12 }}>
+        {items.map((it, idx) => {
+          if (it.kind === "wheel") {
+            const c = wheelCardOf(it.w);
+            const title = wheelTitle(c);
+            return (
+              <button
+                key={`w-${idx}`}
+                className="card archiveItem pressable"
+                style={{ textAlign: "left", cursor: "pointer" }}
+                onClick={() => openItem(it)}
+              >
+                <div className="archiveRow">
+                  {c?.image ? (
+                    <img className="thumb" src={c.image} alt={title} loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="thumb shimmer" />
+                  )}
 
-            <div style={{ height: 10 }} />
+                  <div className="archiveMain">
+                    <div className="archiveTitle">Колесо • {title}</div>
+                    <div className="archiveMeta">{safeDate(it.ts)}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          }
 
+          const s = it.s;
+          const cards = (s as any).cards ?? [];
+          const t = spreadTitle(s);
+
+          const img1 = cards?.[0]?.image;
+          const img2 = cards?.[1]?.image;
+          const img3 = cards?.[2]?.image;
+
+          return (
             <button
-              className={`btn ${busyId === s.id ? "btnGhost" : "btnPrimary"}`}
-              style={{ width: "100%" }}
-              onClick={() => buy(s)}
-              disabled={!!busyId}
+              key={`s-${idx}`}
+              className="card archiveItem pressable"
+              style={{ textAlign: "left", cursor: "pointer" }}
+              onClick={() => openItem(it)}
             >
-              {busyId === s.id ? "Готовлю…" : "Сделать расклад"}
+              <div className="archiveRow">
+                <div className="thumbStack">
+                  {img1 ? <img className="thumb t1" src={img1} alt="" loading="lazy" decoding="async" /> : <div className="thumb t1 shimmer" />}
+                  {img2 ? <img className="thumb t2" src={img2} alt="" loading="lazy" decoding="async" /> : <div className="thumb t2 shimmer" />}
+                  {img3 ? <img className="thumb t3" src={img3} alt="" loading="lazy" decoding="async" /> : <div className="thumb t3 shimmer" />}
+                </div>
+
+                <div className="archiveMain">
+                  <div className="archiveTitle">{t}</div>
+                  <div className="archiveMeta">{safeDate(it.ts)}</div>
+                </div>
+              </div>
             </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
-        {!view ? (
+      <Modal
+        open={open}
+        title={
+          picked?.kind === "wheel"
+            ? "Колесо фортуны"
+            : picked?.kind === "spread"
+            ? spreadTitle(picked.s)
+            : "Архив"
+        }
+        onClose={() => setOpen(false)}
+      >
+        {!picked ? (
           <p className="text">…</p>
+        ) : picked.kind === "wheel" ? (
+          (() => {
+            const c = wheelCardOf(picked.w);
+            if (!c) return <p className="text">Не удалось прочитать запись.</p>;
+            const title = wheelTitle(c);
+
+            return (
+              <div className="row">
+                <img className="img" src={c.image} alt={title} loading="lazy" decoding="async" />
+                <div className="col">
+                  <div className="title" style={{ fontSize: 16 }}>{title}</div>
+                  <p className="text" style={{ marginTop: 6 }}>{c.meaningRu}</p>
+
+                  <div className="adviceBox" style={{ marginTop: 12 }}>
+                    <div className="adviceTitle">Совет</div>
+                    <div className="adviceText">{c.adviceRu}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <SpreadReveal
-            cards={view.cards}
-            positions={view.positions}
-            interpretation={view.interpretation}
-            resetToken={view.resetToken}
+            cards={(picked.s as any).cards ?? []}
+            positions={(picked.s as any).positions ?? []}
+            interpretation={String((picked.s as any).interpretation ?? "")}
+            resetToken={resetToken}
           />
         )}
-      </Modal>
-
-      <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
-        <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
-
-        {errDebug ? (
-          <>
-            <div style={{ height: 10 }} />
-            <div className="card" style={{ padding: 12 }}>
-              <div className="small" style={{ whiteSpace: "pre-wrap" }}>{errDebug}</div>
-            </div>
-          </>
-        ) : null}
-
-        <div style={{ height: 12 }} />
-        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>Ок</button>
       </Modal>
     </AppShell>
   );
