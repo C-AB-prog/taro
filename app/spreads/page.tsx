@@ -79,15 +79,18 @@ const SPREADS: SpreadDef[] = [
     brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
     positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
   },
+
+  // ✅ FIX: было 7, а бэк выдаёт 6 — делаем 6
   {
     id: "my_health",
     title: "Моё здоровье",
     price: 550,
-    cardsCount: 7,
+    cardsCount: 6,
     tag: "health",
-    brief: "Самодиагностика: что влияет, что поддержит, тенденция.",
-    positions: ["S", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация", "Тенденция"],
+    brief: "Самодиагностика: состояние, что истощает, что поддержит и рекомендация.",
+    positions: ["Текущее состояние", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация"],
   },
+
   {
     id: "aibolit",
     title: "Доктор Айболит",
@@ -152,18 +155,55 @@ async function getJSON(url: string) {
 }
 
 function idVariants(def: SpreadDef) {
-  const base = def.id;
-  const kebab = base.replace(/_/g, "-");
+  const base = def.id;                 // couple_future
+  const kebab = base.replace(/_/g, "-"); // couple-future
   const snake = base.replace(/-/g, "_");
   const compact = base.replace(/[-_]/g, "");
   const ru = def.title;
 
-  const aliases: string[] = [];
-  if (def.title === "Три карты") aliases.push("three_cards", "three-cards", "threecards");
-  if (def.title === "Кельтский крест") aliases.push("celtic", "celticcross", "celtic-cross");
-  if (def.title === "Доктор Айболит") aliases.push("doctor_aibolit", "doctor-aibolit", "doctor");
+  // camelCase варианты
+  const camel = base.replace(/_([a-z])/g, (_, ch) => String(ch).toUpperCase()); // coupleFuture
+  const pascal = camel.length ? camel[0].toUpperCase() + camel.slice(1) : camel;
 
-  return Array.from(new Set([base, kebab, snake, compact, ...aliases, ru].filter(Boolean)));
+  const aliases: string[] = [];
+
+  if (def.title === "Три карты") {
+    aliases.push("three_cards", "three-cards", "threecards", "threeCards", "ThreeCards");
+  }
+
+  if (def.title === "Кельтский крест") {
+    aliases.push("celtic", "celticcross", "celtic-cross", "celticCross", "CelticCross");
+  }
+
+  if (def.title === "Доктор Айболит") {
+    aliases.push("doctor_aibolit", "doctor-aibolit", "doctor", "doctorAibolit", "DoctorAibolit", "aibolit");
+  }
+
+  // ✅ ГЛАВНЫЙ FIX: Будущее пары — расширяем алиасы максимально
+  if (def.title === "Будущее пары") {
+    aliases.push(
+      "future_couple",
+      "future-couple",
+      "futureCouple",
+      "FutureCouple",
+      "coupleFuture",
+      "CoupleFuture",
+      "future_pair",
+      "future-pair",
+      "futurePair",
+      "FuturePair",
+      "pair_future",
+      "pair-future",
+      "pairFuture",
+      "PairFuture",
+      "couple_future_spread",
+      "couple-future-spread"
+    );
+  }
+
+  return Array.from(
+    new Set([base, kebab, snake, compact, camel, pascal, ...aliases, ru].filter(Boolean))
+  );
 }
 
 function extractViewFromBuyResponse(resData: any, fallbackPositions: string[]) {
@@ -221,10 +261,22 @@ async function fetchLatestSpreadFromArchive(preferTitle?: string): Promise<Archi
   return sorted[0] ?? null;
 }
 
-function prettyErr(d: any) {
-  const raw = String(d?.message ?? d?.error ?? d ?? "BUY_FAILED");
-  if (raw.toUpperCase() === "BUY_FAILED") return "Покупка не прошла (BUY_FAILED). Сервер отклонил запрос.";
-  return raw;
+// ✅ FIX: больше никакого “[object Object]”
+function prettyErr(payload: any) {
+  const msg = payload?.message ?? payload?.error ?? payload;
+
+  if (typeof msg === "string") {
+    const up = msg.toUpperCase();
+    if (up === "BUY_FAILED") return "Покупка не прошла (BUY_FAILED). Сервер отклонил запрос.";
+    return msg;
+  }
+
+  if (msg && typeof msg === "object") {
+    // покажем коротко, а детали пойдут в debug
+    return "Покупка не прошла. Сервер вернул ошибку.";
+  }
+
+  return "Покупка не прошла. Сервер отклонил запрос.";
 }
 
 export default function SpreadsPage() {
@@ -261,6 +313,7 @@ export default function SpreadsPage() {
           { key: id },
         ];
 
+        // POST /buy
         for (const b of bodies) {
           const r = await postJSON("/api/spreads/buy", b);
           last = r;
@@ -269,6 +322,7 @@ export default function SpreadsPage() {
         }
         if (last?.ok) break;
 
+        // POST /purchase fallback
         if (last?.status === 404) {
           for (const b of bodies) {
             const r = await postJSON("/api/spreads/purchase", b);
@@ -279,6 +333,7 @@ export default function SpreadsPage() {
           if (last?.ok) break;
         }
 
+        // GET варианты
         const qs = encodeURIComponent(id);
         const getTry = [
           `/api/spreads/buy?spreadId=${qs}`,
@@ -304,7 +359,7 @@ export default function SpreadsPage() {
 
       const extracted = extractViewFromBuyResponse(last.data, def.positions);
 
-      // ✅ обычный путь: сервер вернул карты
+      // обычный путь: сервер вернул карты
       if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
         setView({
           cards: extracted.cards,
@@ -318,7 +373,7 @@ export default function SpreadsPage() {
         return;
       }
 
-      // ✅ fallback: покупка прошла, но сервер не вернул cards/interpretation
+      // fallback: покупка прошла, но сервер не вернул cards/interpretation
       const latest = await fetchLatestSpreadFromArchive(def.title);
 
       const aCards = (latest?.cards ?? []) as { slug: string; image: string }[];
@@ -408,6 +463,7 @@ export default function SpreadsPage() {
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
+
         {errDebug ? (
           <>
             <div style={{ height: 10 }} />
@@ -416,6 +472,7 @@ export default function SpreadsPage() {
             </div>
           </>
         ) : null}
+
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
           Ок
