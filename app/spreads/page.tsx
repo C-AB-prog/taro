@@ -66,12 +66,14 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
   const [revealed, setRevealed] = useState<boolean[]>(() => Array(n).fill(false));
 
-  // ✅ теперь: при новом раскладе просто закрываем всё, БЕЗ авто-флипа
+  // при новом раскладе — всё закрыто
   useEffect(() => {
     setRevealed(Array(n).fill(false));
   }, [resetToken, n]);
 
   const openedCount = useMemo(() => revealed.filter(Boolean).length, [revealed]);
+  const allOpen = openedCount === n;
+
   const { main, advice } = useMemo(() => splitInterpretation(view.interpretation), [view.interpretation]);
 
   return (
@@ -79,7 +81,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
       <div className="card" style={{ marginTop: 6 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
           <div className="small" style={{ opacity: 0.92 }}>
-            Нажимай на карты, чтобы открыть.
+            Открывай карты по очереди — трактовка появится, когда откроешь все.
           </div>
           <div className="small" style={{ opacity: 0.8 }}>
             Открыто: {openedCount}/{n}
@@ -161,26 +163,37 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
       <div style={{ height: 12 }} />
 
-      <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>
-          Трактовка
-        </div>
-
-        <div className="small" style={{ marginTop: 4 }}>
-          Текст уже готов — можешь читать сразу или сначала открыть карты.
-        </div>
-
-        <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
-          {main || view.interpretation}
-        </p>
-
-        {advice ? (
-          <div className="adviceBox" style={{ marginTop: 12 }}>
-            <div className="adviceTitle">Совет</div>
-            <div className="adviceText">{advice}</div>
+      {!allOpen ? (
+        <div className="card">
+          <div className="title" style={{ fontSize: 16 }}>
+            Трактовка
           </div>
-        ) : null}
-      </div>
+          <div className="small" style={{ marginTop: 6 }}>
+            Открой все карты, чтобы увидеть трактовку и совет.
+          </div>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="title" style={{ fontSize: 16 }}>
+            Трактовка
+          </div>
+
+          <div className="small" style={{ marginTop: 4 }}>
+            Теперь картина сложилась — прочитай внимательно.
+          </div>
+
+          <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+            {main || view.interpretation}
+          </p>
+
+          {advice ? (
+            <div className="adviceBox" style={{ marginTop: 12 }}>
+              <div className="adviceTitle">Совет</div>
+              <div className="adviceText">{advice}</div>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -193,49 +206,56 @@ export default function SpreadsPage() {
         title: "Три карты",
         cardsCount: 3,
         price: 125,
-        about: "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
+        about:
+          "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
       },
       {
         key: "celtic_cross",
         title: "Кельтский крест",
         cardsCount: 10,
         price: 1500,
-        about: "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
+        about:
+          "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
       },
       {
         key: "vokzal_dlya_dvoih",
         title: "Вокзал для двоих",
         cardsCount: 2,
         price: 250,
-        about: "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
+        about:
+          "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
       },
       {
         key: "doctor_aibolit",
         title: "Доктор Айболит",
         cardsCount: 9,
         price: 900,
-        about: "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
+        about:
+          "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
       },
       {
         key: "my_health",
         title: "Моё здоровье",
         cardsCount: 6,
         price: 450,
-        about: "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
+        about:
+          "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
       },
       {
         key: "money_tree",
         title: "Денежное дерево",
         cardsCount: 5,
         price: 500,
-        about: "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
+        about:
+          "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
       },
       {
         key: "money_on_barrel",
         title: "Деньги на бочку",
         cardsCount: 5,
         price: 600,
-        about: "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
+        about:
+          "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
       },
     ],
     []
@@ -308,7 +328,9 @@ export default function SpreadsPage() {
       <RitualHeader label="Расклады" />
 
       <div className="card">
-        <div className="small">Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.</div>
+        <div className="small">
+          Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.
+        </div>
       </div>
 
       <div style={{ height: 12 }} />
