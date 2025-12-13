@@ -9,6 +9,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "openai": "^5.0.0",
     "@prisma/client": "^5.22.0",
     "dayjs": "^1.11.11",
     "framer-motion": "^11.0.0",
