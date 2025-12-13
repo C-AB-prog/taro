@@ -10,33 +10,31 @@ function needsGen(s: unknown) {
   const t = String(s ?? "").trim();
   if (!t) return true;
 
-  // наши частые fallback-фразы (если они есть — значит не ИИ или старьё в БД)
+  // если это старые/типовые фразы — перегенерим
   const bad =
     t.includes("Сделай один небольшой шаг") ||
     t.includes("Сделай паузу, выдохни") ||
-    t.includes("Выбери один практичный шаг") ||
-    t.includes("Не торопи события: сделай один спокойный шаг") ||
-    t.includes("тонкий знак: сейчас важно") ||
     t.includes("знак дня: многое проясняется") ||
-    t.includes("собери мысли и выбери") ||
-    t.includes("постепенно") ||
-    t.includes("внутреннее равновесие");
+    t.includes("тонкий знак: сейчас важно") ||
+    t.includes("Выбери один практичный шаг");
 
   if (bad) return true;
-
-  // слишком короткое — чаще всего заглушка
   if (t.length < 60) return true;
-
   return false;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "1";
+
   const card: any = await getOrCreateDailyCard();
 
   let meaningRu = card.meaningRu;
   let adviceRu = card.adviceRu;
 
-  if (needsGen(meaningRu) || needsGen(adviceRu)) {
+  let aiSource: "ai" | "fallback" | "stored" = "stored";
+
+  if (force || needsGen(meaningRu) || needsGen(adviceRu)) {
     const gen = await generateCardReadingRu({
       titleRu: card.titleRu,
       kind: "daily",
@@ -44,35 +42,33 @@ export async function GET() {
 
     meaningRu = gen.meaningRu;
     adviceRu = gen.adviceRu;
+    aiSource = gen._source;
 
-    // best-effort: сохраним в БД, чтобы дальше было стабильно
+    // best-effort сохранение (не ломаемся, если модель называется иначе)
     try {
       const p: any = prisma;
-
-      // если модель называется dailyCard
       if (card?.id && p.dailyCard?.update) {
         await p.dailyCard.update({
           where: { id: card.id },
           data: { meaningRu, adviceRu },
         });
-      } else if (card?.slug && p.dailyCard?.updateMany) {
-        await p.dailyCard.updateMany({
-          where: { slug: card.slug },
-          data: { meaningRu, adviceRu },
-        });
       }
-
-      // если у тебя модель называется иначе — просто не упадём
     } catch {}
   }
 
-  return NextResponse.json({
-    card: {
-      slug: card.slug,
-      titleRu: card.titleRu,
-      meaningRu,
-      adviceRu,
-      image: resolveCardImage(card.slug),
+  return NextResponse.json(
+    {
+      card: {
+        slug: card.slug,
+        titleRu: card.titleRu,
+        meaningRu,
+        adviceRu,
+        image: resolveCardImage(card.slug),
+      },
+      aiSource,
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      forced: force,
     },
-  });
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
