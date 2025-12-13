@@ -3,231 +3,277 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
-import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
-import { RitualHeader } from "@/components/RitualHeader";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 
+type WheelCard = {
+  slug?: string;
+  titleRu?: string;
+  meaningRu: string;
+  adviceRu: string;
+  image: string;
+};
+
 type WheelItem = {
-  date: string;
-  card: {
-    slug?: string;
-    titleRu: string;
-    meaningRu: string;
-    adviceRu: string;
-    image: string;
-  };
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  card?: WheelCard; // чаще так
+  // иногда сразу поля карты
+  slug?: string;
+  titleRu?: string;
+  meaningRu?: string;
+  adviceRu?: string;
+  image?: string;
 };
 
 type SpreadItem = {
-  createdAt: string;
-  spreadTitle: string;
-  paidAmount: number;
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  spreadTitle?: string;
+  title?: string;
   positions?: string[];
-  cards: { slug: string; image: string }[];
   interpretation: string;
+  cards: { slug: string; image: string }[];
 };
 
-export default function ArchivePage() {
-  const [data, setData] = useState<{ wheel: WheelItem[]; spreads: SpreadItem[] } | null>(null);
+type Item =
+  | { kind: "spread"; ts: string; s: SpreadItem }
+  | { kind: "wheel"; ts: string; w: WheelItem };
 
-  // ✅ ВАЖНО: по умолчанию открываем расклады
-  const [tab, setTab] = useState<"wheel" | "spreads">("spreads");
+function safeDate(ts: string) {
+  const t = ts ? new Date(ts) : null;
+  if (!t || Number.isNaN(t.getTime())) return "";
+  return t.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function wheelCardOf(w: WheelItem): WheelCard | null {
+  const c = (w as any).card;
+  if (c && c.image) return c as WheelCard;
+
+  // fallback если сервер сохраняет прямо поля карты
+  if ((w as any).image && (w as any).meaningRu && (w as any).adviceRu) {
+    return {
+      slug: (w as any).slug,
+      titleRu: (w as any).titleRu,
+      meaningRu: String((w as any).meaningRu),
+      adviceRu: String((w as any).adviceRu),
+      image: String((w as any).image),
+    };
+  }
+  return null;
+}
+
+function wheelTitle(c: WheelCard | null) {
+  if (!c) return "Карта";
+  if (c.slug) return ruTitleFromSlug(c.slug);
+  return c.titleRu ?? "Карта";
+}
+
+function spreadTitle(s: SpreadItem) {
+  return s.spreadTitle || s.title || "Расклад";
+}
+
+export default function ArchivePage() {
+  const [raw, setRaw] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   const [open, setOpen] = useState(false);
-  const [modalTitle, setModalTitle] = useState("");
-  const [wheelItem, setWheelItem] = useState<WheelItem | null>(null);
-  const [spreadItem, setSpreadItem] = useState<SpreadItem | null>(null);
+  const [picked, setPicked] = useState<Item | null>(null);
+  const [resetToken, setResetToken] = useState("0");
 
   useEffect(() => {
-    fetch("/api/archive", { cache: "no-store" })
-      .then((r) => r.json())
-      .then(setData);
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/archive", { cache: "no-store" });
+        const d = await r.json().catch(() => ({}));
+        setRaw(d);
+      } catch {
+        setRaw({ wheel: [], spreads: [] });
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const wheel = useMemo(() => data?.wheel ?? [], [data]);
-  const spreads = useMemo(() => data?.spreads ?? [], [data]);
+  const items: Item[] = useMemo(() => {
+    const d = raw ?? {};
 
-  function fmt(d: string) {
-    return new Date(d).toLocaleDateString("ru-RU");
-  }
+    const wheelRaw: WheelItem[] =
+      d.wheel ?? d.wheelSpins ?? d.wheelItems ?? [];
 
-  function openWheel(item: WheelItem) {
-    setSpreadItem(null);
-    setWheelItem(item);
+    const spreadsRaw: SpreadItem[] =
+      d.spreads ?? d.spreadPurchases ?? d.purchases ?? [];
 
-    const t = item.card.slug ? ruTitleFromSlug(item.card.slug) : item.card.titleRu;
-    setModalTitle(`${fmt(item.date)} • ${t}`);
+    const wheelItems: Item[] = (wheelRaw || []).map((w) => ({
+      kind: "wheel" as const,
+      ts: String(w.createdAt ?? w.date ?? ""),
+      w,
+    }));
+
+    const spreadItems: Item[] = (spreadsRaw || []).map((s) => ({
+      kind: "spread" as const,
+      ts: String(s.createdAt ?? s.date ?? ""),
+      s,
+    }));
+
+    const toTime = (it: Item) => {
+      const t = new Date(it.ts || 0).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    // ✅ сначала расклады, потом колесо
+    spreadItems.sort((a, b) => toTime(b) - toTime(a));
+    wheelItems.sort((a, b) => toTime(b) - toTime(a));
+
+    return [...spreadItems, ...wheelItems];
+  }, [raw]);
+
+  function openItem(it: Item) {
+    setPicked(it);
+    setResetToken(String(Date.now()));
     setOpen(true);
+    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   }
-
-  function openSpread(item: SpreadItem) {
-    setWheelItem(null);
-    setSpreadItem(item);
-    setModalTitle(`${fmt(item.createdAt)} • ${item.spreadTitle}`);
-    setOpen(true);
-  }
-
-  const resetToken = useMemo(() => {
-    if (!spreadItem) return "none";
-    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}|${spreadItem.createdAt}`;
-  }, [spreadItem]);
-
-  const spreadPositions =
-    spreadItem?.positions ?? spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ?? [];
 
   return (
     <AppShell title="Архив">
       <h1 className="h1">Архив</h1>
-      <RitualHeader label="Твоя история" />
-
-      <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div className="title">Раздел</div>
-            <div className="small">Сначала расклады — потом колесо</div>
-          </div>
-          <div className="badge" style={{ padding: "8px 12px" }}>
-            {tab === "spreads" ? spreads.length : wheel.length}
-          </div>
-        </div>
-
-        <div style={{ height: 12 }} />
-
-        <div className="row">
-          <button
-            className={`btn ${tab === "spreads" ? "btnPrimary" : "btnGhost"}`}
-            onClick={() => setTab("spreads")}
-            style={{ flex: 1 }}
-          >
-            Расклады
-          </button>
-          <button
-            className={`btn ${tab === "wheel" ? "btnPrimary" : "btnGhost"}`}
-            onClick={() => setTab("wheel")}
-            style={{ flex: 1 }}
-          >
-            Колесо
-          </button>
-        </div>
+      <div className="small">
+        Здесь хранятся все спины колеса и купленные расклады. Записи неизменны.
       </div>
 
       <div style={{ height: 12 }} />
 
-      {!data ? (
+      {loading ? (
         <div className="card">
-          <div className="shimmer" style={{ height: 14, width: "55%" }} />
+          <div className="shimmer" style={{ height: 14, width: "70%" }} />
           <div style={{ height: 10 }} />
           <div className="shimmer" style={{ height: 12, width: "92%" }} />
-          <div style={{ height: 8 }} />
-          <div className="shimmer" style={{ height: 12, width: "86%" }} />
         </div>
-      ) : tab === "spreads" ? (
-        spreads.length === 0 ? (
-          <div className="card">
-            <div className="title">Пока пусто</div>
-            <div className="small" style={{ marginTop: 6 }}>
-              Купи расклад — и он появится здесь.
-            </div>
-          </div>
-        ) : (
-          <div className="archiveList">
-            {spreads.map((s, i) => {
-              const preview = s.cards.slice(0, 3);
-              return (
-                <motion.button
-                  key={i}
-                  className="card pressable archiveItem"
-                  style={{ textAlign: "left", cursor: "pointer" }}
-                  whileTap={{ scale: 0.99 }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
-                  onClick={() => openSpread(s)}
-                >
-                  <div className="archiveRow">
-                    <div className="thumbStack">
-                      {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
-                      {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
-                      {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
-                    </div>
+      ) : null}
 
-                    <div className="archiveMain">
-                      <div className="archiveTitle">{s.spreadTitle}</div>
-                      <div className="archiveMeta">
-                        {fmt(s.createdAt)} • {s.cards.length} карт • списано {s.paidAmount}
-                      </div>
-                    </div>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        )
-      ) : (
-        wheel.length === 0 ? (
-          <div className="card">
-            <div className="title">Пока пусто</div>
-            <div className="small" style={{ marginTop: 6 }}>
-              Покрути колесо на главной — и здесь появится запись.
-            </div>
-          </div>
-        ) : (
-          <div className="archiveList">
-            {wheel.map((w, i) => {
-              const title = w.card.slug ? ruTitleFromSlug(w.card.slug) : w.card.titleRu;
-              return (
-                <motion.button
-                  key={i}
-                  className="card pressable archiveItem"
-                  style={{ textAlign: "left", cursor: "pointer" }}
-                  whileTap={{ scale: 0.99 }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
-                  onClick={() => openWheel(w)}
-                >
-                  <div className="archiveRow">
-                    <img className="thumb" src={w.card.image} alt={title} loading="lazy" decoding="async" />
-                    <div className="archiveMain">
-                      <div className="archiveTitle">{title}</div>
-                      <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
-                    </div>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        )
-      )}
+      {!loading && items.length === 0 ? (
+        <div className="card">
+          <div className="small">Пока пусто.</div>
+        </div>
+      ) : null}
 
-      <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
-        {wheelItem ? (
-          <div className="row">
-            <img className="img" src={wheelItem.card.image} alt="" loading="lazy" decoding="async" />
-            <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>
-                {wheelItem.card.slug ? ruTitleFromSlug(wheelItem.card.slug) : wheelItem.card.titleRu}
+      <div className="archiveList" style={{ marginTop: 12 }}>
+        {items.map((it, idx) => {
+          if (it.kind === "wheel") {
+            const c = wheelCardOf(it.w);
+            const title = wheelTitle(c);
+            return (
+              <button
+                key={`w-${idx}`}
+                className="card archiveItem pressable"
+                style={{ textAlign: "left", cursor: "pointer" }}
+                onClick={() => openItem(it)}
+              >
+                <div className="archiveRow">
+                  {c?.image ? (
+                    <img
+                      className="thumb"
+                      src={c.image}
+                      alt={title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="thumb shimmer" />
+                  )}
+
+                  <div className="archiveMain">
+                    <div className="archiveTitle">Колесо • {title}</div>
+                    <div className="archiveMeta">{safeDate(it.ts)}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          const s = it.s;
+          const cards = (s as any).cards ?? [];
+          const t = spreadTitle(s);
+
+          const img1 = cards?.[0]?.image;
+          const img2 = cards?.[1]?.image;
+          const img3 = cards?.[2]?.image;
+
+          return (
+            <button
+              key={`s-${idx}`}
+              className="card archiveItem pressable"
+              style={{ textAlign: "left", cursor: "pointer" }}
+              onClick={() => openItem(it)}
+            >
+              <div className="archiveRow">
+                <div className="thumbStack">
+                  {img1 ? <img className="thumb t1" src={img1} alt="" loading="lazy" decoding="async" /> : <div className="thumb t1 shimmer" />}
+                  {img2 ? <img className="thumb t2" src={img2} alt="" loading="lazy" decoding="async" /> : <div className="thumb t2 shimmer" />}
+                  {img3 ? <img className="thumb t3" src={img3} alt="" loading="lazy" decoding="async" /> : <div className="thumb t3 shimmer" />}
+                </div>
+
+                <div className="archiveMain">
+                  <div className="archiveTitle">{t}</div>
+                  <div className="archiveMeta">{safeDate(it.ts)}</div>
+                </div>
               </div>
-              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
-              <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
-              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.adviceRu}</p>
-            </div>
-          </div>
-        ) : spreadItem ? (
-          <>
-            <div className="small" style={{ marginBottom: 10 }}>
-              Списано: <b>{spreadItem.paidAmount}</b>
-            </div>
-            <SpreadReveal
-              cards={spreadItem.cards}
-              positions={spreadPositions}
-              interpretation={spreadItem.interpretation}
-              resetToken={resetToken}
-            />
-          </>
-        ) : (
+            </button>
+          );
+        })}
+      </div>
+
+      <Modal
+        open={open}
+        title={
+          picked?.kind === "wheel"
+            ? "Колесо фортуны"
+            : picked?.kind === "spread"
+            ? spreadTitle(picked.s)
+            : "Архив"
+        }
+        onClose={() => setOpen(false)}
+      >
+        {!picked ? (
           <p className="text">…</p>
+        ) : picked.kind === "wheel" ? (
+          (() => {
+            const c = wheelCardOf(picked.w);
+            if (!c) return <p className="text">Не удалось прочитать запись.</p>;
+            const title = wheelTitle(c);
+
+            return (
+              <div className="row">
+                <img className="img" src={c.image} alt={title} loading="lazy" decoding="async" />
+                <div className="col">
+                  <div className="title" style={{ fontSize: 16 }}>{title}</div>
+                  <p className="text" style={{ marginTop: 6 }}>{c.meaningRu}</p>
+
+                  {/* ✅ ВОТ ТУТ выделение совета для колеса в архиве */}
+                  <div className="adviceBox" style={{ marginTop: 12 }}>
+                    <div className="adviceTitle">Совет</div>
+                    <div className="adviceText">{c.adviceRu}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        ) : (
+          <SpreadReveal
+            cards={(picked.s as any).cards ?? []}
+            positions={(picked.s as any).positions ?? []}
+            interpretation={String((picked.s as any).interpretation ?? "")}
+            resetToken={resetToken}
+          />
         )}
       </Modal>
     </AppShell>
