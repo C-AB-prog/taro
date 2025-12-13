@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Modal } from "@/components/Modal";
+import { FlipCard } from "@/components/FlipCard";
 
 type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
 
@@ -28,20 +29,28 @@ function makeSparkles(n = 16) {
 export function Wheel() {
   const [spinning, setSpinning] = useState(false);
   const [deg, setDeg] = useState(0);
+
   const [open, setOpen] = useState(false);
   const [already, setAlready] = useState(false);
   const [card, setCard] = useState<Card | null>(null);
 
+  // для “ритуала” внутри модалки
+  const [stage, setStage] = useState<"idle" | "ritual" | "reveal">("idle");
+
   const [sparkles, setSparkles] = useState(() => makeSparkles(0));
   const timeRef = useRef<number | null>(null);
 
-  const wheelTransition = useMemo(() => ({ duration: 2.4, ease: [0.15, 0.85, 0.2, 1] as any }), []);
+  const wheelTransition = useMemo(
+    () => ({ duration: 2.4, ease: [0.15, 0.85, 0.2, 1] as any }),
+    []
+  );
 
   async function spin() {
     if (spinning) return;
 
     setSpinning(true);
     setOpen(false);
+    setStage("idle");
 
     hapticImpact("light");
 
@@ -56,9 +65,10 @@ export function Wheel() {
     setAlready(!!d.already);
     setCard(d.card);
 
-    // если уже крутил — просто покажем модалку (и мягкий хаптик)
+    // если уже крутил — просто показываем карту (без ритуала)
     if (d.already) {
       hapticImpact("soft");
+      setStage("reveal");
       setOpen(true);
       setSpinning(false);
       return;
@@ -67,19 +77,24 @@ export function Wheel() {
     // искры на старте
     setSparkles(makeSparkles(18));
 
-    // красивое вращение
-    const extra = 1440 + Math.floor(Math.random() * 360); // 4 оборота + рандом
+    // вращение
+    const extra = 1440 + Math.floor(Math.random() * 360);
     const next = deg + extra;
     setDeg(next);
 
-    // показать результат после прокрутки
     if (timeRef.current) window.clearTimeout(timeRef.current);
     timeRef.current = window.setTimeout(() => {
       hapticSuccess();
+      setSparkles(makeSparkles(0));
+      setStage("ritual");
       setOpen(true);
       setSpinning(false);
-      setSparkles(makeSparkles(0));
     }, 2600);
+  }
+
+  function closeModal() {
+    setOpen(false);
+    setStage("idle");
   }
 
   return (
@@ -100,7 +115,6 @@ export function Wheel() {
       <div className="wheelWrap">
         <div className="sparkStage">
           <motion.div className="wheel" animate={{ rotate: deg }} transition={wheelTransition} />
-
           <div className="sparkLayer">
             {sparkles.map((p) => (
               <motion.div
@@ -118,14 +132,47 @@ export function Wheel() {
 
       <Modal
         open={open}
-        title={already ? "Ты уже крутил сегодня" : "Твой знак колеса"}
-        onClose={() => setOpen(false)}
+        title={already ? "Ты уже крутил сегодня" : "Колесо фортуны"}
+        onClose={closeModal}
       >
         {!card ? (
           <p className="text">…</p>
+        ) : stage === "ritual" ? (
+          <div className="col">
+            <div className="row" style={{ justifyContent: "center" }}>
+              {/* Рубашка как “закрытая” карта */}
+              <img className="img" src={"/cards/card-back.jpg"} alt="Рубашка карты" />
+            </div>
+
+            <div className="small" style={{ textAlign: "center" }}>
+              Сделай вдох… и выдох. Слушай знак.
+            </div>
+
+            <button
+              className="btn btnPrimary"
+              onClick={() => {
+                window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("soft");
+                setStage("reveal");
+              }}
+            >
+              Открыть карту
+            </button>
+          </div>
         ) : (
+          // reveal
           <div className="row">
-            <img className="img" src={card.image} alt={card.titleRu} loading="lazy" />
+            <div>
+              <FlipCard
+                frontSrc={card.image}
+                backSrc={"/cards/card-back.jpg"}
+                alt={card.titleRu}
+                onRevealed={() => {
+                  window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+                }}
+              />
+              <div className="flipHint">Нажми, чтобы перевернуть</div>
+            </div>
+
             <div className="col">
               <div className="title" style={{ fontSize: 16 }}>{card.titleRu}</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
