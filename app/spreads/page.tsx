@@ -7,9 +7,11 @@ import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
 
 type Spread = { key: string; titleRu: string; cardsCount: number; price: number };
+
 type View = {
   spreadTitle: string;
   paidAmount: number;
+  positions?: string[];
   cards: { slug: string; image: string }[];
   interpretation: string;
 };
@@ -21,7 +23,9 @@ export default function SpreadsPage() {
   const [title, setTitle] = useState("Твоя трактовка");
 
   useEffect(() => {
-    fetch("/api/spreads").then((r) => r.json()).then((d) => setSpreads(d.spreads));
+    fetch("/api/spreads", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setSpreads(d.spreads));
   }, []);
 
   async function buy(spreadKey: string) {
@@ -32,6 +36,7 @@ export default function SpreadsPage() {
     });
 
     const d = await r.json();
+
     if (!r.ok) {
       setTitle(d.error === "NOT_ENOUGH_BALANCE" ? "Не хватает баланса" : "Ошибка");
       setView(null);
@@ -65,9 +70,13 @@ export default function SpreadsPage() {
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div className="title">{s.titleRu}</div>
-              <div className="small">{s.cardsCount} карт • цена <b>{s.price}</b></div>
+              <div className="small">
+                {s.cardsCount} карт • цена <b>{s.price}</b>
+              </div>
             </div>
-            <button className="btn btnPrimary" onClick={() => buy(s.key)}>Купить</button>
+            <button className="btn btnPrimary" onClick={() => buy(s.key)}>
+              Купить
+            </button>
           </div>
         </motion.div>
       ))}
@@ -81,13 +90,13 @@ export default function SpreadsPage() {
               <b>{view.spreadTitle}</b> • списано {view.paidAmount}
             </div>
             <div style={{ height: 10 }} />
-           <SpreadReveal
-  cards={view.cards}
-  positions={view.positions ?? view.cards.map((_, i) => `Позиция ${i + 1}`)}
-  interpretation={view.interpretation}
-  resetToken={resetToken}
-/>
 
+            <SpreadReveal
+              cards={view.cards}
+              positions={view.positions ?? view.cards.map((_, i) => `Позиция ${i + 1}`)}
+              interpretation={view.interpretation}
+              resetToken={resetToken}
+            />
           </>
         )}
       </Modal>
