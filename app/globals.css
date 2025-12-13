@@ -501,3 +501,18 @@ a{ color:inherit; text-decoration:none; }
   background: rgba(201,162,74,.12);
   border-color: rgba(201,162,74,.28);
 }
+/* Modal scroll: scroll only inside modal */
+html.modalOpen, body.modalOpen{
+  overflow: hidden;
+}
+
+.modal{
+  max-height: calc(84vh - env(safe-area-inset-bottom));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.modalOverlay{
+  overscroll-behavior: none;
+}
