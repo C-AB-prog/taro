@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
+import { RitualHeader } from "@/components/RitualHeader";
 
 type Spread = { key: string; titleRu: string; cardsCount: number; price: number };
 
@@ -57,6 +58,7 @@ export default function SpreadsPage() {
   return (
     <AppShell title="Расклады">
       <h1 className="h1">Расклады</h1>
+      <RitualHeader label="Выбери расклад" />
 
       {spreads.map((s, i) => (
         <motion.div
@@ -64,7 +66,7 @@ export default function SpreadsPage() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, delay: i * 0.03 }}
-          className="card"
+          className="card pressable"
           style={{ marginBottom: 12 }}
         >
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -89,6 +91,7 @@ export default function SpreadsPage() {
             <div className="small">
               <b>{view.spreadTitle}</b> • списано {view.paidAmount}
             </div>
+
             <div style={{ height: 10 }} />
 
             <SpreadReveal
