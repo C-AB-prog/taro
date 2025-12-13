@@ -14,7 +14,9 @@ type WheelItem = {
 type SpreadItem = {
   createdAt: string;
   spreadTitle: string;
+  spreadKey?: string;
   paidAmount: number;
+  positions?: string[];
   cards: { slug: string; image: string }[];
   interpretation: string;
 };
@@ -29,7 +31,9 @@ export default function ArchivePage() {
   const [spreadItem, setSpreadItem] = useState<SpreadItem | null>(null);
 
   useEffect(() => {
-    fetch("/api/archive", { cache: "no-store" }).then((r) => r.json()).then(setData);
+    fetch("/api/archive", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setData);
   }, []);
 
   const wheel = useMemo(() => data?.wheel ?? [], [data]);
@@ -55,8 +59,10 @@ export default function ArchivePage() {
 
   const resetToken = useMemo(() => {
     if (!spreadItem) return "none";
-    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}`;
+    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}|${spreadItem.createdAt}`;
   }, [spreadItem]);
+
+  const spreadPositions = spreadItem?.positions ?? spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ?? [];
 
   return (
     <AppShell title="Архив">
@@ -168,7 +174,7 @@ export default function ArchivePage() {
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {wheelItem ? (
           <div className="row">
-            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} />
+            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
               <div className="title" style={{ fontSize: 16 }}>{wheelItem.card.titleRu}</div>
               <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
@@ -177,11 +183,17 @@ export default function ArchivePage() {
             </div>
           </div>
         ) : spreadItem ? (
-          <SpreadReveal
-            cards={spreadItem.cards}
-            interpretation={spreadItem.interpretation}
-            resetToken={resetToken}
-          />
+          <>
+            <div className="small" style={{ marginBottom: 10 }}>
+              Списано: <b>{spreadItem.paidAmount}</b>
+            </div>
+            <SpreadReveal
+              cards={spreadItem.cards}
+              positions={spreadPositions}
+              interpretation={spreadItem.interpretation}
+              resetToken={resetToken}
+            />
+          </>
         ) : (
           <p className="text">…</p>
         )}
