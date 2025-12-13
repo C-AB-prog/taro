@@ -54,41 +54,24 @@ function IconGrid(props: React.SVGProps<SVGSVGElement>) {
 function IconClock(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M12 6v6l4 2"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
 
 async function fetchBalance(): Promise<number | null> {
-  // пытаемся быть совместимыми с твоими роутами
   const urls = ["/api/me", "/api/user", "/api/balance"];
   for (const url of urls) {
     try {
       const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) continue;
       const d = await r.json().catch(() => ({}));
-      const b =
-        d?.balance ??
-        d?.user?.balance ??
-        d?.me?.balance ??
-        d?.data?.balance ??
-        null;
+      const b = d?.balance ?? d?.user?.balance ?? d?.me?.balance ?? d?.data?.balance ?? null;
       if (typeof b === "number") return b;
       const nb = Number(b);
       if (Number.isFinite(nb)) return nb;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
   return null;
 }
@@ -110,29 +93,17 @@ export function AppShell({ children }: Props) {
   const [shopOpen, setShopOpen] = useState(false);
 
   useEffect(() => {
-    // Telegram WebApp init (без фанатизма)
     const tg = (globalThis as any)?.Telegram?.WebApp;
     try {
       tg?.ready?.();
       tg?.expand?.();
     } catch {}
 
-    // баланс
     (async () => {
       const b = await fetchBalance();
       setBalance(b);
     })();
   }, []);
-
-  // ✅ фикс: когда модалка открыта — блокируем прокрутку фона
-  useEffect(() => {
-    if (!shopOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [shopOpen]);
 
   return (
     <>
@@ -143,8 +114,7 @@ export function AppShell({ children }: Props) {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div className="badge" aria-label="Баланс">
               <span className="badgeDot" aria-hidden="true" />
-              Баланс&nbsp;
-              <b>{balance === null ? "—" : balance}</b>
+              Баланс&nbsp;<b>{balance === null ? "—" : balance}</b>
             </div>
 
             <button
@@ -166,11 +136,7 @@ export function AppShell({ children }: Props) {
         <div className="navPill">
           <div className="navInner">
             {nav.map((item) => {
-              const active =
-                item.href === "/"
-                  ? pathname === "/"
-                  : pathname?.startsWith(item.href);
-
+              const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
 
               return (
@@ -190,11 +156,8 @@ export function AppShell({ children }: Props) {
         </div>
       </div>
 
-      {/* Магазин — модалка как ты просил (та же Modal) */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">
-          Покупка за Telegram Stars — заглушка. Скоро подключим.
-        </div>
+        <div className="small">Покупка за Telegram Stars — заглушка. Скоро подключим.</div>
 
         <div style={{ height: 12 }} />
 
@@ -212,11 +175,6 @@ export function AppShell({ children }: Props) {
         <div style={{ height: 8 }} />
         <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
           799 Stars → 1800 валюты
-        </button>
-
-        <div style={{ height: 12 }} />
-        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setShopOpen(false)}>
-          Закрыть
         </button>
       </Modal>
     </>
