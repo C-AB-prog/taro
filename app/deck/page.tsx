@@ -8,9 +8,37 @@ import { motion } from "framer-motion";
 type CardListItem = { slug: string; titleRu: string; image: string };
 type CardMeaning = { slug: string; titleRu: string; meaningRu: string; image: string };
 
+type FilterKey = "all" | "major" | "wands" | "cups" | "swords" | "pentacles";
+
+function hapticSelect() {
+  const h = window.Telegram?.WebApp?.HapticFeedback;
+  h?.selectionChanged?.();
+}
+
+function groupFromSlug(slug: string): FilterKey {
+  // Старшие арканы: начинаются с "0-" ... "21-"
+  if (/^\d{1,2}-/.test(slug)) return "major";
+  if (slug.includes("-of-wands-")) return "wands";
+  if (slug.includes("-of-cups-")) return "cups";
+  if (slug.includes("-of-swords-")) return "swords";
+  if (slug.includes("-of-pentacles-")) return "pentacles";
+  return "all";
+}
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "Все" },
+  { key: "major", label: "Старшие" },
+  { key: "wands", label: "Жезлы" },
+  { key: "cups", label: "Кубки" },
+  { key: "swords", label: "Мечи" },
+  { key: "pentacles", label: "Пентакли" },
+];
+
 export default function DeckPage() {
   const [cards, setCards] = useState<CardListItem[]>([]);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<FilterKey>("all");
+
   const [open, setOpen] = useState(false);
   const [card, setCard] = useState<CardMeaning | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,11 +56,38 @@ export default function DeckPage() {
     load();
   }, []);
 
+  const counts = useMemo(() => {
+    const c: Record<FilterKey, number> = {
+      all: cards.length,
+      major: 0,
+      wands: 0,
+      cups: 0,
+      swords: 0,
+      pentacles: 0,
+    };
+    for (const x of cards) {
+      const g = groupFromSlug(x.slug);
+      if (g !== "all") c[g] += 1;
+    }
+    return c;
+  }, [cards]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return cards;
-    return cards.filter((c) => (c.titleRu || c.slug).toLowerCase().includes(q));
-  }, [cards, query]);
+
+    return cards.filter((c) => {
+      const g = groupFromSlug(c.slug);
+
+      const byFilter =
+        filter === "all"
+          ? true
+          : g === filter;
+
+      const byQuery = !q ? true : (c.titleRu || c.slug).toLowerCase().includes(q);
+
+      return byFilter && byQuery;
+    });
+  }, [cards, query, filter]);
 
   async function openCard(slug: string) {
     const r = await fetch(`/api/cards/${slug}`, { cache: "no-store" });
@@ -48,16 +103,36 @@ export default function DeckPage() {
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div className="title">Поиск</div>
-            <div className="small">Найди карту по названию</div>
+            <div className="title">Фильтры</div>
+            <div className="small">Выбери масть или старшие арканы</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>
-            {filtered.length} карт
+            {filtered.length} / {cards.length}
           </div>
         </div>
 
         <div style={{ height: 10 }} />
 
+        <div className="segRow">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              className={`segBtn ${filter === f.key ? "segBtnActive" : ""}`}
+              onClick={() => {
+                if (filter !== f.key) hapticSelect();
+                setFilter(f.key);
+              }}
+            >
+              {f.label}
+              {f.key !== "all" ? ` • ${counts[f.key]}` : ""}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ height: 12 }} />
+
+        <div className="title">Поиск</div>
+        <div style={{ height: 8 }} />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -104,6 +179,7 @@ export default function DeckPage() {
                 className="img"
                 src={c.image}
                 alt={c.titleRu}
+                loading="lazy"
                 style={{ width: "100%", height: 160 }}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -126,6 +202,7 @@ export default function DeckPage() {
               className="img"
               src={card.image}
               alt={card.titleRu}
+              loading="lazy"
               initial={{ opacity: 0, rotateY: 25, y: 6 }}
               animate={{ opacity: 1, rotateY: 0, y: 0 }}
               transition={{ duration: 0.25 }}
@@ -133,7 +210,7 @@ export default function DeckPage() {
             <div className="col">
               <div className="small">Что означает</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
-              <div className="small" style={{ marginTop: 6 }}>
+              <div className="small" style={{ marginTop: 8 }}>
                 Подсказка: смотри на ощущения — они часто точнее слов.
               </div>
             </div>
