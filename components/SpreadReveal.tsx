@@ -8,10 +8,12 @@ type SpreadCard = { slug: string; image: string };
 
 export function SpreadReveal({
   cards,
+  positions,
   interpretation,
   resetToken,
 }: {
   cards: SpreadCard[];
+  positions: string[];
   interpretation: string;
   resetToken: string;
 }) {
@@ -19,7 +21,7 @@ export function SpreadReveal({
 
   useEffect(() => {
     setRevealed(cards.map(() => false));
-  }, [resetToken]); // сбрасываем при новом раскладе
+  }, [resetToken]);
 
   const opened = useMemo(() => revealed.filter(Boolean).length, [revealed]);
   const nextIndex = useMemo(() => revealed.findIndex((x) => !x), [revealed]);
@@ -32,8 +34,6 @@ export function SpreadReveal({
       copy[i] = true;
       return copy;
     });
-
-    // маленький “успех”
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   }
 
@@ -44,18 +44,19 @@ export function SpreadReveal({
           Открыто: <b>{opened}</b> / {cards.length}
         </div>
         <div className="badge" style={{ padding: "8px 12px" }}>
-          {allOpened ? "Готово ✨" : "Открывай по одной"}
+          {allOpened ? "Готово ✨" : "По одной"}
         </div>
       </div>
 
       <div className="small">
-        {allOpened ? "Трактовка раскрылась." : "Открывай карты по очереди — так расклад читается чище."}
+        {allOpened ? "Трактовка раскрылась." : "Открывай по очереди — так расклад читается чище."}
       </div>
 
       <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
         {cards.map((c, i) => {
           const isOpened = revealed[i];
           const enabled = isOpened || i === nextIndex;
+          const pos = positions[i] ?? `Позиция ${i + 1}`;
 
           return (
             <motion.div
@@ -63,6 +64,7 @@ export function SpreadReveal({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.18 }}
+              style={{ width: 80 }}
             >
               <FlipCard
                 frontSrc={c.image}
@@ -75,6 +77,17 @@ export function SpreadReveal({
                 height={130}
                 onRevealed={() => onReveal(i)}
               />
+              <div
+                className="small"
+                style={{
+                  marginTop: 6,
+                  textAlign: "center",
+                  fontWeight: isOpened ? 900 : 700,
+                  opacity: isOpened ? 0.95 : 0.6,
+                }}
+              >
+                {pos}
+              </div>
             </motion.div>
           );
         })}
