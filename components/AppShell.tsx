@@ -1,101 +1,152 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BottomNav } from "@/components/BottomNav";
-import { TopBar } from "@/components/TopBar";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Modal } from "@/components/Modal";
 
-type User = { id: string; balance: number; username?: string; firstName?: string };
+function IconHome({ active }: { active: boolean }) {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
+      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function IconSpreads({ active }: { active: boolean }) {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
+      <path d="M7 7h10v14H7V7Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M5 3h10v4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function IconDeck({ active }: { active: boolean }) {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
+      <path d="M7 4h10v16H7V4Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M5 6h2M17 6h2" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function IconArchive({ active }: { active: boolean }) {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
+      <path d="M4 7h16v14H4V7Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M6 3h12v4H6V3Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M9 11h6" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
 
-export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
-  const [status, setStatus] = useState<"loading" | "need_tg" | "error" | "ok">("loading");
-  const [user, setUser] = useState<User | null>(null);
+async function fetchBalance(): Promise<number | null> {
+  // поддержим разные роуты — где-то у тебя /api/me, где-то /api/user
+  const urls = ["/api/me", "/api/user", "/api/profile"];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { cache: "no-store" });
+      if (r.status === 404) continue;
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) continue;
 
-  async function refreshMe() {
-    const me = await fetch("/api/me", { cache: "no-store" });
-    if (!me.ok) throw new Error("me_failed");
-    const data = await me.json();
-    setUser(data.user);
+      const b =
+        typeof d?.balance === "number"
+          ? d.balance
+          : typeof d?.user?.balance === "number"
+          ? d.user.balance
+          : null;
+
+      if (typeof b === "number") return b;
+    } catch {
+      // ignore
+    }
   }
+  return null;
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const [balance, setBalance] = useState<number | null>(null);
+  const [shopOpen, setShopOpen] = useState(false);
 
   useEffect(() => {
-    async function boot() {
-      const tg = window.Telegram?.WebApp;
-      if (!tg?.initData) {
-        setStatus("need_tg");
-        return;
-      }
+    let cancelled = false;
+    (async () => {
+      const b = await fetchBalance();
+      if (!cancelled) setBalance(b);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
-      try {
-        tg.ready();
-        tg.expand?.();
-
-        // сначала пробуем me (вдруг кука уже есть)
-        const meTry = await fetch("/api/me", { cache: "no-store" });
-        if (meTry.ok) {
-          const data = await meTry.json();
-          setUser(data.user);
-          setStatus("ok");
-          return;
-        }
-
-        // если нет — логинимся initData
-        const auth = await fetch("/api/auth/telegram", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: tg.initData }),
-        });
-        if (!auth.ok) throw new Error("auth_failed");
-
-        await refreshMe();
-        setStatus("ok");
-      } catch {
-        setStatus("error");
-      }
-    }
-
-    boot();
-  }, []);
-
-  const api = useMemo(
-    () => ({
-      user,
-      refreshMe,
-      setUser,
-    }),
-    [user]
-  );
-
-  if (status === "loading") return <LoadingScreen />;
-  if (status === "need_tg")
-    return (
-      <div className="container">
-        <div className="h1">Открой в Telegram</div>
-        <p className="text">Это мини-приложение работает внутри Telegram.</p>
-      </div>
-    );
-  if (status === "error")
-    return (
-      <div className="container">
-        <div className="h1">Ошибка</div>
-        <p className="text">Не удалось авторизоваться. Проверь BOT_TOKEN и подключение Mini App.</p>
-      </div>
-    );
+  const nav = [
+    { href: "/", label: "Главная", icon: IconHome },
+    { href: "/spreads", label: "Расклады", icon: IconSpreads },
+    { href: "/deck", label: "Колода", icon: IconDeck },
+    { href: "/archive", label: "Архив", icon: IconArchive },
+  ];
 
   return (
     <>
+      {/* TOPBAR: только название + баланс + плюс */}
       <div className="topbar">
         <div className="topbarInner">
           <div className="brand">
-            <div className="brandTitle">✦ {title}</div>
-            <div className="brandSub">Карта Дня • Daily Tarot</div>
+            <div className="brandTitle">Карта Дня | Daily Tarot</div>
           </div>
-          <TopBar api={api} />
+
+          <div className="row" style={{ alignItems: "center", gap: 8 }}>
+            <div className="badge" style={{ padding: "8px 10px" }}>
+              ✦ {balance === null ? "—" : balance}
+            </div>
+            <button
+              className="btn btnPrimary"
+              style={{ padding: "10px 12px", borderRadius: 14, width: 42 }}
+              onClick={() => setShopOpen(true)}
+              aria-label="Магазин"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="container">{children}</div>
-      <BottomNav />
+
+      {/* Bottom nav остаётся */}
+      <div className="nav navFloat">
+        <div className="navPill">
+          <div className="navInner navInnerPremium">
+            {nav.map((n) => {
+              const active = pathname === n.href;
+              const Ico = n.icon;
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  className={`navItem ${active ? "navItemActive" : ""}`}
+                >
+                  <Ico active={active} />
+                  <div className={`navLabel ${active ? "navLabelActive" : ""}`}>{n.label}</div>
+                  <div className="navDot" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Магазин-заглушка */}
+      <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
+        <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
+        <div style={{ height: 10 }} />
+        <div className="card" style={{ padding: 12 }}>
+          <div className="title">Паки валюты</div>
+          <div className="small" style={{ marginTop: 6 }}>
+            99 ⭐ → 150 • 199 ⭐ → 350 • 399 ⭐ → 800 • 799 ⭐ → 1800
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
