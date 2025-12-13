@@ -41,8 +41,7 @@ export async function generateCardReadingRu(opts: {
     `Верни JSON:\n{ "meaningRu": "...", "adviceRu": "..." }\n\n` +
     `Правила:\n` +
     `- meaningRu: 2–4 предложения, без запугивания и приговоров.\n` +
-    `- adviceRu: 1–2 предложения, конкретно и бережно.\n` +
-    `- В тексте должно быть слово JSON.`;
+    `- adviceRu: 1–2 предложения, конкретно и бережно.\n`;
 
   try {
     const resp = await openai.responses.parse({
@@ -55,6 +54,8 @@ export async function generateCardReadingRu(opts: {
     });
 
     const parsed = resp.output_parsed;
+    if (!parsed) throw new Error("NO_PARSED_OUTPUT");
+
     return {
       meaningRu: clean(parsed.meaningRu),
       adviceRu: clean(parsed.adviceRu),
@@ -101,7 +102,8 @@ export async function generateSpreadReadingRu(opts: {
     `Ты — опытный таролог. Пиши ТОЛЬКО по-русски. ` +
     `Стиль: мистически-поэтично и поддерживающе. ` +
     `Никаких упоминаний ИИ/моделей/подсказок. ` +
-    `Не используй латиницу.`;
+    `Не используй латиницу. ` +
+    `Не ставь диагнозы и не назначай лечение.`;
 
   const user =
     `Сделай трактовку расклада «${opts.spreadTitle}».\n${tagLine}\n\n` +
@@ -109,8 +111,7 @@ export async function generateSpreadReadingRu(opts: {
     `Верни JSON:\n{ "interpretationRu": "...", "adviceRu": "..." }\n\n` +
     `Правила:\n` +
     `- interpretationRu: заголовок + строки по позициям вида "• Позиция — карта: ...", затем "Мистический вывод: ...".\n` +
-    `- adviceRu: 1–3 предложения, практично и бережно.\n` +
-    `- В тексте должно быть слово JSON.`;
+    `- adviceRu: 1–3 предложения, практично и бережно.\n`;
 
   try {
     const resp = await openai.responses.parse({
@@ -123,6 +124,8 @@ export async function generateSpreadReadingRu(opts: {
     });
 
     const parsed = resp.output_parsed;
+    if (!parsed) throw new Error("NO_PARSED_OUTPUT");
+
     return {
       interpretationRu: clean(parsed.interpretationRu),
       adviceRu: clean(parsed.adviceRu),
