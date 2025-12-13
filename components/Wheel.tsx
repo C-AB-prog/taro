@@ -1,180 +1,268 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/Modal";
-import { FlipCard } from "@/components/FlipCard";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
-type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
+type WheelCard = {
+  slug?: string;
+  titleRu?: string;
+  meaningRu: string;
+  adviceRu: string;
+  image: string;
+};
 
-function hapticImpact(style: "light" | "medium" | "heavy" | "rigid" | "soft") {
-  const h = window.Telegram?.WebApp?.HapticFeedback;
-  h?.impactOccurred?.(style);
-}
-function hapticSuccess() {
-  const h = window.Telegram?.WebApp?.HapticFeedback;
-  h?.notificationOccurred?.("success");
-}
+type WheelArchiveItem = { date: string; card: WheelCard };
 
-function makeSparkles(n = 16) {
-  return Array.from({ length: n }).map((_, i) => ({
-    id: i + 1,
-    x: Math.random() * 220,
-    y: Math.random() * 220,
-    s: 0.6 + Math.random() * 1.2,
-    d: 0.15 + Math.random() * 0.35,
-  }));
+const TZ = "Europe/Helsinki";
+
+function dayKey(d: Date) {
+  // "2025-12-13"
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 }
 
 export function Wheel() {
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [canSpin, setCanSpin] = useState(false);
+  const [todayItem, setTodayItem] = useState<WheelArchiveItem | null>(null);
+
   const [spinning, setSpinning] = useState(false);
-  const [deg, setDeg] = useState(0);
+  const [rot, setRot] = useState(0);
 
   const [open, setOpen] = useState(false);
-  const [already, setAlready] = useState(false);
-  const [card, setCard] = useState<Card | null>(null);
+  const [card, setCard] = useState<WheelCard | null>(null);
+  const [modalTitle, setModalTitle] = useState("Колесо фортуны");
 
-  // для “ритуала” внутри модалки
-  const [stage, setStage] = useState<"idle" | "ritual" | "reveal">("idle");
+  const [error, setError] = useState<string | null>(null);
 
-  const [sparkles, setSparkles] = useState(() => makeSparkles(0));
-  const timeRef = useRef<number | null>(null);
+  const todayKey = useMemo(() => dayKey(new Date()), []);
 
-  const wheelTransition = useMemo(
-    () => ({ duration: 2.4, ease: [0.15, 0.85, 0.2, 1] as any }),
-    []
-  );
+  useEffect(() => {
+    // Проверяем: был ли уже спин сегодня (через /api/archive)
+    async function loadStatus() {
+      try {
+        const r = await fetch("/api/archive", { cache: "no-store" });
+        const d = await r.json();
+        const wheel: WheelArchiveItem[] = d?.wheel ?? [];
+
+        const t = wheel.find((it) => {
+          const dk = dayKey(new Date(it.date));
+          return dk === todayKey;
+        });
+
+        if (t) {
+          setTodayItem(t);
+          setCanSpin(false);
+        } else {
+          setCanSpin(true);
+        }
+      } catch (e) {
+        // если что-то пошло не так — не ломаем UX, но разрешим попытку
+        setCanSpin(true);
+      } finally {
+        setStatusLoading(false);
+      }
+    }
+
+    loadStatus();
+  }, [todayKey]);
+
+  function titleFor(c: WheelCard | null) {
+    if (!c) return "";
+    if (c.slug) return ruTitleFromSlug(c.slug);
+    return c.titleRu ?? "Карта";
+  }
 
   async function spin() {
-    if (spinning) return;
+    if (!canSpin || spinning) return;
 
+    setError(null);
     setSpinning(true);
-    setOpen(false);
-    setStage("idle");
 
-    hapticImpact("light");
+    // 1) сначала просим сервер выдать карту и сохранить спин
+    let picked: WheelCard | null = null;
+    try {
+      const r = await fetch("/api/wheel/spin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
 
-    const r = await fetch("/api/wheel/spin", { method: "POST" });
-    const d = await r.json();
+      const d = await r.json();
 
-    if (!r.ok) {
+      if (!r.ok) {
+        // если сервер сказал "уже крутил"
+        const code = String(d?.error ?? "").toUpperCase();
+        if (code.includes("ALREADY")) {
+          // Подтягиваем сегодняшнюю карту из архива (если не было)
+          if (!todayItem) {
+            try {
+              const ar = await fetch("/api/archive", { cache: "no-store" });
+              const ad = await ar.json();
+              const wheel: WheelArchiveItem[] = ad?.wheel ?? [];
+              const t = wheel.find((it) => dayKey(new Date(it.date)) === todayKey) ?? null;
+              setTodayItem(t);
+            } catch {}
+          }
+
+          setCanSpin(false);
+          setSpinning(false);
+          setError("Сегодня ты уже крутил(а) колесо.");
+          return;
+        }
+
+        setSpinning(false);
+        setError(d?.message ?? "Не удалось прокрутить.");
+        return;
+      }
+
+      picked = d?.card ?? null;
+    } catch {
       setSpinning(false);
+      setError("Сеть шалит. Попробуй ещё раз.");
       return;
     }
 
-    setAlready(!!d.already);
-    setCard(d.card);
-
-    // если уже крутил — просто показываем карту (без ритуала)
-    if (d.already) {
-      hapticImpact("soft");
-      setStage("reveal");
-      setOpen(true);
+    if (!picked) {
       setSpinning(false);
+      setError("Не удалось получить карту.");
       return;
     }
 
-    // искры на старте
-    setSparkles(makeSparkles(18));
+    // 2) анимация колеса
+    const extraTurns = 360 * (5 + Math.floor(Math.random() * 2)); // 5–6 оборотов
+    const offset = Math.floor(Math.random() * 360);
+    const target = rot + extraTurns + offset;
 
-    // вращение
-    const extra = 1440 + Math.floor(Math.random() * 360);
-    const next = deg + extra;
-    setDeg(next);
+    // haptics
+    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
 
-    if (timeRef.current) window.clearTimeout(timeRef.current);
-    timeRef.current = window.setTimeout(() => {
-      hapticSuccess();
-      setSparkles(makeSparkles(0));
-      setStage("ritual");
+    setRot(target);
+
+    // 3) после анимации показываем карту
+    const durationMs = 3200;
+
+    setTimeout(() => {
+      const item: WheelArchiveItem = { date: new Date().toISOString(), card: picked! };
+      setTodayItem(item);
+      setCanSpin(false);
+
+      setCard(picked);
+      setModalTitle(`Колесо • ${titleFor(picked)}`);
       setOpen(true);
+
       setSpinning(false);
-    }, 2600);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+    }, durationMs);
   }
 
-  function closeModal() {
-    setOpen(false);
-    setStage("idle");
+  function openToday() {
+    if (!todayItem) return;
+    setCard(todayItem.card);
+    setModalTitle(`Колесо • ${titleFor(todayItem.card)}`);
+    setOpen(true);
   }
+
+  const btnText = statusLoading
+    ? "Проверяю…"
+    : spinning
+    ? "Крутим…"
+    : canSpin
+    ? "Прокрутить колесо"
+    : "Доступно завтра";
 
   return (
     <div className="card">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div className="title">Колесо фортуны</div>
-          <div className="small">Можно крутить 1 раз в сутки</div>
-        </div>
-        <button className="btn btnPrimary" onClick={spin} disabled={spinning}>
-          {spinning ? "Крутим…" : "Крутить"}
-        </button>
+      <div className="title">Колесо фортуны</div>
+      <div className="small" style={{ marginTop: 4 }}>
+        Один раз в сутки — и только одна карта. Повторения возможны.
       </div>
 
-      <div style={{ height: 12 }} />
-      <div className="pointer" />
+      <div style={{ height: 10 }} />
 
+      <div className="pointer" />
       <div className="wheelWrap">
         <div className="sparkStage">
-          <motion.div className="wheel" animate={{ rotate: deg }} transition={wheelTransition} />
-          <div className="sparkLayer">
-            {sparkles.map((p) => (
-              <motion.div
-                key={p.id}
-                className="sparkDot"
-                style={{ left: p.x, top: p.y }}
-                initial={{ opacity: 0, scale: 0.2 }}
-                animate={{ opacity: [0, 1, 0], scale: [0.2, p.s, 0.2], y: [0, -10, -22] }}
-                transition={{ duration: 0.7, delay: p.d }}
-              />
-            ))}
-          </div>
+          <div
+            className="wheel"
+            style={{
+              transform: `rotate(${rot}deg)`,
+              transition: spinning
+                ? "transform 3.2s cubic-bezier(0.12, 0.72, 0.20, 1)"
+                : "transform 0.2s ease",
+              willChange: "transform",
+            }}
+          />
+          {/* искры — только во время кручения */}
+          {spinning ? (
+            <div className="sparkLayer">
+              {Array.from({ length: 10 }).map((_, i) => {
+                const a = (i / 10) * Math.PI * 2;
+                const r = 88 + (i % 3) * 10;
+                const x = 110 + Math.cos(a) * r;
+                const y = 110 + Math.sin(a) * r;
+                return (
+                  <div
+                    key={i}
+                    className="sparkDot"
+                    style={{
+                      left: x,
+                      top: y,
+                      opacity: 0.9,
+                      animation: `spark ${700 + (i % 3) * 120}ms ease-in-out ${i * 40}ms infinite`,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
 
-      <Modal
-        open={open}
-        title={already ? "Ты уже крутил сегодня" : "Колесо фортуны"}
-        onClose={closeModal}
+      {error ? (
+        <div className="small" style={{ marginTop: 8 }}>
+          {error}
+        </div>
+      ) : null}
+
+      {!statusLoading && !canSpin && todayItem ? (
+        <div className="small" style={{ marginTop: 8 }}>
+          Сегодня выпало: <b>{titleFor(todayItem.card)}</b>
+        </div>
+      ) : null}
+
+      <div style={{ height: 12 }} />
+
+      <button
+        className={`btn ${canSpin ? "btnPrimary" : "btnGhost"}`}
+        style={{ width: "100%" }}
+        onClick={spin}
+        disabled={statusLoading || spinning || !canSpin}
       >
+        {btnText}
+      </button>
+
+      {!statusLoading && !canSpin && todayItem ? (
+        <div style={{ marginTop: 10 }}>
+          <button className="btn btnGhost" style={{ width: "100%" }} onClick={openToday}>
+            Открыть сегодняшнюю карту
+          </button>
+        </div>
+      ) : null}
+
+      <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {!card ? (
           <p className="text">…</p>
-        ) : stage === "ritual" ? (
-          <div className="col">
-            <div className="row" style={{ justifyContent: "center" }}>
-              {/* Рубашка как “закрытая” карта */}
-              <img className="img" src={"/cards/card-back.jpg"} alt="Рубашка карты" />
-            </div>
-
-            <div className="small" style={{ textAlign: "center" }}>
-              Сделай вдох… и выдох. Слушай знак.
-            </div>
-
-            <button
-              className="btn btnPrimary"
-              onClick={() => {
-                window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("soft");
-                setStage("reveal");
-              }}
-            >
-              Открыть карту
-            </button>
-          </div>
         ) : (
-          // reveal
           <div className="row">
-            <div>
-              <FlipCard
-                frontSrc={card.image}
-                backSrc={"/cards/card-back.jpg"}
-                alt={card.titleRu}
-                onRevealed={() => {
-                  window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-                }}
-              />
-              <div className="flipHint">Нажми, чтобы перевернуть</div>
-            </div>
-
+            <img className="img" src={card.image} alt={titleFor(card)} loading="lazy" decoding="async" />
             <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>{card.titleRu}</div>
+              <div className="title" style={{ fontSize: 16 }}>{titleFor(card)}</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
               <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
               <p className="text" style={{ marginTop: 6 }}>{card.adviceRu}</p>
@@ -182,6 +270,15 @@ export function Wheel() {
           </div>
         )}
       </Modal>
+
+      {/* keyframes для искр */}
+      <style>{`
+        @keyframes spark {
+          0% { transform: translate(-50%, -50%) scale(.7); opacity: .2; }
+          40% { transform: translate(-50%, -50%) scale(1.15); opacity: .95; }
+          100% { transform: translate(-50%, -50%) scale(.85); opacity: .35; }
+        }
+      `}</style>
     </div>
   );
 }
