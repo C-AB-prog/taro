@@ -21,6 +21,7 @@ type View = {
   positions: string[];
   interpretation: string;
   resetToken: string;
+  savedToArchive?: boolean;
 };
 
 type ArchiveSpreadItem = {
@@ -132,7 +133,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, ms:
   }
 }
 
-async function postJSON(url: string, body: any, timeoutMs = 6000) {
+async function postJSON(url: string, body: any, timeoutMs = 6500) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -152,7 +153,7 @@ async function postJSON(url: string, body: any, timeoutMs = 6000) {
   return { ok: r.ok, status: r.status, data };
 }
 
-async function getJSON(url: string, timeoutMs = 6000) {
+async function getJSON(url: string, timeoutMs = 6500) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -173,32 +174,6 @@ async function getJSON(url: string, timeoutMs = 6000) {
 function toTime(ts: string) {
   const t = new Date(ts || 0).getTime();
   return Number.isFinite(t) ? t : 0;
-}
-
-async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: number): Promise<ArchiveSpreadItem | null> {
-  const r = await getJSON("/api/archive", 6000);
-  if (!r.ok) return null;
-
-  const spreads: ArchiveSpreadItem[] =
-    r.data?.spreads ?? r.data?.spreadPurchases ?? r.data?.purchases ?? [];
-
-  if (!Array.isArray(spreads) || spreads.length === 0) return null;
-
-  const sorted = spreads
-    .slice()
-    .sort((a, b) => toTime(String(b.createdAt ?? b.date ?? "")) - toTime(String(a.createdAt ?? a.date ?? "")));
-
-  const fresh = sorted.find((s) => {
-    const t = toTime(String(s.createdAt ?? s.date ?? ""));
-    const name = (s.spreadTitle || s.title || "").trim();
-    return name === preferTitle.trim() && t >= startedAtMs - 7000;
-  });
-  if (fresh) return fresh;
-
-  const any = sorted.find((s) => (s.spreadTitle || s.title || "").trim() === preferTitle.trim());
-  if (any) return any;
-
-  return sorted[0] ?? null;
 }
 
 function extractView(resData: any, fallbackPositions: string[]) {
@@ -226,72 +201,99 @@ function extractView(resData: any, fallbackPositions: string[]) {
   return { cards, positions, interpretation };
 }
 
+function hasPurchaseMarker(d: any) {
+  return Boolean(
+    d?.purchase?.id ||
+    d?.purchaseId ||
+    d?.id ||
+    d?.result?.id ||
+    d?.success === true ||
+    d?.ok === true
+  );
+}
+
+function looksLikeErrorPayload(d: any) {
+  // даже если HTTP 200, сервер может вернуть { error: "..."} или { ok:false }
+  if (d?.ok === false || d?.success === false) return true;
+  const s = String(d?.error ?? d?.message ?? "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("unknown") ||
+    s.includes("not found") ||
+    s.includes("не найден") ||
+    s.includes("invalid") ||
+    s.includes("unauthorized") ||
+    s.includes("forbidden")
+  );
+}
+
 function keyVariants(def: SpreadDef) {
-  const base = def.id; // couple_future
+  const base = def.id;
   const kebab = base.replace(/_/g, "-");
   const compact = base.replace(/[-_]/g, "");
   const camel = base.replace(/_([a-z])/g, (_, ch) => String(ch).toUpperCase());
 
   const extra: string[] = [];
-
-  if (def.id === "couple_future") {
-    extra.push(
-      "future_pair",
-      "future-pair",
-      "futurePair",
-      "coupleFuture",
-      "Будущее пары"
-    );
-  }
+  if (def.id === "couple_future") extra.push("future_pair", "futurePair", "coupleFuture", "Будущее пары");
   if (def.id === "three") extra.push("three_cards", "three-cards", "Три карты");
-  if (def.id === "aibolit") extra.push("doctor_aibolit", "doctor-aibolit", "Доктор Айболит");
-  if (def.id === "celtic_cross") extra.push("celtic-cross", "celticcross", "Кельтский крест");
   if (def.id === "station_for_two") extra.push("station-for-two", "Вокзал для двоих");
   if (def.id === "money_tree") extra.push("money-tree", "Денежное дерево");
   if (def.id === "money_on_barrel") extra.push("money-on-barrel", "Деньги на бочку");
   if (def.id === "my_health") extra.push("my-health", "Моё здоровье");
+  if (def.id === "aibolit") extra.push("doctor_aibolit", "doctor-aibolit", "Доктор Айболит");
+  if (def.id === "celtic_cross") extra.push("celtic-cross", "celticcross", "Кельтский крест");
 
   return Array.from(new Set([base, kebab, compact, camel, def.title, ...extra].filter(Boolean)));
 }
 
-function looksLikeUnknown(d: any) {
-  const s = String(d?.error ?? d?.message ?? "").toLowerCase();
-  return s.includes("unknown") || s.includes("not found") || s.includes("spread") || s.includes("не найден");
-}
+async function findInArchiveExact(title: string, startedAtMs: number) {
+  const r = await getJSON("/api/archive", 6500);
+  if (!r.ok) return null;
 
-function prettyErr(d: any) {
-  const msg = d?.message ?? d?.error ?? d;
-  if (typeof msg === "string") return msg;
-  return "Покупка не прошла. Сервер отклонил запрос.";
+  const spreads: ArchiveSpreadItem[] =
+    r.data?.spreads ?? r.data?.spreadPurchases ?? r.data?.purchases ?? [];
+
+  if (!Array.isArray(spreads)) return null;
+
+  const sorted = spreads
+    .slice()
+    .sort((a, b) => toTime(String(b.createdAt ?? b.date ?? "")) - toTime(String(a.createdAt ?? a.date ?? "")));
+
+  // строго только этот расклад
+  const found = sorted.find((s) => {
+    const t = toTime(String(s.createdAt ?? s.date ?? ""));
+    const name = (s.spreadTitle || s.title || "").trim();
+    return name === title.trim() && t >= startedAtMs - 8000;
+  });
+
+  return found ?? null;
 }
 
 export default function SpreadsPage() {
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const [view, setView] = useState<View | null>(null);
-
-  const [errText, setErrText] = useState<string | null>(null);
-  const [errDebug, setErrDebug] = useState<string>("");
-
   const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const [views, setViews] = useState<Record<string, View | null>>({});
+  const [errs, setErrs] = useState<Record<string, { text: string; debug?: string } | null>>({});
+
   const list = useMemo(() => {
-    if (filter === "all") return SPREADS;
-    return SPREADS.filter((s) => s.tag === filter);
+    const base = filter === "all" ? SPREADS : SPREADS.filter((s) => s.tag === filter);
+    return base;
   }, [filter]);
 
   async function buy(def: SpreadDef) {
     if (busyId) return;
+
+    setOpenId(def.id);
     setBusyId(def.id);
-    setErrText(null);
-    setErrDebug("");
+    setErrs((m) => ({ ...m, [def.id]: null }));
 
     const startedAt = Date.now();
 
     try {
       const keys = keyVariants(def);
-
-      // будем пробовать оба эндпойнта и разные ключи тела запроса
       const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
       const bodiesForKey = (k: string) => [
         { spreadId: k },
@@ -301,92 +303,124 @@ export default function SpreadsPage() {
         { key: k },
       ];
 
-      let last: { ok: boolean; status: number; data: any } | null = null;
+      let last: { ok: boolean; status: number; data: any; ep?: string; body?: any } | null = null;
 
-      // ограничим попытки, чтобы не “молчать” долго
       let attempts = 0;
-      const MAX = 18;
+      const MAX = 16;
 
-      for (const ep of endpoints) {
+      outer: for (const ep of endpoints) {
         for (const k of keys) {
           for (const body of bodiesForKey(k)) {
             attempts++;
-            if (attempts > MAX) break;
+            if (attempts > MAX) break outer;
 
-            try {
-              const r = await postJSON(ep, body, 6000);
-              last = r;
+            const r = await postJSON(ep, body, 6500);
+            last = { ...r, ep, body };
 
-              if (r.ok) break;
+            // успех по HTTP
+            if (r.ok) {
+              const extracted = extractView(r.data, def.positions);
 
-              // если это “не тот ключ” — идём дальше
-              if (r.status === 404 || looksLikeUnknown(r.data)) continue;
+              // ✅ реально успех — сервер вернул карты
+              if (Array.isArray(extracted.cards) && extracted.cards.length > 0 && !looksLikeErrorPayload(r.data)) {
+                setViews((m) => ({
+                  ...m,
+                  [def.id]: {
+                    title: def.title,
+                    cards: extracted.cards,
+                    positions: extracted.positions ?? def.positions,
+                    interpretation: extracted.interpretation ?? "",
+                    resetToken: `${def.id}-${Date.now()}`,
+                    savedToArchive: true, // проверим ниже, но пометим оптимистично
+                  },
+                }));
+                // проверим архив (чтобы не было “показал, но не сохранил”)
+                for (let i = 0; i < 6; i++) {
+                  const found = await findInArchiveExact(def.title, startedAt);
+                  if (found?.cards?.length) {
+                    setViews((m) => ({
+                      ...m,
+                      [def.id]: {
+                        title: def.title,
+                        cards: found.cards!,
+                        positions: (found.positions ?? def.positions) as string[],
+                        interpretation: String(found.interpretation ?? ""),
+                        resetToken: `${def.id}-arch-${Date.now()}`,
+                        savedToArchive: true,
+                      },
+                    }));
+                    return;
+                  }
+                  await new Promise((res) => setTimeout(res, 650));
+                }
+                // если не нашли — значит сервер не сохранил, отметим это
+                setViews((m) => ({
+                  ...m,
+                  [def.id]: m[def.id] ? { ...m[def.id]!, savedToArchive: false } : m[def.id],
+                }));
+                return;
+              }
 
-              // остальные ошибки (баланс/валидация) — стоп
-              break;
-            } catch (e: any) {
-              last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name ?? e) } };
+              // ✅ сервер мог вернуть purchaseId без карт — тогда ждём архив
+              if (hasPurchaseMarker(r.data) && !looksLikeErrorPayload(r.data)) {
+                for (let i = 0; i < 8; i++) {
+                  const found = await findInArchiveExact(def.title, startedAt);
+                  if (found?.cards?.length) {
+                    setViews((m) => ({
+                      ...m,
+                      [def.id]: {
+                        title: def.title,
+                        cards: found.cards!,
+                        positions: (found.positions ?? def.positions) as string[],
+                        interpretation: String(found.interpretation ?? ""),
+                        resetToken: `${def.id}-arch-${Date.now()}`,
+                        savedToArchive: true,
+                      },
+                    }));
+                    return;
+                  }
+                  await new Promise((res) => setTimeout(res, 650));
+                }
+
+                setErrs((m) => ({
+                  ...m,
+                  [def.id]: {
+                    text: "Покупка прошла, но запись не появилась в архиве. Значит сервер не сохранил покупку.",
+                    debug: JSON.stringify({ response: r.data, ep, body }, null, 2),
+                  },
+                }));
+                return;
+              }
+
+              // HTTP 200, но внутри ошибка/unknown — пробуем следующий ключ
+              if (looksLikeErrorPayload(r.data)) continue;
+
+              // иначе — тоже пробуем дальше
+              continue;
             }
+
+            // не ok: если 404/unknown — идём дальше, иначе стоп
+            const s = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
+            const isUnknown = r.status === 404 || s.includes("unknown") || s.includes("not found") || s.includes("не найден");
+            if (isUnknown) continue;
+
+            break outer;
           }
-          if (last?.ok || attempts > MAX) break;
         }
-        if (last?.ok || attempts > MAX) break;
       }
 
-      if (!last || !last.ok) {
-        // возможно списало, но ответ не пришёл — подхватим из архива
-        const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
-        if (arch?.cards?.length) {
-          setView({
-            title: def.title,
-            cards: arch.cards!,
-            positions: (arch.positions ?? def.positions) as string[],
-            interpretation: String(arch.interpretation ?? ""),
-            resetToken: `${def.id}-arch-${Date.now()}`,
-          });
-          // скролл к результату
-          setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-          return;
-        }
-
-        setErrText(prettyErr(last?.data));
-        setErrDebug(last ? JSON.stringify(last.data, null, 2) : "");
-        return;
-      }
-
-      const extracted = extractView(last.data, def.positions);
-
-      if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
-        setView({
-          title: def.title,
-          cards: extracted.cards,
-          positions: extracted.positions ?? def.positions,
-          interpretation: extracted.interpretation ?? "",
-          resetToken: `${def.id}-${Date.now()}`,
-        });
-        setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-        return;
-      }
-
-      // ответ пустой — подождём архив немного
-      for (let i = 0; i < 6; i++) {
-        const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
-        if (arch?.cards?.length) {
-          setView({
-            title: def.title,
-            cards: arch.cards!,
-            positions: (arch.positions ?? def.positions) as string[],
-            interpretation: String(arch.interpretation ?? ""),
-            resetToken: `${def.id}-arch-${Date.now()}`,
-          });
-          setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-          return;
-        }
-        await new Promise((res) => setTimeout(res, 700));
-      }
-
-      setErrText("Покупка прошла, но карты/трактовка не пришли. Обычно запись появляется в Архиве.");
-      setErrDebug(JSON.stringify({ buyResponse: last.data }, null, 2));
+      setErrs((m) => ({
+        ...m,
+        [def.id]: {
+          text: String(last?.data?.message ?? last?.data?.error ?? "Покупка не прошла. Сервер отклонил запрос."),
+          debug: last ? JSON.stringify(last, null, 2) : "",
+        },
+      }));
+    } catch (e: any) {
+      setErrs((m) => ({
+        ...m,
+        [def.id]: { text: "Сеть шалит. Попробуй ещё раз.", debug: String(e?.name ?? e) },
+      }));
     } finally {
       setBusyId(null);
     }
@@ -408,75 +442,91 @@ export default function SpreadsPage() {
 
       <div style={{ height: 12 }} />
 
-      {errText ? (
-        <div className="card">
-          <div className="title">Не получилось</div>
-          <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{errText}</div>
-          {errDebug ? (
-            <details style={{ marginTop: 10 }}>
-              <summary className="small" style={{ cursor: "pointer" }}>Показать детали</summary>
-              <pre className="small" style={{ whiteSpace: "pre-wrap", margin: 0, marginTop: 8 }}>{errDebug}</pre>
-            </details>
-          ) : null}
-          <div style={{ height: 10 }} />
-          <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => { setErrText(null); setErrDebug(""); }}>
-            Закрыть
-          </button>
-        </div>
-      ) : null}
-
-      {view ? (
-        <div id="spreadResult" className="card" style={{ marginTop: 12 }}>
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-            <div className="title">{view.title}</div>
-            <button className="btn btnGhost" style={{ padding: "8px 10px" }} onClick={() => setView(null)}>
-              Свернуть
-            </button>
-          </div>
-
-          <div style={{ height: 10 }} />
-
-          {/* Важно для “сенсора”: даём нормальный тач-скролл */}
-          <div style={{ touchAction: "pan-y" }}>
-            <SpreadReveal
-              cards={view.cards}
-              positions={view.positions}
-              interpretation={view.interpretation}
-              resetToken={view.resetToken}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      <div style={{ height: 12 }} />
-
       <div className="spreadList">
-        {list.map((s) => (
-          <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-              <div className="title">{s.title}</div>
-              <div className="spreadPrice">{s.price}</div>
+        {list.map((s) => {
+          const isBusy = busyId === s.id;
+          const isOpen = openId === s.id;
+          const v = views[s.id] ?? null;
+          const err = errs[s.id] ?? null;
+
+          return (
+            <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+                <div className="title">{s.title}</div>
+                <div className="spreadPrice">{s.price}</div>
+              </div>
+
+              <div className="small" style={{ marginTop: 6 }}>
+                <span className="spreadTag">{tagLabel(s.tag)}</span>
+                <span style={{ marginLeft: 10 }}>{s.cardsCount} карт</span>
+              </div>
+
+              <div className="small" style={{ marginTop: 8 }}>{s.brief}</div>
+
+              <div style={{ height: 10 }} />
+
+              <div className="row" style={{ gap: 10 }}>
+                <button
+                  className={`btn ${isBusy ? "btnGhost" : "btnPrimary"}`}
+                  style={{ flex: 1 }}
+                  onClick={() => buy(s)}
+                  disabled={!!busyId}
+                >
+                  {isBusy ? "Готовлю…" : "Сделать расклад"}
+                </button>
+
+                {(isOpen && (v || err)) ? (
+                  <button
+                    className="btn btnGhost"
+                    style={{ padding: "12px 12px" }}
+                    onClick={() => setOpenId(null)}
+                  >
+                    Свернуть
+                  </button>
+                ) : (
+                  <button
+                    className="btn btnGhost"
+                    style={{ padding: "12px 12px" }}
+                    onClick={() => setOpenId(s.id)}
+                  >
+                    Открыть
+                  </button>
+                )}
+              </div>
+
+              {/* Результат — прямо в этой карточке */}
+              {isOpen && v ? (
+                <div style={{ marginTop: 12, touchAction: "pan-y" }}>
+                  {v.savedToArchive === false ? (
+                    <div className="small" style={{ marginBottom: 10 }}>
+                      ⚠️ Сервер показал расклад, но в архив его не записал (значит покупка не сохранилась).
+                    </div>
+                  ) : null}
+
+                  <SpreadReveal
+                    cards={v.cards}
+                    positions={v.positions}
+                    interpretation={v.interpretation}
+                    resetToken={v.resetToken}
+                  />
+                </div>
+              ) : null}
+
+              {isOpen && err ? (
+                <div className="card" style={{ marginTop: 12, padding: 12 }}>
+                  <div className="title" style={{ fontSize: 14 }}>Не получилось</div>
+                  <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{err.text}</div>
+                  {err.debug ? (
+                    <details style={{ marginTop: 10 }}>
+                      <summary className="small" style={{ cursor: "pointer" }}>Показать детали</summary>
+                      <pre className="small" style={{ whiteSpace: "pre-wrap", margin: 0, marginTop: 8 }}>{err.debug}</pre>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-
-            <div className="small" style={{ marginTop: 6 }}>
-              <span className="spreadTag">{tagLabel(s.tag)}</span>
-              <span style={{ marginLeft: 10 }}>{s.cardsCount} карт</span>
-            </div>
-
-            <div className="small" style={{ marginTop: 8 }}>{s.brief}</div>
-
-            <div style={{ height: 10 }} />
-
-            <button
-              className={`btn ${busyId === s.id ? "btnGhost" : "btnPrimary"}`}
-              style={{ width: "100%" }}
-              onClick={() => buy(s)}
-              disabled={!!busyId}
-            >
-              {busyId === s.id ? "Готовлю…" : "Сделать расклад"}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </AppShell>
   );
