@@ -7,7 +7,7 @@ import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
 
 type SpreadDef = {
-  id: string; // наш UI-ключ (для перебора вариантов)
+  id: string;
   title: string;
   price: number;
   cardsCount: number;
@@ -205,7 +205,6 @@ async function fetchLatestSpreadFromArchive(preferTitle?: string): Promise<Archi
 
   if (!Array.isArray(spreads) || spreads.length === 0) return null;
 
-  // сортируем по времени
   const sorted = spreads
     .slice()
     .sort((a, b) => {
@@ -229,9 +228,6 @@ function prettyErr(d: any) {
 }
 
 export default function SpreadsPage() {
-  // совместимо с разными версиями AppShell (с title/без title)
-  const Shell = AppShell as any;
-
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Расклад");
   const [view, setView] = useState<View | null>(null);
@@ -256,7 +252,6 @@ export default function SpreadsPage() {
       const variants = idVariants(def);
       let last: { ok: boolean; status: number; data: any } | null = null;
 
-      // 1) пытаемся купить (POST/GET + разные ключи)
       for (const id of variants) {
         const bodies = [
           { spreadId: id },
@@ -266,7 +261,6 @@ export default function SpreadsPage() {
           { key: id },
         ];
 
-        // POST buy
         for (const b of bodies) {
           const r = await postJSON("/api/spreads/buy", b);
           last = r;
@@ -275,7 +269,6 @@ export default function SpreadsPage() {
         }
         if (last?.ok) break;
 
-        // POST purchase fallback
         if (last?.status === 404) {
           for (const b of bodies) {
             const r = await postJSON("/api/spreads/purchase", b);
@@ -286,7 +279,6 @@ export default function SpreadsPage() {
           if (last?.ok) break;
         }
 
-        // GET варианты (если бэк так сделан)
         const qs = encodeURIComponent(id);
         const getTry = [
           `/api/spreads/buy?spreadId=${qs}`,
@@ -310,9 +302,9 @@ export default function SpreadsPage() {
         return;
       }
 
-      // 2) пробуем открыть расклад из ответа
       const extracted = extractViewFromBuyResponse(last.data, def.positions);
 
+      // ✅ обычный путь: сервер вернул карты
       if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
         setView({
           cards: extracted.cards,
@@ -326,7 +318,7 @@ export default function SpreadsPage() {
         return;
       }
 
-      // 3) ✅ FALLBACK: покупка прошла, но cards не вернулись -> берём из архива свежую запись
+      // ✅ fallback: покупка прошла, но сервер не вернул cards/interpretation
       const latest = await fetchLatestSpreadFromArchive(def.title);
 
       const aCards = (latest?.cards ?? []) as { slug: string; image: string }[];
@@ -346,10 +338,7 @@ export default function SpreadsPage() {
         return;
       }
 
-      // 4) если даже в архиве не нашли — говорим прямо
-      setErrText(
-        "Покупка прошла, но сервер не вернул данные расклада. Открой Архив — запись должна быть там."
-      );
+      setErrText("Покупка прошла, но данные расклада не пришли. Открой Архив — запись должна быть там.");
       setErrDebug(JSON.stringify({ buyResponse: last.data }, null, 2));
       setErrOpen(true);
     } finally {
@@ -358,37 +347,18 @@ export default function SpreadsPage() {
   }
 
   return (
-    <Shell title="Расклады">
-      <h1 className="h1">Расклады</h1>
+    <AppShell>
       <RitualHeader label="Выбери формат" />
 
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div className="title">Категории</div>
-            <div className="small">Короткое описание каждого расклада</div>
-          </div>
-          <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
-        </div>
-
+        <div className="title">Категории</div>
         <div style={{ height: 10 }} />
-
         <div className="segRow">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
-            Все
-          </button>
-          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>
-            Ситуация
-          </button>
-          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>
-            Отношения
-          </button>
-          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>
-            Финансы
-          </button>
-          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>
-            Здоровье
-          </button>
+          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
+          <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter("general")}>Ситуация</button>
+          <button className={`segBtn ${filter === "love" ? "segBtnActive" : ""}`} onClick={() => setFilter("love")}>Отношения</button>
+          <button className={`segBtn ${filter === "money" ? "segBtnActive" : ""}`} onClick={() => setFilter("money")}>Финансы</button>
+          <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
         </div>
       </div>
 
@@ -438,7 +408,6 @@ export default function SpreadsPage() {
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
-
         {errDebug ? (
           <>
             <div style={{ height: 10 }} />
@@ -447,12 +416,11 @@ export default function SpreadsPage() {
             </div>
           </>
         ) : null}
-
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
           Ок
         </button>
       </Modal>
-    </Shell>
+    </AppShell>
   );
 }
