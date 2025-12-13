@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
+import { RitualHeader } from "@/components/RitualHeader";
 
 type CardListItem = { slug: string; titleRu: string; image: string };
 type CardMeaning = { slug: string; titleRu: string; meaningRu: string; image: string };
@@ -59,7 +60,6 @@ export default function DeckPage() {
     load();
   }, []);
 
-  // сбрасываем пагинацию при смене фильтра/поиска
   useEffect(() => {
     setVisible(PAGE);
   }, [filter, query]);
@@ -93,7 +93,6 @@ export default function DeckPage() {
   const shown = useMemo(() => filtered.slice(0, visible), [filtered, visible]);
   const canMore = shown.length < filtered.length;
 
-  // авто-подгрузка при скролле вниз
   useEffect(() => {
     if (!canMore) return;
     const el = sentinelRef.current;
@@ -121,6 +120,7 @@ export default function DeckPage() {
   return (
     <AppShell title="Колода">
       <h1 className="h1">Колода</h1>
+      <RitualHeader label="Выбери карту" />
 
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -163,11 +163,11 @@ export default function DeckPage() {
             width: "100%",
             padding: "12px 12px",
             borderRadius: 14,
-            border: "1px solid rgba(255,255,255,.14)",
+            border: "1px solid rgba(255,255,255,.10)",
             outline: "none",
-            background: "rgba(0,0,0,.22)",
-            color: "rgba(255,255,255,.92)",
-            fontWeight: 800,
+            background: "rgba(0,0,0,.30)",
+            color: "rgba(243,238,227,.92)",
+            fontWeight: 900,
           }}
         />
       </div>
@@ -190,7 +190,7 @@ export default function DeckPage() {
             {shown.map((c, i) => (
               <motion.button
                 key={c.slug}
-                className="card"
+                className="card pressable"
                 style={{ padding: 8, textAlign: "left", cursor: "pointer" }}
                 whileTap={{ scale: 0.98 }}
                 initial={{ opacity: 0, y: 10 }}
@@ -217,7 +217,11 @@ export default function DeckPage() {
 
           {canMore ? (
             <div style={{ marginTop: 12 }}>
-              <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setVisible((v) => Math.min(v + PAGE, filtered.length))}>
+              <button
+                className="btn btnGhost"
+                style={{ width: "100%" }}
+                onClick={() => setVisible((v) => Math.min(v + PAGE, filtered.length))}
+              >
                 Показать ещё
               </button>
             </div>
@@ -233,7 +237,9 @@ export default function DeckPage() {
             <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
               <div className="small">Что означает</div>
-              <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
+              <p className="text" style={{ marginTop: 6 }}>
+                {card.meaningRu}
+              </p>
             </div>
           </div>
         )}
