@@ -4,6 +4,7 @@ import { ensureBootstrapped } from "./bootstrap";
 import { generateCardTexts, generateSpreadInterpretation } from "./ai";
 import fs from "fs";
 import path from "path";
+import type { Card } from "@prisma/client";
 
 function pickRandom<T>(arr: T[]) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -110,7 +111,7 @@ export async function buySpread(userId: string, spreadKey: string) {
   const picked = shuffled.slice(0, spread.cardsCount);
 
   // подгрузим тексты карт если пустые
-  const hydrated: { id: string; slug: string; titleRu: string; meaningRu: string; adviceRu: string }[] = [];
+  const hydrated: Card[] = [];
   for (const c of picked) {
     const hc = await ensureCardTexts(c.id, c.slug);
     hydrated.push(hc ?? c);
