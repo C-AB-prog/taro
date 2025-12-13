@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { Wheel } from "@/components/Wheel";
 import { FlipCard } from "@/components/FlipCard";
+import { RitualHeader } from "@/components/RitualHeader";
 
 type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
 
@@ -20,6 +21,7 @@ export default function HomePage() {
   return (
     <AppShell title="Главная">
       <h1 className="h1">Твой день</h1>
+      <RitualHeader label="Сегодняшний знак" />
 
       <motion.div
         initial={{ opacity: 0, y: 14 }}
@@ -53,18 +55,29 @@ export default function HomePage() {
                 frontSrc={daily.image}
                 backSrc={"/cards/card-back.jpg"}
                 alt={daily.titleRu}
+                startSide="back"
+                allowFlipBack={true}
               />
               <div className="flipHint">Нажми, чтобы открыть</div>
             </div>
 
             <div className="col">
               <div>
-                <div className="title" style={{ fontSize: 16 }}>{daily.titleRu}</div>
-                <p className="text" style={{ marginTop: 6 }}>{daily.meaningRu}</p>
+                <div className="title" style={{ fontSize: 16 }}>
+                  {daily.titleRu}
+                </div>
+                <p className="text" style={{ marginTop: 6 }}>
+                  {daily.meaningRu}
+                </p>
               </div>
+
               <div>
-                <div className="small"><b>Совет</b></div>
-                <p className="text" style={{ marginTop: 6 }}>{daily.adviceRu}</p>
+                <div className="small">
+                  <b>Совет</b>
+                </div>
+                <p className="text" style={{ marginTop: 6 }}>
+                  {daily.adviceRu}
+                </p>
               </div>
             </div>
           </div>
