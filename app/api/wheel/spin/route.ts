@@ -15,20 +15,19 @@ function needsGen(s: unknown) {
   const bad =
     t.includes("Сделай один небольшой шаг") ||
     t.includes("Сделай паузу, выдохни") ||
-    t.includes("Выбери один практичный шаг") ||
-    t.includes("Не торопи события: сделай один спокойный шаг") ||
-    t.includes("тонкий знак: сейчас важно") ||
     t.includes("знак дня: многое проясняется") ||
-    t.includes("собери мысли и выбери") ||
-    t.includes("постепенно") ||
-    t.includes("внутреннее равновесие");
+    t.includes("тонкий знак: сейчас важно") ||
+    t.includes("Выбери один практичный шаг");
 
   if (bad) return true;
   if (t.length < 60) return true;
   return false;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "1";
+
   const token = cookies().get("session")?.value;
   if (!token) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
@@ -40,7 +39,9 @@ export async function POST() {
   let meaningRu = card.meaningRu;
   let adviceRu = card.adviceRu;
 
-  if (needsGen(meaningRu) || needsGen(adviceRu)) {
+  let aiSource: "ai" | "fallback" | "stored" = "stored";
+
+  if (force || needsGen(meaningRu) || needsGen(adviceRu)) {
     const gen = await generateCardReadingRu({
       titleRu: card.titleRu,
       kind: "wheel",
@@ -48,37 +49,35 @@ export async function POST() {
 
     meaningRu = gen.meaningRu;
     adviceRu = gen.adviceRu;
+    aiSource = gen._source;
 
-    // best-effort сохранение (если у тебя есть wheelSpin модель/запись)
+    // best-effort сохранение, если у тебя есть wheelSpin таблица
     try {
       const p: any = prisma;
-
-      // иногда result может содержать id записи спина
-      const spinId = result?.spin?.id ?? result?.spinId ?? card?.spinId ?? null;
-
+      const spinId = result?.spin?.id ?? result?.spinId ?? null;
       if (spinId && p.wheelSpin?.update) {
         await p.wheelSpin.update({
           where: { id: spinId },
-          data: { meaningRu, adviceRu },
-        });
-      } else if (card?.id && p.wheelSpin?.update) {
-        // на случай если card.id = id спина (как было у тебя раньше)
-        await p.wheelSpin.update({
-          where: { id: card.id },
           data: { meaningRu, adviceRu },
         });
       }
     } catch {}
   }
 
-  return NextResponse.json({
-    already: result.already,
-    card: {
-      slug: card.slug,
-      titleRu: card.titleRu,
-      meaningRu,
-      adviceRu,
-      image: resolveCardImage(card.slug),
+  return NextResponse.json(
+    {
+      already: result.already,
+      card: {
+        slug: card.slug,
+        titleRu: card.titleRu,
+        meaningRu,
+        adviceRu,
+        image: resolveCardImage(card.slug),
+      },
+      aiSource,
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      forced: force,
     },
-  });
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
