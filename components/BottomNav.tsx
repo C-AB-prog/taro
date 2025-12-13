@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { IconHome, IconSpread, IconDeck, IconArchive } from "@/components/Icons";
 
 export function BottomNav() {
   const p = usePathname();
-  const item = (href: string, label: string) => {
+
+  const item = (href: string, label: string, Icon: any) => {
     const active = p === href;
     return (
       <Link className={`navItem ${active ? "navItemActive" : ""}`} href={href}>
-        {label}
+        <Icon />
+        <div>{label}</div>
       </Link>
     );
   };
@@ -17,10 +20,10 @@ export function BottomNav() {
   return (
     <div className="nav">
       <div className="navInner">
-        {item("/", "Главная")}
-        {item("/spreads", "Расклады")}
-        {item("/deck", "Колода")}
-        {item("/archive", "Архив")}
+        {item("/", "Главная", IconHome)}
+        {item("/spreads", "Расклады", IconSpread)}
+        {item("/deck", "Колода", IconDeck)}
+        {item("/archive", "Архив", IconArchive)}
       </div>
     </div>
   );
