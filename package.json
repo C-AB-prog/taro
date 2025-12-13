@@ -9,6 +9,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "framer-motion": "^11.0.0"
     "@prisma/client": "^5.20.0",
     "dayjs": "^1.11.11",
     "jose": "^5.9.6",
