@@ -1,248 +1,265 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ruTitleFromSlug } from "@/lib/ruTitles";
+import { useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { Modal } from "@/components/Modal";
 
 type WheelCard = {
-  slug?: string;
-  titleRu?: string;
+  slug: string;
+  image: string;
+  titleRu: string;
   meaningRu: string;
   adviceRu: string;
-  image: string;
 };
 
-type WheelArchiveItem = any;
-
-function dayKeyLocal(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-}
-
-function minutesToNextLocalDay() {
+function minutesUntilNextDay() {
   const now = new Date();
   const next = new Date(now);
-  next.setHours(24, 0, 0, 0);
-  const ms = Math.max(0, next.getTime() - Date.now());
-  return Math.ceil(ms / 60000);
+  next.setHours(24, 0, 0, 0); // ближайшая полночь
+  const mins = Math.ceil((next.getTime() - now.getTime()) / 60000);
+  return Math.max(0, mins);
 }
 
-function pickTs(x: any) {
-  return String(x?.createdAt ?? x?.date ?? x?.ts ?? "");
-}
+async function apiSpin(): Promise<{ already: boolean; card: WheelCard }> {
+  const r = await fetch("/api/wheel/spin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    cache: "no-store",
+  });
 
-function toWheelCard(w: any): WheelCard | null {
-  const c = w?.card ?? w;
-  const image = c?.image ?? w?.image;
-  const meaningRu = c?.meaningRu ?? w?.meaningRu;
-  const adviceRu = c?.adviceRu ?? w?.adviceRu;
-  const slug = c?.slug ?? w?.slug;
-  const titleRu = c?.titleRu ?? w?.titleRu;
-  if (!image || !meaningRu || !adviceRu) return null;
-  return { image: String(image), meaningRu: String(meaningRu), adviceRu: String(adviceRu), slug, titleRu };
-}
-
-function titleFor(c: WheelCard | null) {
-  if (!c) return "Карта";
-  if (c.slug) return ruTitleFromSlug(c.slug);
-  return c.titleRu ?? "Карта";
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = d?.error || "SPIN_FAILED";
+    const e = new Error(err);
+    (e as any).status = r.status;
+    throw e;
+  }
+  return { already: !!d?.already, card: d?.card as WheelCard };
 }
 
 export function Wheel() {
-  const [loading, setLoading] = useState(true);
-  const [canSpin, setCanSpin] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
-
-  const [todayItem, setTodayItem] = useState<WheelArchiveItem | null>(null);
+  const size = useMemo(() => "min(320px, 84vw)", []);
 
   const [rot, setRot] = useState(0);
   const [spinning, setSpinning] = useState(false);
 
-  const [openToday, setOpenToday] = useState(false);
-  const [todayCard, setTodayCard] = useState<WheelCard | null>(null);
+  const pendingRef = useRef<{ already: boolean; card: WheelCard } | null>(null);
 
-  const todayKey = useMemo(() => dayKeyLocal(new Date()), []);
+  const [card, setCard] = useState<WheelCard | null>(null);
+  const [open, setOpen] = useState(false);
 
-  async function loadStatus() {
-    setLoading(true);
+  const [info, setInfo] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function haptic(type: "light" | "success" | "error") {
+    const h = (globalThis as any)?.Telegram?.WebApp?.HapticFeedback;
     try {
-      const r = await fetch("/api/archive", { cache: "no-store" });
-      const d = await r.json().catch(() => ({}));
-      const wheel: WheelArchiveItem[] = d?.wheel ?? d?.wheelSpins ?? d?.wheelItems ?? [];
+      if (type === "light") h?.impactOccurred?.("light");
+      if (type === "success") h?.notificationOccurred?.("success");
+      if (type === "error") h?.notificationOccurred?.("error");
+    } catch {}
+  }
 
-      const found = (wheel || []).find((it) => {
-        const ts = pickTs(it);
-        const dt = ts ? new Date(ts) : null;
-        if (!dt || Number.isNaN(dt.getTime())) return false;
-        return dayKeyLocal(dt) === todayKey;
-      });
+  async function onSpin() {
+    if (spinning) return;
 
-      setTodayItem(found ?? null);
+    setErr(null);
+    setInfo("Проверяю…");
+    haptic("light");
 
-      const c = found ? toWheelCard(found) : null;
-      setTodayCard(c);
+    try {
+      // сначала узнаём результат
+      const res = await apiSpin();
 
-      if (found) {
-        setCanSpin(false);
-        setHint(`Ты уже крутил(а) сегодня. Вернись через ~${minutesToNextLocalDay()} мин.`);
+      // если уже крутили — НЕ анимируем, просто показываем
+      if (res.already) {
+        setInfo(`Сегодня ты уже крути(л/ла). Вернись через ${minutesUntilNextDay()} мин.`);
+        setCard(res.card);
+        setOpen(true);
+        return;
+      }
+
+      // иначе запускаем анимацию и откроем результат после остановки
+      pendingRef.current = res;
+      setInfo("Крутим колесо…");
+      setSpinning(true);
+
+      const extra = 1440 + Math.floor(Math.random() * 360); // 4+ оборота
+      setRot((v) => v + extra);
+    } catch (e: any) {
+      const status = e?.status;
+      if (status === 401 || e?.message === "UNAUTHORIZED") {
+        setErr("Нет сессии. Открой мини-приложение через Telegram и попробуй ещё раз.");
       } else {
-        setCanSpin(true);
-        setHint(null);
+        setErr("Не удалось прокрутить. Попробуй ещё раз.");
       }
-    } catch {
-      setCanSpin(true);
-    } finally {
-      setLoading(false);
+      setInfo(null);
+      haptic("error");
     }
   }
 
-  useEffect(() => {
-    loadStatus();
-    const t = setInterval(() => {
-      if (!canSpin) setHint(`Ты уже крутил(а) сегодня. Вернись через ~${minutesToNextLocalDay()} мин.`);
-    }, 30000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayKey]);
-
-  async function spin() {
-    if (loading || spinning) return;
-
-    if (!canSpin) {
-      setHint(`Ты уже крутил(а) сегодня. Вернись через ~${minutesToNextLocalDay()} мин.`);
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning");
-      return;
-    }
-
-    setSpinning(true);
-    setHint(null);
-
-    try {
-      const r = await fetch("/api/wheel/spin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setHint(String(d?.message ?? d?.error ?? "Не удалось прокрутить."));
-        setSpinning(false);
-        return;
-      }
-
-      const picked: WheelCard | null = d?.card ?? null;
-      if (!picked) {
-        setHint("Не удалось получить карту.");
-        setSpinning(false);
-        return;
-      }
-
-      const extraTurns = 360 * (5 + Math.floor(Math.random() * 2));
-      const offset = Math.floor(Math.random() * 360);
-      setRot((v) => v + extraTurns + offset);
-
-      setTimeout(async () => {
-        setTodayCard(picked);
-        setOpenToday(true);
-        setSpinning(false);
-        // перезагрузим статус, чтобы появилась “какая карта”
-        await loadStatus();
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-      }, 2600);
-    } catch {
-      setHint("Сеть шалит. Попробуй ещё раз.");
-      setSpinning(false);
-    }
+  function openTodayCard() {
+    if (!card) return;
+    setOpen(true);
+    haptic("light");
   }
 
-  async function openTodayCard() {
-    // если почему-то потеряли todayCard — обновим статус
-    if (!todayCard) await loadStatus();
-    setOpenToday(true);
-  }
+  const wheelBg = useMemo(
+    () =>
+      // чуть более “колесо”, но минималистично
+      "repeating-conic-gradient(from 0deg, rgba(176,142,66,.32) 0deg 14deg, rgba(26,22,16,.06) 14deg 28deg)",
+    []
+  );
 
   return (
     <div className="card">
-      <div className="title">Колесо фортуны</div>
-      <div className="small" style={{ marginTop: 4 }}>
-        Один раз в день. Если уже крутили — покажу, через сколько минут можно снова.
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <div>
+          <div className="title">Колесо фортуны</div>
+          <div className="small">Можно крутить 1 раз в сутки</div>
+        </div>
+
+        {card ? (
+          <button className="btn btnGhost" onClick={openTodayCard} style={{ padding: "10px 12px" }}>
+            Какая карта выпала?
+          </button>
+        ) : (
+          <div className="small" style={{ opacity: 0.8 }}>
+            —
+          </div>
+        )}
       </div>
 
       <div style={{ height: 12 }} />
 
-      <div className="wheelMinimal">
-        <div className="wheelPointerDown" aria-hidden="true" />
-        <div className="wheelRing">
+      {/* стрелка над колесом, вниз */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ marginBottom: 8 }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M7 14l5 6 5-6" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+          </svg>
+        </div>
+
+        <motion.div
+          style={{
+            width: size,
+            height: size,
+            borderRadius: "999px",
+            position: "relative",
+            background: wheelBg,
+            border: "2px solid rgba(176,142,66,.65)",
+            boxShadow: "0 14px 40px rgba(0,0,0,.08)",
+            touchAction: "manipulation",
+          }}
+          animate={{ rotate: rot }}
+          transition={{
+            duration: spinning ? 2.2 : 0,
+            ease: [0.1, 0.9, 0.2, 1],
+          }}
+          onAnimationComplete={() => {
+            if (!spinning) return;
+
+            setSpinning(false);
+            const res = pendingRef.current;
+            pendingRef.current = null;
+
+            if (res?.card) {
+              setCard(res.card);
+              setOpen(true);
+              setInfo("Готово ✨");
+              haptic("success");
+              setTimeout(() => setInfo(null), 1200);
+            } else {
+              setInfo(null);
+            }
+          }}
+        >
+          {/* центр */}
           <div
-            className="wheelSpin"
             style={{
-              transform: `rotate(${rot}deg)`,
-              transition: spinning ? "transform 2.6s cubic-bezier(.14,.76,.18,1)" : "transform .18s ease",
-              willChange: "transform",
+              position: "absolute",
+              inset: "18%",
+              borderRadius: "999px",
+              background: "rgba(255,255,255,.78)",
+              border: "1px solid rgba(20,16,10,.10)",
+              display: "grid",
+              placeItems: "center",
             }}
           >
-            <div className="wheelFace" />
-          </div>
-          <div className="wheelCenter">
-            <div className="wheelDot" />
-          </div>
-        </div>
-      </div>
-
-      {todayCard ? (
-        <div className="small" style={{ marginTop: 10 }}>
-          Сегодня выпало: <b>{titleFor(todayCard)}</b>
-        </div>
-      ) : null}
-
-      {hint ? <div className="small" style={{ marginTop: 8 }}>{hint}</div> : null}
-
-      <div style={{ height: 12 }} />
-
-      <button
-        className={`btn ${canSpin ? "btnPrimary" : "btnGhost"}`}
-        style={{ width: "100%" }}
-        onClick={spin}
-        disabled={loading || spinning}
-      >
-        {loading ? "Проверяю…" : spinning ? "Крутим…" : "Прокрутить колесо"}
-      </button>
-
-      {todayCard ? (
-        <div style={{ marginTop: 10 }}>
-          <button className="btn btnGhost" style={{ width: "100%" }} onClick={openTodayCard}>
-            Какая карта сегодня выпала
-          </button>
-        </div>
-      ) : null}
-
-      {/* “модалка как в раскладах” — внутри блока, не ломает скролл */}
-      {openToday && todayCard ? (
-        <div style={{ marginTop: 12 }}>
-          <div className="card" style={{ padding: 12 }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-              <div className="title" style={{ fontSize: 14 }}>{titleFor(todayCard)}</div>
-              <button className="btn btnGhost" style={{ padding: "8px 10px" }} onClick={() => setOpenToday(false)}>
-                Закрыть
-              </button>
-            </div>
-
-            <div style={{ height: 10 }} />
-
-            <div className="row">
-              <img className="img" src={todayCard.image} alt={titleFor(todayCard)} loading="lazy" decoding="async" />
-              <div className="col">
-                <p className="text">{todayCard.meaningRu}</p>
-                <div className="adviceBox" style={{ marginTop: 12 }}>
-                  <div className="adviceTitle">Совет</div>
-                  <div className="adviceText">{todayCard.adviceRu}</div>
-                </div>
+            <div style={{ textAlign: "center", padding: 10 }}>
+              <div className="small" style={{ fontWeight: 800 }}>
+                ✨
+              </div>
+              <div className="small" style={{ opacity: 0.85 }}>
+                {spinning ? "…" : "Тапни\nчтобы крутить"}
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        </motion.div>
+
+        <div style={{ height: 12 }} />
+
+        <button
+          className="btn btnPrimary"
+          style={{ width: "100%" }}
+          onClick={onSpin}
+          disabled={spinning}
+        >
+          {spinning ? "Крутим…" : "Крутить колесо"}
+        </button>
+
+        {info ? (
+          <div className="small" style={{ marginTop: 10 }}>
+            {info}
+          </div>
+        ) : null}
+
+        {err ? (
+          <div className="small" style={{ marginTop: 10 }}>
+            <b>Ошибка:</b> {err}
+          </div>
+        ) : null}
+      </div>
+
+      <Modal
+        open={open}
+        title={card?.titleRu ? `Колесо: ${card.titleRu}` : "Колесо"}
+        onClose={() => setOpen(false)}
+      >
+        {!card ? (
+          <p className="text">…</p>
+        ) : (
+          <div className="row">
+            <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
+            <div className="col">
+              <div className="title" style={{ fontSize: 16 }}>
+                {card.titleRu}
+              </div>
+
+              <div className="small" style={{ marginTop: 2 }}>
+                Что означает
+              </div>
+
+              <p className="text" style={{ marginTop: 8 }}>
+                {card.meaningRu}
+              </p>
+
+              <div className="adviceBox" style={{ marginTop: 12 }}>
+                <div className="adviceTitle">Совет</div>
+                <div className="adviceText">{card.adviceRu}</div>
+              </div>
+
+              <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
+                {minutesUntilNextDay() > 0
+                  ? `Следующая попытка через ${minutesUntilNextDay()} мин.`
+                  : "Скоро можно крутить снова."}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
