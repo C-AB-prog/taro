@@ -4,6 +4,7 @@ import { verifySession } from "@/lib/auth";
 import { spinWheel, resolveCardImage } from "@/lib/tarot";
 import { generateCardReadingRu } from "@/lib/tarotReadings";
 import { prisma } from "@/lib/prisma";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,14 +37,18 @@ export async function POST(req: Request) {
 
   const card: any = result.card;
 
+  // ✅ русское имя всегда по slug
+  const titleRu = ruTitleFromSlug(card.slug) || String(card.titleRu ?? "");
+
   let meaningRu = card.meaningRu;
   let adviceRu = card.adviceRu;
 
   let aiSource: "ai" | "fallback" | "stored" = "stored";
 
+  // даже если already=true — мы всё равно можем перегенерить тексты (для теста/починки)
   if (force || needsGen(meaningRu) || needsGen(adviceRu)) {
     const gen = await generateCardReadingRu({
-      titleRu: card.titleRu,
+      titleRu,
       kind: "wheel",
     });
 
@@ -51,14 +56,14 @@ export async function POST(req: Request) {
     adviceRu = gen.adviceRu;
     aiSource = gen._source;
 
-    // best-effort сохранение, если у тебя есть wheelSpin таблица
+    // best-effort сохранение (если у тебя есть wheelSpin таблица)
     try {
       const p: any = prisma;
       const spinId = result?.spin?.id ?? result?.spinId ?? null;
       if (spinId && p.wheelSpin?.update) {
         await p.wheelSpin.update({
           where: { id: spinId },
-          data: { meaningRu, adviceRu },
+          data: { titleRu, meaningRu, adviceRu },
         });
       }
     } catch {}
@@ -69,7 +74,7 @@ export async function POST(req: Request) {
       already: result.already,
       card: {
         slug: card.slug,
-        titleRu: card.titleRu,
+        titleRu,
         meaningRu,
         adviceRu,
         image: resolveCardImage(card.slug),
