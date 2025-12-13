@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { Wheel } from "@/components/Wheel";
 import { FlipCard } from "@/components/FlipCard";
 import { RitualHeader } from "@/components/RitualHeader";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
 
@@ -17,6 +18,8 @@ export default function HomePage() {
       .then((r) => r.json())
       .then((d) => setDaily(d.card));
   }, []);
+
+  const dailyTitle = daily ? (ruTitleFromSlug(daily.slug) || daily.titleRu) : "";
 
   return (
     <AppShell title="Главная">
@@ -38,7 +41,7 @@ export default function HomePage() {
 
         {!daily ? (
           <div className="row">
-            <div className="shimmer" style={{ width: 96, height: 156 }} />
+            <div className="shimmer" style={{ width: 96, height: 156, borderRadius: 14 }} />
             <div className="col">
               <div className="shimmer" style={{ height: 16, width: "60%" }} />
               <div className="shimmer" style={{ height: 12, width: "92%" }} />
@@ -54,7 +57,7 @@ export default function HomePage() {
               <FlipCard
                 frontSrc={daily.image}
                 backSrc={"/cards/card-back.jpg"}
-                alt={daily.titleRu}
+                alt={dailyTitle}
                 startSide="back"
                 allowFlipBack={true}
               />
@@ -64,7 +67,7 @@ export default function HomePage() {
             <div className="col">
               <div>
                 <div className="title" style={{ fontSize: 16 }}>
-                  {daily.titleRu}
+                  {dailyTitle}
                 </div>
                 <p className="text" style={{ marginTop: 6 }}>
                   {daily.meaningRu}
