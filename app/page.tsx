@@ -6,6 +6,7 @@ import { RitualHeader } from "@/components/RitualHeader";
 import { Modal } from "@/components/Modal";
 import { Wheel } from "@/components/Wheel";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
+import { apiGetOrPostFirst, apiJson } from "@/lib/api";
 
 type DailyCard = {
   slug?: string;
@@ -18,7 +19,7 @@ type DailyCard = {
 function titleFor(c: DailyCard | null) {
   if (!c) return "";
   if (c.slug) return ruTitleFromSlug(c.slug);
-  return c.titleRu ?? "Карта дня";
+  return c.titleRu ?? "Карта";
 }
 
 export default function HomePage() {
@@ -27,7 +28,6 @@ export default function HomePage() {
   const [flipped, setFlipped] = useState(false);
 
   const [balance, setBalance] = useState<number | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(true);
   const [shopOpen, setShopOpen] = useState(false);
 
   const [errOpen, setErrOpen] = useState(false);
@@ -40,56 +40,46 @@ export default function HomePage() {
   useEffect(() => {
     async function loadDaily() {
       setDailyLoading(true);
-      try {
-        const r = await fetch("/api/daily", { cache: "no-store" });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          setErrText(String(d?.message ?? d?.error ?? "Не удалось получить карту дня."));
-          setErrOpen(true);
-          return;
-        }
-        setDaily(d?.card ?? d);
-      } catch {
-        setErrText("Сеть шалит. Не удалось загрузить карту дня.");
+      setFlipped(false);
+
+      // пробуем разные варианты роутов (на случай если у тебя другой путь)
+      const res = await apiGetOrPostFirst([
+        "/api/daily",
+        "/api/day",
+        "/api/card/day",
+        "/api/tarot/daily",
+      ]);
+
+      if (!res.ok) {
+        const msg = String(res.data?.message ?? res.data?.error ?? "Не удалось получить карту дня.");
+        setErrText(msg);
         setErrOpen(true);
-      } finally {
+        setDaily(null);
         setDailyLoading(false);
+        return;
       }
+
+      setDaily(res.data?.card ?? res.data);
+      setDailyLoading(false);
     }
+
     loadDaily();
   }, []);
 
   useEffect(() => {
     async function loadBalance() {
-      setBalanceLoading(true);
-      try {
-        const r = await fetch("/api/me", { cache: "no-store" });
-        const d = await r.json().catch(() => ({}));
+      // баланс может быть в разных роутах — пробуем мягко
+      const res = await apiGetOrPostFirst(["/api/me", "/api/user", "/api/profile"]);
+      if (!res.ok) return;
 
-        // если /api/me отсутствует — просто не ломаем UI
-        if (r.status === 404) {
-          setBalance(null);
-          return;
-        }
-        if (!r.ok) {
-          setBalance(null);
-          return;
-        }
+      const b =
+        typeof res.data?.balance === "number"
+          ? res.data.balance
+          : typeof res.data?.user?.balance === "number"
+          ? res.data.user.balance
+          : null;
 
-        // поддержим разные форматы ответа
-        const b =
-          typeof d?.balance === "number"
-            ? d.balance
-            : typeof d?.user?.balance === "number"
-            ? d.user.balance
-            : null;
-
-        setBalance(b);
-      } catch {
-        setBalance(null);
-      } finally {
-        setBalanceLoading(false);
-      }
+      setBalance(b);
     }
     loadBalance();
   }, []);
@@ -100,18 +90,21 @@ export default function HomePage() {
   }
 
   return (
-    <AppShell title="Карта дня">
-      {/* Баланс + магазин */}
-      <div className="card" style={{ padding: 12 }}>
-        <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
+    <AppShell title="Главная">
+      <h1 className="h1">Главная</h1>
+      <RitualHeader label="Твой знак на сегодня" />
+
+      {/* Карта дня + баланс */}
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div className="title">Карта Дня</div>
+            <div className="title">Карта дня</div>
             <div className="small">Сегодня: {todayRu} • карта общая для всех</div>
           </div>
 
           <div className="row" style={{ gap: 8, alignItems: "center" }}>
             <div className="badge" style={{ padding: "8px 10px" }}>
-              {balanceLoading ? "…" : balance === null ? "—" : balance}
+              {balance === null ? "—" : balance}
             </div>
 
             <button
@@ -123,19 +116,6 @@ export default function HomePage() {
               +
             </button>
           </div>
-        </div>
-      </div>
-
-      <div style={{ height: 12 }} />
-
-      <h1 className="h1">Главная</h1>
-      <RitualHeader label="Твой знак на сегодня" />
-
-      {/* Карта дня */}
-      <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-          <div className="title">Карта дня</div>
-          <div className="small">{flipped ? "Открыто" : "Нажми на карту"}</div>
         </div>
 
         <div style={{ height: 12 }} />
@@ -153,19 +133,14 @@ export default function HomePage() {
             </div>
           </div>
         ) : !daily ? (
-          <div className="small">Не удалось загрузить карту дня.</div>
+          <div className="small">Карта дня сейчас недоступна.</div>
         ) : (
           <div className="row">
             {/* Flip */}
             <button
               className="pressable"
               onClick={onFlip}
-              style={{
-                border: "none",
-                background: "transparent",
-                padding: 0,
-                cursor: "pointer",
-              }}
+              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
               aria-label="Открыть карту дня"
             >
               <div className="flipWrap">
@@ -176,27 +151,20 @@ export default function HomePage() {
                     transition: "transform 700ms cubic-bezier(.2,.7,.2,1)",
                   }}
                 >
-                  {/* FRONT (рубашка) */}
                   <div className="flipFace">
-                    <img
-                      src="/cards/card-back.jpg"
-                      alt="Рубашка карты"
-                      loading="lazy"
-                      decoding="async"
-                    />
+                    <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" />
                     <div className="flipShine" />
                   </div>
 
-                  {/* BACK (лицо карты) */}
                   <div className="flipFace flipBack">
                     <img src={daily.image} alt={titleFor(daily)} loading="lazy" decoding="async" />
                   </div>
                 </div>
               </div>
+
               <div className="flipHint">{flipped ? "Твоя карта" : "Нажми, чтобы открыть"}</div>
             </button>
 
-            {/* Text */}
             <div className="col">
               <div className="title" style={{ fontSize: 16 }}>
                 {flipped ? titleFor(daily) : "…"}
@@ -212,7 +180,7 @@ export default function HomePage() {
                     {daily.meaningRu}
                   </p>
 
-                  {/* ✅ Выделенный совет */}
+                  {/* ✅ выделенный совет */}
                   <div className="adviceBox" style={{ marginTop: 12 }}>
                     <div className="adviceTitle">Совет</div>
                     <div className="adviceText">{daily.adviceRu}</div>
@@ -226,17 +194,13 @@ export default function HomePage() {
 
       <div style={{ height: 12 }} />
 
-      {/* Колесо фортуны */}
+      {/* Колесо */}
       <Wheel />
 
       {/* Магазин */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">
-          Telegram Stars подключим позже — сейчас это заглушка.
-        </div>
-
+        <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
         <div style={{ height: 10 }} />
-
         <div className="card" style={{ padding: 12 }}>
           <div className="title">Паки валюты</div>
           <div className="small" style={{ marginTop: 6 }}>
@@ -245,11 +209,9 @@ export default function HomePage() {
         </div>
       </Modal>
 
-      {/* Ошибка (красиво, без alert) */}
+      {/* Ошибка красиво */}
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
-        <p className="text" style={{ whiteSpace: "pre-wrap" }}>
-          {errText}
-        </p>
+        <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
           Ок
