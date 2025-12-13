@@ -18,7 +18,7 @@ type SpreadKey =
 type SpreadMeta = {
   key: SpreadKey;
   title: string;
-  about: string; // краткое описание
+  about: string;
   cardsCount: number;
   price: number;
 };
@@ -40,7 +40,6 @@ function splitInterpretation(text: string) {
   const t = String(text || "").trim();
   if (!t) return { main: "", advice: "" };
 
-  // ищем "Совет:" (мы его добавляли в конце на сервере)
   const idx = t.toLowerCase().lastIndexOf("совет:");
   if (idx >= 0) {
     const main = t.slice(0, idx).trim();
@@ -57,53 +56,34 @@ function gridCols(n: number) {
   if (n === 5) return 3;
   if (n === 6) return 3;
   if (n === 9) return 3;
-  if (n === 10) return 2; // кельтский крест обычно красивее 2 колонки в модалке
+  if (n === 10) return 2;
   return 3;
 }
 
-function SpreadReveal({
-  view,
-  resetToken,
-}: {
-  view: SpreadView;
-  resetToken: string;
-}) {
+function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: string }) {
   const n = view.cards.length;
   const cols = gridCols(n);
 
   const [revealed, setRevealed] = useState<boolean[]>(() => Array(n).fill(false));
 
-  // авто-показ: по одной карте
+  // ✅ теперь: при новом раскладе просто закрываем всё, БЕЗ авто-флипа
   useEffect(() => {
     setRevealed(Array(n).fill(false));
-
-    let alive = true;
-    (async () => {
-      for (let i = 0; i < n; i++) {
-        if (!alive) return;
-        await new Promise((r) => setTimeout(r, 220));
-        if (!alive) return;
-        setRevealed((prev) => {
-          const next = prev.slice();
-          next[i] = true;
-          return next;
-        });
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
   }, [resetToken, n]);
 
-  const allOpen = revealed.every(Boolean);
+  const openedCount = useMemo(() => revealed.filter(Boolean).length, [revealed]);
   const { main, advice } = useMemo(() => splitInterpretation(view.interpretation), [view.interpretation]);
 
   return (
     <div>
-      <div className="card" style={{ marginTop: 10 }}>
-        <div className="small" style={{ opacity: 0.9 }}>
-          Карты уже выбраны. Запись сохранится в архиве и не изменится.
+      <div className="card" style={{ marginTop: 6 }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <div className="small" style={{ opacity: 0.92 }}>
+            Нажимай на карты, чтобы открыть.
+          </div>
+          <div className="small" style={{ opacity: 0.8 }}>
+            Открыто: {openedCount}/{n}
+          </div>
         </div>
       </div>
 
@@ -136,9 +116,9 @@ function SpreadReveal({
               }
               style={{
                 border: "1px solid rgba(20,16,10,.10)",
-                background: "rgba(255,255,255,.75)",
-                borderRadius: 16,
-                padding: 8,
+                background: "rgba(255,255,255,.78)",
+                borderRadius: 18,
+                padding: 10,
                 cursor: "pointer",
                 textAlign: "left",
               }}
@@ -154,14 +134,18 @@ function SpreadReveal({
                   style={{
                     transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
                     transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                    transformStyle: "preserve-3d",
                   }}
                 >
-                  <div className="flipFace">
+                  <div className="flipFace" style={{ backfaceVisibility: "hidden" }}>
                     <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" />
                     <div className="flipShine" />
                   </div>
 
-                  <div className="flipFace flipBack">
+                  <div
+                    className="flipFace flipBack"
+                    style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+                  >
                     <img src={c.image} alt={titleRu} loading="lazy" decoding="async" />
                   </div>
                 </div>
@@ -183,7 +167,7 @@ function SpreadReveal({
         </div>
 
         <div className="small" style={{ marginTop: 4 }}>
-          {allOpen ? "Смотри целиком — как настоящий таролог." : "Можно переворачивать карты — трактовка уже готова."}
+          Текст уже готов — можешь читать сразу или сначала открыть карты.
         </div>
 
         <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
@@ -209,56 +193,49 @@ export default function SpreadsPage() {
         title: "Три карты",
         cardsCount: 3,
         price: 125,
-        about:
-          "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
+        about: "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
       },
       {
         key: "celtic_cross",
         title: "Кельтский крест",
         cardsCount: 10,
         price: 1500,
-        about:
-          "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
+        about: "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
       },
       {
         key: "vokzal_dlya_dvoih",
         title: "Вокзал для двоих",
         cardsCount: 2,
         price: 250,
-        about:
-          "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
+        about: "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
       },
       {
         key: "doctor_aibolit",
         title: "Доктор Айболит",
         cardsCount: 9,
         price: 900,
-        about:
-          "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
+        about: "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
       },
       {
         key: "my_health",
         title: "Моё здоровье",
         cardsCount: 6,
         price: 450,
-        about:
-          "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
+        about: "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
       },
       {
         key: "money_tree",
         title: "Денежное дерево",
         cardsCount: 5,
         price: 500,
-        about:
-          "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
+        about: "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
       },
       {
         key: "money_on_barrel",
         title: "Деньги на бочку",
         cardsCount: 5,
         price: 600,
-        about:
-          "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
+        about: "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
       },
     ],
     []
@@ -268,7 +245,6 @@ export default function SpreadsPage() {
   const [view, setView] = useState<SpreadView | null>(null);
   const [open, setOpen] = useState(false);
   const [resetToken, setResetToken] = useState(String(Date.now()));
-
   const [err, setErr] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -284,7 +260,6 @@ export default function SpreadsPage() {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
-      // ✅ увеличили таймаут, чтобы Celtic Cross успевал
       const t = setTimeout(() => ctrl.abort(), 60000);
 
       const r = await fetch("/api/spreads/buy", {
@@ -301,13 +276,9 @@ export default function SpreadsPage() {
       const d = await r.json().catch(() => ({}));
 
       if (!r.ok) {
-        if (r.status === 401) {
-          setErr("Нет сессии. Открой мини-приложение через Telegram и попробуй снова.");
-        } else if (r.status === 402 || d?.error === "NOT_ENOUGH_BALANCE") {
-          setErr("Недостаточно баланса. Нажми «+» сверху, чтобы пополнить.");
-        } else {
-          setErr("Не удалось сделать расклад. Попробуй ещё раз.");
-        }
+        if (r.status === 401) setErr("Нет сессии. Открой мини-приложение через Telegram и попробуй снова.");
+        else if (r.status === 402 || d?.error === "NOT_ENOUGH_BALANCE") setErr("Недостаточно баланса. Нажми «+» сверху, чтобы пополнить.");
+        else setErr("Не удалось сделать расклад. Попробуй ещё раз.");
         setLoadingKey(null);
         return;
       }
@@ -322,16 +293,11 @@ export default function SpreadsPage() {
       setResetToken(String(Date.now()));
       setOpen(true);
 
-      // обновить баланс в шапке
       window.dispatchEvent(new Event("balance:refresh"));
-
       (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
     } catch (e: any) {
-      if (e?.name === "AbortError") {
-        setErr("Расклад готовится дольше обычного. Попробуй ещё раз (или проверь интернет).");
-      } else {
-        setErr("Ошибка сети. Попробуй ещё раз.");
-      }
+      if (e?.name === "AbortError") setErr("Расклад готовится дольше обычного. Попробуй ещё раз (или проверь интернет).");
+      else setErr("Ошибка сети. Попробуй ещё раз.");
     } finally {
       setLoadingKey(null);
     }
@@ -342,9 +308,7 @@ export default function SpreadsPage() {
       <RitualHeader label="Расклады" />
 
       <div className="card">
-        <div className="small">
-          Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.
-        </div>
+        <div className="small">Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.</div>
       </div>
 
       <div style={{ height: 12 }} />
@@ -359,16 +323,16 @@ export default function SpreadsPage() {
 
       <div style={{ height: err ? 12 : 0 }} />
 
-      <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "grid", gap: 12 }}>
         {spreads.map((s) => (
           <div key={s.key} className="card" style={{ padding: 14 }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
               <div>
                 <div className="title" style={{ fontSize: 16 }}>
                   {s.title}
                 </div>
                 <div className="small" style={{ marginTop: 2, opacity: 0.9 }}>
-                  {s.cardsCount} карт • {s.price} валюты
+                  {s.cardsCount} карт • <b>{s.price}</b> валюты
                 </div>
               </div>
 
@@ -376,7 +340,7 @@ export default function SpreadsPage() {
                 className="btn btnPrimary"
                 onClick={() => buy(s.key)}
                 disabled={!!loadingKey}
-                style={{ padding: "10px 12px" }}
+                style={{ padding: "10px 14px", borderRadius: 999 }}
               >
                 {loadingKey === s.key ? "Готовлю…" : "Сделать"}
               </button>
@@ -389,16 +353,8 @@ export default function SpreadsPage() {
         ))}
       </div>
 
-      <Modal
-        open={open}
-        title={view ? view.spreadTitle : "Расклад"}
-        onClose={() => setOpen(false)}
-      >
-        {!view ? (
-          <p className="text">…</p>
-        ) : (
-          <SpreadReveal view={view} resetToken={resetToken} />
-        )}
+      <Modal open={open} title={view ? view.spreadTitle : "Расклад"} onClose={() => setOpen(false)}>
+        {!view ? <p className="text">…</p> : <SpreadReveal view={view} resetToken={resetToken} />}
       </Modal>
     </AppShell>
   );
