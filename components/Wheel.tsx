@@ -15,9 +15,27 @@ type WheelCard = {
 function minutesUntilNextDay() {
   const now = new Date();
   const next = new Date(now);
-  next.setHours(24, 0, 0, 0); // ближайшая полночь
+  next.setHours(24, 0, 0, 0);
   const mins = Math.ceil((next.getTime() - now.getTime()) / 60000);
   return Math.max(0, mins);
+}
+
+async function ensureSessionClient() {
+  try {
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    const initData = tg?.initData;
+    if (!initData) return false;
+    const r = await fetch("/api/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ initData }),
+    });
+    const d = await r.json().catch(() => ({}));
+    return !!(r.ok && d?.ok);
+  } catch {
+    return false;
+  }
 }
 
 async function apiSpin(): Promise<{ already: boolean; card: WheelCard }> {
@@ -27,11 +45,9 @@ async function apiSpin(): Promise<{ already: boolean; card: WheelCard }> {
     credentials: "include",
     cache: "no-store",
   });
-
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const err = d?.error || "SPIN_FAILED";
-    const e = new Error(err);
+    const e = new Error(d?.error || "SPIN_FAILED");
     (e as any).status = r.status;
     throw e;
   }
@@ -65,25 +81,29 @@ export function Wheel() {
     if (spinning) return;
 
     setErr(null);
-    setInfo("Проверяю…");
+    setInfo(null);
     haptic("light");
 
     try {
-      // сначала узнаём результат
-      const res = await apiSpin();
+      let res = await apiSpin().catch(async (e: any) => {
+        if ((e?.status === 401 || e?.message === "UNAUTHORIZED") && (await ensureSessionClient())) {
+          return await apiSpin();
+        }
+        throw e;
+      });
 
-      // если уже крутили — НЕ анимируем, просто показываем
+      // уже крутили сегодня — не крутим анимацию, просто показываем
       if (res.already) {
-        setInfo(`Сегодня ты уже крути(л/ла). Вернись через ${minutesUntilNextDay()} мин.`);
         setCard(res.card);
         setOpen(true);
+        setInfo(`Сегодня уже крутили. Вернись через ${minutesUntilNextDay()} мин.`);
         return;
       }
 
-      // иначе запускаем анимацию и откроем результат после остановки
+      // иначе — запускаем анимацию и откроем результат после остановки
       pendingRef.current = res;
-      setInfo("Крутим колесо…");
       setSpinning(true);
+      setInfo("Крутим…");
 
       const extra = 1440 + Math.floor(Math.random() * 360); // 4+ оборота
       setRot((v) => v + extra);
@@ -99,16 +119,16 @@ export function Wheel() {
     }
   }
 
-  function openTodayCard() {
+  function openResult() {
     if (!card) return;
     setOpen(true);
     haptic("light");
   }
 
-  const wheelBg = useMemo(
+  // минималистичный “диск” с делениями (чёрно-золото, но светлая тема)
+  const diskBg = useMemo(
     () =>
-      // чуть более “колесо”, но минималистично
-      "repeating-conic-gradient(from 0deg, rgba(176,142,66,.32) 0deg 14deg, rgba(26,22,16,.06) 14deg 28deg)",
+      "repeating-conic-gradient(from -18deg, rgba(176,142,66,.26) 0deg 12deg, rgba(26,22,16,.04) 12deg 24deg)",
     []
   );
 
@@ -117,15 +137,15 @@ export function Wheel() {
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <div>
           <div className="title">Колесо фортуны</div>
-          <div className="small">Можно крутить 1 раз в сутки</div>
+          <div className="small">Крути 1 раз в сутки</div>
         </div>
 
         {card ? (
-          <button className="btn btnGhost" onClick={openTodayCard} style={{ padding: "10px 12px" }}>
+          <button className="btn btnGhost" onClick={openResult} style={{ padding: "10px 12px" }}>
             Какая карта выпала?
           </button>
         ) : (
-          <div className="small" style={{ opacity: 0.8 }}>
+          <div className="small" style={{ opacity: 0.75 }}>
             —
           </div>
         )}
@@ -133,67 +153,79 @@ export function Wheel() {
 
       <div style={{ height: 12 }} />
 
-      {/* стрелка над колесом, вниз */}
+      {/* стрелка НАД колесом (вниз) */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <div style={{ marginBottom: 8 }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M7 14l5 6 5-6" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <div style={{ marginBottom: 10, color: "rgba(26,22,16,.85)" }} aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path d="M12 3v13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M7 14l5 7 5-7" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
           </svg>
         </div>
 
         <motion.div
+          role="button"
+          aria-label="Колесо фортуны"
+          onClick={onSpin}
           style={{
             width: size,
             height: size,
-            borderRadius: "999px",
+            borderRadius: 999,
             position: "relative",
-            background: wheelBg,
-            border: "2px solid rgba(176,142,66,.65)",
-            boxShadow: "0 14px 40px rgba(0,0,0,.08)",
+            background: diskBg,
+            border: "2px solid rgba(176,142,66,.70)",
+            boxShadow: "0 16px 44px rgba(0,0,0,.08)",
             touchAction: "manipulation",
+            cursor: spinning ? "default" : "pointer",
           }}
           animate={{ rotate: rot }}
           transition={{
-            duration: spinning ? 2.2 : 0,
+            duration: spinning ? 2.25 : 0,
             ease: [0.1, 0.9, 0.2, 1],
           }}
           onAnimationComplete={() => {
             if (!spinning) return;
-
             setSpinning(false);
+
             const res = pendingRef.current;
             pendingRef.current = null;
 
             if (res?.card) {
               setCard(res.card);
               setOpen(true);
-              setInfo("Готово ✨");
-              haptic("success");
-              setTimeout(() => setInfo(null), 1200);
-            } else {
               setInfo(null);
+              haptic("success");
             }
           }}
         >
+          {/* внешний “обод” */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 10,
+              borderRadius: 999,
+              border: "1px solid rgba(26,22,16,.10)",
+              background: "rgba(255,255,255,.22)",
+            }}
+          />
           {/* центр */}
           <div
             style={{
               position: "absolute",
               inset: "18%",
-              borderRadius: "999px",
-              background: "rgba(255,255,255,.78)",
-              border: "1px solid rgba(20,16,10,.10)",
+              borderRadius: 999,
+              background: "rgba(255,255,255,.86)",
+              border: "1px solid rgba(20,16,10,.12)",
               display: "grid",
               placeItems: "center",
+              userSelect: "none",
             }}
           >
             <div style={{ textAlign: "center", padding: 10 }}>
-              <div className="small" style={{ fontWeight: 800 }}>
-                ✨
+              <div className="small" style={{ fontWeight: 900 }}>
+                {spinning ? "…" : "Тап"}
               </div>
-              <div className="small" style={{ opacity: 0.85 }}>
-                {spinning ? "…" : "Тапни\nчтобы крутить"}
+              <div className="small" style={{ opacity: 0.8, whiteSpace: "pre-line" }}>
+                {spinning ? "кручу" : "чтобы\nкрутить"}
               </div>
             </div>
           </div>
@@ -201,21 +233,11 @@ export function Wheel() {
 
         <div style={{ height: 12 }} />
 
-        <button
-          className="btn btnPrimary"
-          style={{ width: "100%" }}
-          onClick={onSpin}
-          disabled={spinning}
-        >
+        <button className="btn btnPrimary" style={{ width: "100%" }} onClick={onSpin} disabled={spinning}>
           {spinning ? "Крутим…" : "Крутить колесо"}
         </button>
 
-        {info ? (
-          <div className="small" style={{ marginTop: 10 }}>
-            {info}
-          </div>
-        ) : null}
-
+        {info ? <div className="small" style={{ marginTop: 10 }}>{info}</div> : null}
         {err ? (
           <div className="small" style={{ marginTop: 10 }}>
             <b>Ошибка:</b> {err}
@@ -252,9 +274,7 @@ export function Wheel() {
               </div>
 
               <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
-                {minutesUntilNextDay() > 0
-                  ? `Следующая попытка через ${minutesUntilNextDay()} мин.`
-                  : "Скоро можно крутить снова."}
+                Следующая попытка через {minutesUntilNextDay()} мин.
               </div>
             </div>
           </div>
