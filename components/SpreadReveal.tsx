@@ -7,6 +7,29 @@ export type SpreadCard = {
   image: string;
 };
 
+function splitAdvice(text: string): { body: string; advice: string } {
+  const t = (text ?? "").trim();
+  if (!t) return { body: "", advice: "" };
+
+  // Ищем явный "Совет:" (или "Рекомендация:")
+  const re = /(?:^|\n)\s*(совет|рекомендация)\s*[:—-]\s*/i;
+  const m = re.exec(t);
+
+  if (m && m.index >= 0) {
+    const idx = m.index;
+    const before = t.slice(0, idx).trim();
+    const after = t.slice(idx).replace(re, "").trim();
+    return { body: before, advice: after };
+  }
+
+  // Если "Совет:" нет — последняя смысловая часть = совет
+  const parts = t.split(/\n\s*\n/g).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return { body: "", advice: t };
+  const advice = parts[parts.length - 1];
+  const body = parts.slice(0, -1).join("\n\n");
+  return { body, advice };
+}
+
 export function SpreadReveal({
   cards,
   positions,
@@ -25,7 +48,6 @@ export function SpreadReveal({
   const [opened, setOpened] = useState<boolean[]>(() => cards.map(() => false));
 
   useEffect(() => {
-    // сброс при открытии нового расклада/архивной записи
     setOpened(cards.map(() => false));
   }, [resetToken, cards.length]);
 
@@ -45,6 +67,8 @@ export function SpreadReveal({
     setOpened(cards.map(() => true));
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
   }
+
+  const { body, advice } = useMemo(() => splitAdvice(interpretation), [interpretation]);
 
   return (
     <div>
@@ -93,25 +117,11 @@ export function SpreadReveal({
                 }}
               />
 
-              <div
-                className="small"
-                style={{
-                  marginTop: 8,
-                  fontWeight: 950,
-                  color: "var(--text)",
-                }}
-              >
+              <div className="small" style={{ marginTop: 8, fontWeight: 950, color: "var(--text)" }}>
                 {safePositions[i]}
               </div>
 
-              <div
-                className="small"
-                style={{
-                  marginTop: 2,
-                  opacity: 0.95,
-                  color: "var(--muted)",
-                }}
-              >
+              <div className="small" style={{ marginTop: 2, opacity: 0.95, color: "var(--muted)" }}>
                 {isOpen ? "Открыта" : "Нажми, чтобы открыть"}
               </div>
             </button>
@@ -132,20 +142,25 @@ export function SpreadReveal({
           <div style={{ height: 12 }} />
           <div className="hr" />
 
-          <div className="small" style={{ marginTop: 10 }}>
-            <b>Трактовка</b>
-          </div>
+          {body ? (
+            <>
+              <div className="small" style={{ marginTop: 10 }}>
+                <b>Трактовка</b>
+              </div>
+              <p className="text" style={{ marginTop: 8, color: "var(--text)", whiteSpace: "pre-wrap" }}>
+                {body}
+              </p>
+            </>
+          ) : null}
 
-          <p
-            className="text"
-            style={{
-              marginTop: 8,
-              color: "var(--text)",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {interpretation}
-          </p>
+          {advice ? (
+            <div className="adviceBox" style={{ marginTop: 12 }}>
+              <div className="adviceTitle">Совет</div>
+              <div className="adviceText" style={{ whiteSpace: "pre-wrap" }}>
+                {advice}
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>
