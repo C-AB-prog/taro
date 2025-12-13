@@ -21,7 +21,6 @@ type WheelItem = {
 
   card?: WheelCard;
 
-  // fallback если сохраняете напрямую
   slug?: string;
   titleRu?: string;
   meaningRu?: string;
@@ -113,7 +112,6 @@ export default function ArchivePage() {
 
   const itemsAll: Item[] = useMemo(() => {
     const d = raw ?? {};
-
     const wheelRaw: WheelItem[] = d.wheel ?? d.wheelSpins ?? d.wheelItems ?? [];
     const spreadsRaw: SpreadItem[] = d.spreads ?? d.spreadPurchases ?? d.purchases ?? [];
 
@@ -129,7 +127,6 @@ export default function ArchivePage() {
       s,
     }));
 
-    // ✅ сначала расклады, потом колесо (каждый список по убыванию времени)
     spreadItems.sort((a, b) => toTime(b.ts) - toTime(a.ts));
     wheelItems.sort((a, b) => toTime(b.ts) - toTime(a.ts));
 
@@ -151,24 +148,13 @@ export default function ArchivePage() {
 
   return (
     <AppShell>
-      <h1 className="h1">Архив</h1>
-      <div className="small">История колеса и купленных раскладов (не меняется).</div>
-
-      <div style={{ height: 12 }} />
-
       <div className="card">
         <div className="title">Фильтр</div>
         <div style={{ height: 10 }} />
         <div className="segRow">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
-            Все
-          </button>
-          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>
-            Расклады
-          </button>
-          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>
-            Колесо
-          </button>
+          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
+          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>Расклады</button>
+          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>Колесо</button>
         </div>
       </div>
 
@@ -276,7 +262,6 @@ export default function ArchivePage() {
                   <div className="title" style={{ fontSize: 16 }}>{title}</div>
                   <p className="text" style={{ marginTop: 6 }}>{c.meaningRu}</p>
 
-                  {/* ✅ В архиве колеса совет выделяется */}
                   <div className="adviceBox" style={{ marginTop: 12 }}>
                     <div className="adviceTitle">Совет</div>
                     <div className="adviceText">{c.adviceRu}</div>
