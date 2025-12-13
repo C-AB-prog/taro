@@ -43,11 +43,23 @@ export default function ArchivePage() {
 
   const items: Item[] = useMemo(() => {
     if (!data) return [];
-    const all: Item[] = [
-      ...data.wheel.map((w) => ({ kind: "wheel", ts: w.date, w })),
-      ...data.spreads.map((s) => ({ kind: "spread", ts: s.createdAt, s })),
-    ];
-    all.sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
+
+    const wheelItems: Item[] = data.wheel.map((w) => ({
+      kind: "wheel" as const,
+      ts: w.date,
+      w,
+    }));
+
+    const spreadItems: Item[] = data.spreads.map((s) => ({
+      kind: "spread" as const,
+      ts: s.createdAt,
+      s,
+    }));
+
+    const all: Item[] = [...wheelItems, ...spreadItems].sort(
+      (a, b) => +new Date(b.ts) - +new Date(a.ts)
+    );
+
     if (filter === "wheel") return all.filter((x) => x.kind === "wheel");
     if (filter === "spread") return all.filter((x) => x.kind === "spread");
     return all;
@@ -79,7 +91,9 @@ export default function ArchivePage() {
 
   const resetToken = useMemo(() => {
     if (!spreadItem) return "none";
-    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}|${spreadItem.createdAt}`;
+    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards
+      .map((c) => c.slug)
+      .join(",")}|${spreadItem.createdAt}`;
   }, [spreadItem]);
 
   const spreadPositions =
@@ -159,7 +173,13 @@ export default function ArchivePage() {
                   onClick={() => openWheel(w)}
                 >
                   <div className="archiveRow">
-                    <img className="thumb" src={w.card.image} alt={w.card.titleRu} loading="lazy" decoding="async" />
+                    <img
+                      className="thumb"
+                      src={w.card.image}
+                      alt={w.card.titleRu}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <div className="archiveMain">
                       <div className="archiveTitle">{w.card.titleRu}</div>
                       <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
@@ -172,6 +192,7 @@ export default function ArchivePage() {
 
             const s = it.s;
             const preview = s.cards.slice(0, 3);
+
             return (
               <motion.button
                 key={`s-${s.createdAt}-${i}`}
@@ -185,9 +206,15 @@ export default function ArchivePage() {
               >
                 <div className="archiveRow">
                   <div className="thumbStack">
-                    {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
-                    {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
-                    {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[0] ? (
+                      <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
+                    {preview[1] ? (
+                      <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
+                    {preview[2] ? (
+                      <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" />
+                    ) : null}
                   </div>
 
                   <div className="archiveMain">
