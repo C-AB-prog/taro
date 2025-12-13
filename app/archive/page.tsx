@@ -18,8 +18,10 @@ type WheelItem = {
   id?: string;
   createdAt?: string;
   date?: string;
-  card?: WheelCard; // чаще так
-  // иногда сразу поля карты
+
+  card?: WheelCard;
+
+  // fallback если сохраняете напрямую
   slug?: string;
   titleRu?: string;
   meaningRu?: string;
@@ -34,8 +36,8 @@ type SpreadItem = {
   spreadTitle?: string;
   title?: string;
   positions?: string[];
-  interpretation: string;
-  cards: { slug: string; image: string }[];
+  interpretation?: string;
+  cards?: { slug: string; image: string }[];
 };
 
 type Item =
@@ -57,7 +59,6 @@ function wheelCardOf(w: WheelItem): WheelCard | null {
   const c = (w as any).card;
   if (c && c.image) return c as WheelCard;
 
-  // fallback если сервер сохраняет прямо поля карты
   if ((w as any).image && (w as any).meaningRu && (w as any).adviceRu) {
     return {
       slug: (w as any).slug,
@@ -80,9 +81,16 @@ function spreadTitle(s: SpreadItem) {
   return s.spreadTitle || s.title || "Расклад";
 }
 
+function toTime(ts: string) {
+  const t = new Date(ts || 0).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 export default function ArchivePage() {
   const [raw, setRaw] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const [filter, setFilter] = useState<"all" | "spreads" | "wheel">("all");
 
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Item | null>(null);
@@ -103,14 +111,11 @@ export default function ArchivePage() {
     })();
   }, []);
 
-  const items: Item[] = useMemo(() => {
+  const itemsAll: Item[] = useMemo(() => {
     const d = raw ?? {};
 
-    const wheelRaw: WheelItem[] =
-      d.wheel ?? d.wheelSpins ?? d.wheelItems ?? [];
-
-    const spreadsRaw: SpreadItem[] =
-      d.spreads ?? d.spreadPurchases ?? d.purchases ?? [];
+    const wheelRaw: WheelItem[] = d.wheel ?? d.wheelSpins ?? d.wheelItems ?? [];
+    const spreadsRaw: SpreadItem[] = d.spreads ?? d.spreadPurchases ?? d.purchases ?? [];
 
     const wheelItems: Item[] = (wheelRaw || []).map((w) => ({
       kind: "wheel" as const,
@@ -124,17 +129,18 @@ export default function ArchivePage() {
       s,
     }));
 
-    const toTime = (it: Item) => {
-      const t = new Date(it.ts || 0).getTime();
-      return Number.isFinite(t) ? t : 0;
-    };
-
-    // ✅ сначала расклады, потом колесо
-    spreadItems.sort((a, b) => toTime(b) - toTime(a));
-    wheelItems.sort((a, b) => toTime(b) - toTime(a));
+    // ✅ сначала расклады, потом колесо (каждый список по убыванию времени)
+    spreadItems.sort((a, b) => toTime(b.ts) - toTime(a.ts));
+    wheelItems.sort((a, b) => toTime(b.ts) - toTime(a.ts));
 
     return [...spreadItems, ...wheelItems];
   }, [raw]);
+
+  const items = useMemo(() => {
+    if (filter === "all") return itemsAll;
+    if (filter === "spreads") return itemsAll.filter((i) => i.kind === "spread");
+    return itemsAll.filter((i) => i.kind === "wheel");
+  }, [itemsAll, filter]);
 
   function openItem(it: Item) {
     setPicked(it);
@@ -144,10 +150,26 @@ export default function ArchivePage() {
   }
 
   return (
-    <AppShell title="Архив">
+    <AppShell>
       <h1 className="h1">Архив</h1>
-      <div className="small">
-        Здесь хранятся все спины колеса и купленные расклады. Записи неизменны.
+      <div className="small">История колеса и купленных раскладов (не меняется).</div>
+
+      <div style={{ height: 12 }} />
+
+      <div className="card">
+        <div className="title">Фильтр</div>
+        <div style={{ height: 10 }} />
+        <div className="segRow">
+          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
+            Все
+          </button>
+          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>
+            Расклады
+          </button>
+          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>
+            Колесо
+          </button>
+        </div>
       </div>
 
       <div style={{ height: 12 }} />
@@ -171,6 +193,7 @@ export default function ArchivePage() {
           if (it.kind === "wheel") {
             const c = wheelCardOf(it.w);
             const title = wheelTitle(c);
+
             return (
               <button
                 key={`w-${idx}`}
@@ -180,13 +203,7 @@ export default function ArchivePage() {
               >
                 <div className="archiveRow">
                   {c?.image ? (
-                    <img
-                      className="thumb"
-                      src={c.image}
-                      alt={title}
-                      loading="lazy"
-                      decoding="async"
-                    />
+                    <img className="thumb" src={c.image} alt={title} loading="lazy" decoding="async" />
                   ) : (
                     <div className="thumb shimmer" />
                   )}
@@ -249,6 +266,7 @@ export default function ArchivePage() {
           (() => {
             const c = wheelCardOf(picked.w);
             if (!c) return <p className="text">Не удалось прочитать запись.</p>;
+
             const title = wheelTitle(c);
 
             return (
@@ -258,7 +276,7 @@ export default function ArchivePage() {
                   <div className="title" style={{ fontSize: 16 }}>{title}</div>
                   <p className="text" style={{ marginTop: 6 }}>{c.meaningRu}</p>
 
-                  {/* ✅ ВОТ ТУТ выделение совета для колеса в архиве */}
+                  {/* ✅ В архиве колеса совет выделяется */}
                   <div className="adviceBox" style={{ marginTop: 12 }}>
                     <div className="adviceTitle">Совет</div>
                     <div className="adviceText">{c.adviceRu}</div>
