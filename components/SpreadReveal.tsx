@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { FlipCard } from "@/components/FlipCard";
 
-type SpreadCard = { slug: string; image: string };
+export type SpreadCard = {
+  slug: string;
+  image: string;
+};
 
 export function SpreadReveal({
   cards,
@@ -17,93 +18,136 @@ export function SpreadReveal({
   interpretation: string;
   resetToken: string;
 }) {
-  const [revealed, setRevealed] = useState<boolean[]>(() => cards.map(() => false));
+  const safePositions = useMemo(() => {
+    return cards.map((_, i) => positions?.[i] ?? `Позиция ${i + 1}`);
+  }, [cards, positions]);
+
+  const [opened, setOpened] = useState<boolean[]>(() => cards.map(() => false));
 
   useEffect(() => {
-    setRevealed(cards.map(() => false));
-  }, [resetToken]);
+    // сброс при открытии нового расклада/архивной записи
+    setOpened(cards.map(() => false));
+  }, [resetToken, cards.length]);
 
-  const opened = useMemo(() => revealed.filter(Boolean).length, [revealed]);
-  const nextIndex = useMemo(() => revealed.findIndex((x) => !x), [revealed]);
-  const allOpened = opened === cards.length;
+  const allOpened = opened.length === cards.length && opened.every(Boolean);
 
-  function onReveal(i: number) {
-    setRevealed((prev) => {
+  function openOne(i: number) {
+    setOpened((prev) => {
       if (prev[i]) return prev;
-      const copy = [...prev];
-      copy[i] = true;
-      return copy;
+      const next = prev.slice();
+      next[i] = true;
+      return next;
     });
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
   }
 
+  function openAll() {
+    setOpened(cards.map(() => true));
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+  }
+
   return (
-    <div className="col">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <div className="small">
-          Открыто: <b>{opened}</b> / {cards.length}
-        </div>
-        <div className="badge" style={{ padding: "8px 12px" }}>
-          {allOpened ? "Готово ✨" : "По одной"}
-        </div>
-      </div>
-
+    <div>
       <div className="small">
-        {allOpened ? "Трактовка раскрылась." : "Открывай по очереди — так расклад читается чище."}
+        <b>Карты</b>
       </div>
 
-      <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
-        {cards.map((c, i) => {
-          const isOpened = revealed[i];
-          const enabled = isOpened || i === nextIndex;
-          const pos = positions[i] ?? `Позиция ${i + 1}`;
+      <div style={{ height: 10 }} />
 
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 10,
+        }}
+      >
+        {cards.map((c, i) => {
+          const isOpen = opened[i];
           return (
-            <motion.div
+            <button
               key={`${c.slug}-${i}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18 }}
-              style={{ width: 80 }}
+              className="pressable"
+              onClick={() => openOne(i)}
+              style={{
+                border: "1px solid rgba(20,16,10,.10)",
+                background: "rgba(255,255,255,.72)",
+                borderRadius: 16,
+                padding: 8,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
             >
-              <FlipCard
-                frontSrc={c.image}
-                backSrc={"/cards/card-back.jpg"}
-                alt={c.slug}
-                startSide="back"
-                allowFlipBack={false}
-                disabled={!enabled}
-                width={80}
-                height={130}
-                onRevealed={() => onReveal(i)}
+              <img
+                src={isOpen ? c.image : "/cards/card-back.jpg"}
+                alt={safePositions[i]}
+                loading="lazy"
+                decoding="async"
+                style={{
+                  width: "100%",
+                  height: 160,
+                  objectFit: "cover",
+                  borderRadius: 14,
+                  display: "block",
+                  border: "1px solid rgba(20,16,10,.10)",
+                  background: "rgba(255,255,255,.8)",
+                }}
               />
+
               <div
                 className="small"
                 style={{
-                  marginTop: 6,
-                  textAlign: "center",
-                  fontWeight: isOpened ? 900 : 700,
-                  opacity: isOpened ? 0.95 : 0.6,
+                  marginTop: 8,
+                  fontWeight: 950,
+                  color: "var(--text)",
                 }}
               >
-                {pos}
+                {safePositions[i]}
               </div>
-            </motion.div>
+
+              <div
+                className="small"
+                style={{
+                  marginTop: 2,
+                  opacity: 0.95,
+                  color: "var(--muted)",
+                }}
+              >
+                {isOpen ? "Открыта" : "Нажми, чтобы открыть"}
+              </div>
+            </button>
           );
         })}
       </div>
 
-      <div className="card" style={{ padding: 12 }}>
-        {!allOpened ? (
-          <div className="small" style={{ opacity: 0.8 }}>
-            Открой все карты, чтобы увидеть трактовку…
+      <div style={{ height: 12 }} />
+
+      {!allOpened ? (
+        <button className="btn btnGhost" style={{ width: "100%" }} onClick={openAll}>
+          Открыть все карты
+        </button>
+      ) : null}
+
+      {allOpened ? (
+        <>
+          <div style={{ height: 12 }} />
+          <div className="hr" />
+
+          <div className="small" style={{ marginTop: 10 }}>
+            <b>Трактовка</b>
           </div>
-        ) : (
-          <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.45, color: "rgba(255,255,255,.92)" }}>
+
+          <p
+            className="text"
+            style={{
+              marginTop: 8,
+              color: "var(--text)",
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {interpretation}
-          </pre>
-        )}
-      </div>
+          </p>
+        </>
+      ) : null}
     </div>
   );
 }
