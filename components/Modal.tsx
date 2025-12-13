@@ -20,7 +20,7 @@ export function Modal({
 
   useEffect(() => setMounted(true), []);
 
-  // 🔒 lock background scroll while modal open
+  // 🔒 lock background scroll while modal is open
   useEffect(() => {
     if (!open) return;
 
@@ -76,48 +76,81 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(0,0,0,.38)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            display: "grid",
+            placeItems: "center",
+            padding: 14,
+          }}
         >
           <motion.div
             className="modal"
-            initial={{ y: 18, opacity: 0, scale: 0.98 }}
+            initial={{ y: 16, opacity: 0, scale: 0.985 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 18, opacity: 0, scale: 0.98 }}
+            exit={{ y: 16, opacity: 0, scale: 0.985 }}
             transition={{ duration: 0.18 }}
             onClick={(e) => e.stopPropagation()}
-            // ✅ важно: разрешаем скролл внутри модалки
             style={{
+              width: "min(560px, 100%)",
               maxHeight: "86vh",
               overflowY: "auto",
               WebkitOverflowScrolling: "touch",
               overscrollBehavior: "contain",
+              borderRadius: 24,
+              background: "rgba(255,255,255,.92)",
+              border: "1px solid rgba(20,16,10,.10)",
+              boxShadow: "0 26px 80px rgba(0,0,0,.18)",
+              padding: 14,
             }}
           >
+            {/* Header */}
             <div
-              className="row"
               style={{
-                justifyContent: "space-between",
-                alignItems: "center",
                 position: "sticky",
                 top: 0,
-                background: "rgba(255,255,255,.92)",
-                backdropFilter: "blur(10px)",
                 zIndex: 2,
+                background: "rgba(255,255,255,.88)",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
                 paddingBottom: 10,
               }}
             >
-              <div className="title" style={{ fontSize: 16 }}>
-                {title}
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="title" style={{ fontSize: 16 }}>
+                  {title}
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btnGhost"
+                  onClick={onClose}
+                  aria-label="Закрыть"
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 999,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>✕</span>
+                </button>
               </div>
-              <button
-                className="btn btnGhost"
-                style={{ padding: "10px 12px" }}
-                onClick={onClose}
-                type="button"
-              >
-                Закрыть
-              </button>
+              <div
+                style={{
+                  height: 1,
+                  marginTop: 10,
+                  background: "linear-gradient(to right, rgba(176,142,66,.0), rgba(176,142,66,.45), rgba(176,142,66,.0))",
+                }}
+              />
             </div>
 
+            <div style={{ height: 10 }} />
             {children}
             <div style={{ height: 8 }} />
           </motion.div>
