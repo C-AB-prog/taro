@@ -19,12 +19,14 @@ export function BottomNav() {
   };
 
   return (
-    <div className="nav">
-      <div className="navInner navInnerPremium">
-        <Item href="/" label="Главная" Icon={IconHome} />
-        <Item href="/spreads" label="Расклады" Icon={IconSpread} />
-        <Item href="/deck" label="Колода" Icon={IconDeck} />
-        <Item href="/archive" label="Архив" Icon={IconArchive} />
+    <div className="nav navFloat">
+      <div className="navPill">
+        <div className="navInner navInnerPremium">
+          <Item href="/" label="Главная" Icon={IconHome} />
+          <Item href="/spreads" label="Расклады" Icon={IconSpread} />
+          <Item href="/deck" label="Колода" Icon={IconDeck} />
+          <Item href="/archive" label="Архив" Icon={IconArchive} />
+        </div>
       </div>
     </div>
   );
