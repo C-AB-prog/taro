@@ -44,7 +44,7 @@ export function Wheel() {
     async function loadStatus() {
       try {
         const r = await fetch("/api/archive", { cache: "no-store" });
-        const d = await r.json();
+        const d = await r.json().catch(() => ({}));
         const wheel: WheelArchiveItem[] = d?.wheel ?? [];
 
         const t = wheel.find((it) => dayKey(new Date(it.date)) === todayKey);
@@ -111,11 +111,12 @@ export function Wheel() {
       return;
     }
 
+    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+
+    // Плавный “настоящий” разгон: 5–6 оборотов + случайное смещение
     const extraTurns = 360 * (5 + Math.floor(Math.random() * 2));
     const offset = Math.floor(Math.random() * 360);
     const target = rot + extraTurns + offset;
-
-    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
 
     setRot(target);
 
@@ -155,27 +156,41 @@ export function Wheel() {
         Один раз в сутки — и только одна карта. Повторения возможны.
       </div>
 
-      <div style={{ height: 10 }} />
-      <div className="pointer" />
+      <div style={{ height: 12 }} />
+
+      {/* Указатель */}
+      <div className="wheelPointer" aria-hidden="true" />
+
+      {/* Само колесо */}
       <div className="wheelWrap">
-        <div className="sparkStage">
+        <div className="wheelOuter" aria-hidden="true">
+          <div className="wheelRim" />
           <div
-            className="wheel"
+            className="wheelRotator"
             style={{
               transform: `rotate(${rot}deg)`,
               transition: spinning
                 ? "transform 3.2s cubic-bezier(0.12, 0.72, 0.20, 1)"
-                : "transform 0.2s ease",
+                : "transform 0.18s ease",
               willChange: "transform",
             }}
-          />
+          >
+            <div className="wheelDisc">
+              <div className="wheelLines" />
+              <div className="wheelDots" />
+            </div>
+          </div>
+
+          <div className="wheelHub">
+            <div className="wheelGem" />
+          </div>
         </div>
       </div>
 
-      {error ? <div className="small" style={{ marginTop: 8 }}>{error}</div> : null}
+      {error ? <div className="small" style={{ marginTop: 10 }}>{error}</div> : null}
 
       {!statusLoading && !canSpin && todayItem ? (
-        <div className="small" style={{ marginTop: 8 }}>
+        <div className="small" style={{ marginTop: 10 }}>
           Сегодня выпало: <b>{titleFor(todayItem.card)}</b>
         </div>
       ) : null}
@@ -209,7 +224,6 @@ export function Wheel() {
               <div className="title" style={{ fontSize: 16 }}>{titleFor(card)}</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
 
-              {/* ✅ выделенный совет */}
               <div className="adviceBox" style={{ marginTop: 12 }}>
                 <div className="adviceTitle">Совет</div>
                 <div className="adviceText">{card.adviceRu}</div>
