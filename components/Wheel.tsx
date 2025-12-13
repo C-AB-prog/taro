@@ -14,10 +14,9 @@ type WheelCard = {
 
 type WheelArchiveItem = { date: string; card: WheelCard };
 
-const TZ = "Europe/Helsinki";
+const TZ = "Europe/Moscow";
 
 function dayKey(d: Date) {
-  // "2025-12-13"
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: TZ,
     year: "numeric",
@@ -37,38 +36,30 @@ export function Wheel() {
   const [open, setOpen] = useState(false);
   const [card, setCard] = useState<WheelCard | null>(null);
   const [modalTitle, setModalTitle] = useState("Колесо фортуны");
-
   const [error, setError] = useState<string | null>(null);
 
   const todayKey = useMemo(() => dayKey(new Date()), []);
 
   useEffect(() => {
-    // Проверяем: был ли уже спин сегодня (через /api/archive)
     async function loadStatus() {
       try {
         const r = await fetch("/api/archive", { cache: "no-store" });
         const d = await r.json();
         const wheel: WheelArchiveItem[] = d?.wheel ?? [];
 
-        const t = wheel.find((it) => {
-          const dk = dayKey(new Date(it.date));
-          return dk === todayKey;
-        });
-
+        const t = wheel.find((it) => dayKey(new Date(it.date)) === todayKey);
         if (t) {
           setTodayItem(t);
           setCanSpin(false);
         } else {
           setCanSpin(true);
         }
-      } catch (e) {
-        // если что-то пошло не так — не ломаем UX, но разрешим попытку
+      } catch {
         setCanSpin(true);
       } finally {
         setStatusLoading(false);
       }
     }
-
     loadStatus();
   }, [todayKey]);
 
@@ -84,40 +75,26 @@ export function Wheel() {
     setError(null);
     setSpinning(true);
 
-    // 1) сначала просим сервер выдать карту и сохранить спин
     let picked: WheelCard | null = null;
+
     try {
       const r = await fetch("/api/wheel/spin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
 
       if (!r.ok) {
-        // если сервер сказал "уже крутил"
-        const code = String(d?.error ?? "").toUpperCase();
+        const code = String(d?.error ?? d?.message ?? "").toUpperCase();
         if (code.includes("ALREADY")) {
-          // Подтягиваем сегодняшнюю карту из архива (если не было)
-          if (!todayItem) {
-            try {
-              const ar = await fetch("/api/archive", { cache: "no-store" });
-              const ad = await ar.json();
-              const wheel: WheelArchiveItem[] = ad?.wheel ?? [];
-              const t = wheel.find((it) => dayKey(new Date(it.date)) === todayKey) ?? null;
-              setTodayItem(t);
-            } catch {}
-          }
-
           setCanSpin(false);
           setSpinning(false);
           setError("Сегодня ты уже крутил(а) колесо.");
           return;
         }
-
         setSpinning(false);
-        setError(d?.message ?? "Не удалось прокрутить.");
+        setError(String(d?.message ?? d?.error ?? "Не удалось прокрутить."));
         return;
       }
 
@@ -134,18 +111,13 @@ export function Wheel() {
       return;
     }
 
-    // 2) анимация колеса
-    const extraTurns = 360 * (5 + Math.floor(Math.random() * 2)); // 5–6 оборотов
+    const extraTurns = 360 * (5 + Math.floor(Math.random() * 2));
     const offset = Math.floor(Math.random() * 360);
     const target = rot + extraTurns + offset;
 
-    // haptics
     window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
 
     setRot(target);
-
-    // 3) после анимации показываем карту
-    const durationMs = 3200;
 
     setTimeout(() => {
       const item: WheelArchiveItem = { date: new Date().toISOString(), card: picked! };
@@ -158,7 +130,7 @@ export function Wheel() {
 
       setSpinning(false);
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-    }, durationMs);
+    }, 3200);
   }
 
   function openToday() {
@@ -184,7 +156,6 @@ export function Wheel() {
       </div>
 
       <div style={{ height: 10 }} />
-
       <div className="pointer" />
       <div className="wheelWrap">
         <div className="sparkStage">
@@ -198,37 +169,10 @@ export function Wheel() {
               willChange: "transform",
             }}
           />
-          {/* искры — только во время кручения */}
-          {spinning ? (
-            <div className="sparkLayer">
-              {Array.from({ length: 10 }).map((_, i) => {
-                const a = (i / 10) * Math.PI * 2;
-                const r = 88 + (i % 3) * 10;
-                const x = 110 + Math.cos(a) * r;
-                const y = 110 + Math.sin(a) * r;
-                return (
-                  <div
-                    key={i}
-                    className="sparkDot"
-                    style={{
-                      left: x,
-                      top: y,
-                      opacity: 0.9,
-                      animation: `spark ${700 + (i % 3) * 120}ms ease-in-out ${i * 40}ms infinite`,
-                    }}
-                  />
-                );
-              })}
-            </div>
-          ) : null}
         </div>
       </div>
 
-      {error ? (
-        <div className="small" style={{ marginTop: 8 }}>
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="small" style={{ marginTop: 8 }}>{error}</div> : null}
 
       {!statusLoading && !canSpin && todayItem ? (
         <div className="small" style={{ marginTop: 8 }}>
@@ -264,21 +208,16 @@ export function Wheel() {
             <div className="col">
               <div className="title" style={{ fontSize: 16 }}>{titleFor(card)}</div>
               <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
-              <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
-              <p className="text" style={{ marginTop: 6 }}>{card.adviceRu}</p>
+
+              {/* ✅ выделенный совет */}
+              <div className="adviceBox" style={{ marginTop: 12 }}>
+                <div className="adviceTitle">Совет</div>
+                <div className="adviceText">{card.adviceRu}</div>
+              </div>
             </div>
           </div>
         )}
       </Modal>
-
-      {/* keyframes для искр */}
-      <style>{`
-        @keyframes spark {
-          0% { transform: translate(-50%, -50%) scale(.7); opacity: .2; }
-          40% { transform: translate(-50%, -50%) scale(1.15); opacity: .95; }
-          100% { transform: translate(-50%, -50%) scale(.85); opacity: .35; }
-        }
-      `}</style>
     </div>
   );
 }
