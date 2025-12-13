@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
 
@@ -17,6 +16,7 @@ type SpreadDef = {
 };
 
 type View = {
+  title: string;
   cards: { slug: string; image: string }[];
   positions: string[];
   interpretation: string;
@@ -132,7 +132,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, ms:
   }
 }
 
-async function postJSON(url: string, body: any, timeoutMs = 4500) {
+async function postJSON(url: string, body: any, timeoutMs = 6000) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -152,7 +152,7 @@ async function postJSON(url: string, body: any, timeoutMs = 4500) {
   return { ok: r.ok, status: r.status, data };
 }
 
-async function getJSON(url: string, timeoutMs = 4500) {
+async function getJSON(url: string, timeoutMs = 6000) {
   const initData = getInitData();
   const r = await fetchWithTimeout(
     url,
@@ -176,7 +176,7 @@ function toTime(ts: string) {
 }
 
 async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: number): Promise<ArchiveSpreadItem | null> {
-  const r = await getJSON("/api/archive", 4500);
+  const r = await getJSON("/api/archive", 6000);
   if (!r.ok) return null;
 
   const spreads: ArchiveSpreadItem[] =
@@ -188,7 +188,6 @@ async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: nu
     .slice()
     .sort((a, b) => toTime(String(b.createdAt ?? b.date ?? "")) - toTime(String(a.createdAt ?? a.date ?? "")));
 
-  // сначала — попытка найти запись этого расклада, созданную после начала покупки
   const fresh = sorted.find((s) => {
     const t = toTime(String(s.createdAt ?? s.date ?? ""));
     const name = (s.spreadTitle || s.title || "").trim();
@@ -196,7 +195,6 @@ async function fetchLatestSpreadFromArchive(preferTitle: string, startedAtMs: nu
   });
   if (fresh) return fresh;
 
-  // затем — просто последнюю с таким названием
   const any = sorted.find((s) => (s.spreadTitle || s.title || "").trim() === preferTitle.trim());
   if (any) return any;
 
@@ -228,55 +226,52 @@ function extractView(resData: any, fallbackPositions: string[]) {
   return { cards, positions, interpretation };
 }
 
-function prettyErr(payload: any) {
-  const msg = payload?.message ?? payload?.error ?? payload;
+function keyVariants(def: SpreadDef) {
+  const base = def.id; // couple_future
+  const kebab = base.replace(/_/g, "-");
+  const compact = base.replace(/[-_]/g, "");
+  const camel = base.replace(/_([a-z])/g, (_, ch) => String(ch).toUpperCase());
+
+  const extra: string[] = [];
+
+  if (def.id === "couple_future") {
+    extra.push(
+      "future_pair",
+      "future-pair",
+      "futurePair",
+      "coupleFuture",
+      "Будущее пары"
+    );
+  }
+  if (def.id === "three") extra.push("three_cards", "three-cards", "Три карты");
+  if (def.id === "aibolit") extra.push("doctor_aibolit", "doctor-aibolit", "Доктор Айболит");
+  if (def.id === "celtic_cross") extra.push("celtic-cross", "celticcross", "Кельтский крест");
+  if (def.id === "station_for_two") extra.push("station-for-two", "Вокзал для двоих");
+  if (def.id === "money_tree") extra.push("money-tree", "Денежное дерево");
+  if (def.id === "money_on_barrel") extra.push("money-on-barrel", "Деньги на бочку");
+  if (def.id === "my_health") extra.push("my-health", "Моё здоровье");
+
+  return Array.from(new Set([base, kebab, compact, camel, def.title, ...extra].filter(Boolean)));
+}
+
+function looksLikeUnknown(d: any) {
+  const s = String(d?.error ?? d?.message ?? "").toLowerCase();
+  return s.includes("unknown") || s.includes("not found") || s.includes("spread") || s.includes("не найден");
+}
+
+function prettyErr(d: any) {
+  const msg = d?.message ?? d?.error ?? d;
   if (typeof msg === "string") return msg;
   return "Покупка не прошла. Сервер отклонил запрос.";
 }
 
-/**
- * ✅ Ключевое: короткий список ключей, чтобы не висеть минутами.
- * Если твой бэк ждёт другое — мы добавим в этот список 1 точное значение.
- */
-function serverKeysFor(def: SpreadDef) {
-  switch (def.id) {
-    case "couple_future":
-      return [
-        "couple_future",
-        "future_pair",
-        "futurePair",
-        "coupleFuture",
-        "Будущее пары",
-      ];
-    case "station_for_two":
-      return ["station_for_two", "station-for-two", "Вокзал для двоих"];
-    case "three":
-      return ["three", "three_cards", "three-cards", "Три карты"];
-    case "money_tree":
-      return ["money_tree", "money-tree", "Денежное дерево"];
-    case "money_on_barrel":
-      return ["money_on_barrel", "money-on-barrel", "Деньги на бочку"];
-    case "my_health":
-      return ["my_health", "my-health", "Моё здоровье"];
-    case "aibolit":
-      return ["aibolit", "doctor_aibolit", "Доктор Айболит"];
-    case "celtic_cross":
-      return ["celtic_cross", "celtic-cross", "Кельтский крест"];
-    default:
-      return [def.id, def.title];
-  }
-}
-
 export default function SpreadsPage() {
-  const [open, setOpen] = useState(false);
-  const [modalTitle, setModalTitle] = useState("Расклад");
-  const [view, setView] = useState<View | null>(null);
-
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [errOpen, setErrOpen] = useState(false);
-  const [errText, setErrText] = useState("");
-  const [errDebug, setErrDebug] = useState("");
+  const [view, setView] = useState<View | null>(null);
+
+  const [errText, setErrText] = useState<string | null>(null);
+  const [errDebug, setErrDebug] = useState<string>("");
 
   const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
 
@@ -288,48 +283,74 @@ export default function SpreadsPage() {
   async function buy(def: SpreadDef) {
     if (busyId) return;
     setBusyId(def.id);
+    setErrText(null);
+    setErrDebug("");
 
     const startedAt = Date.now();
 
     try {
-      const keys = serverKeysFor(def);
+      const keys = keyVariants(def);
+
+      // будем пробовать оба эндпойнта и разные ключи тела запроса
+      const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
+      const bodiesForKey = (k: string) => [
+        { spreadId: k },
+        { id: k },
+        { spreadKey: k },
+        { slug: k },
+        { key: k },
+      ];
+
       let last: { ok: boolean; status: number; data: any } | null = null;
 
-      for (const key of keys) {
-        try {
-          const r = await postJSON("/api/spreads/buy", { spreadId: key }, 4500);
-          last = r;
-          if (r.ok) break;
+      // ограничим попытки, чтобы не “молчать” долго
+      let attempts = 0;
+      const MAX = 18;
 
-          // если бэк пишет "unknown spread" — пробуем следующий ключ
-          const e = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
-          if (r.status === 404 || e.includes("unknown") || e.includes("not found")) continue;
+      for (const ep of endpoints) {
+        for (const k of keys) {
+          for (const body of bodiesForKey(k)) {
+            attempts++;
+            if (attempts > MAX) break;
 
-          // другие ошибки (например недостаточно баланса) — останавливаемся
-          break;
-        } catch (e: any) {
-          last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name ?? e) } };
+            try {
+              const r = await postJSON(ep, body, 6000);
+              last = r;
+
+              if (r.ok) break;
+
+              // если это “не тот ключ” — идём дальше
+              if (r.status === 404 || looksLikeUnknown(r.data)) continue;
+
+              // остальные ошибки (баланс/валидация) — стоп
+              break;
+            } catch (e: any) {
+              last = { ok: false, status: 0, data: { error: "TIMEOUT_OR_NETWORK", message: String(e?.name ?? e) } };
+            }
+          }
+          if (last?.ok || attempts > MAX) break;
         }
+        if (last?.ok || attempts > MAX) break;
       }
 
       if (!last || !last.ok) {
-        // вдруг списало и просто ответ не дошёл — пробуем подхватить из архива
+        // возможно списало, но ответ не пришёл — подхватим из архива
         const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
         if (arch?.cards?.length) {
           setView({
+            title: def.title,
             cards: arch.cards!,
             positions: (arch.positions ?? def.positions) as string[],
             interpretation: String(arch.interpretation ?? ""),
             resetToken: `${def.id}-arch-${Date.now()}`,
           });
-          setModalTitle(def.title);
-          setOpen(true);
+          // скролл к результату
+          setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
           return;
         }
 
         setErrText(prettyErr(last?.data));
         setErrDebug(last ? JSON.stringify(last.data, null, 2) : "");
-        setErrOpen(true);
         return;
       }
 
@@ -337,36 +358,35 @@ export default function SpreadsPage() {
 
       if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
         setView({
+          title: def.title,
           cards: extracted.cards,
           positions: extracted.positions ?? def.positions,
           interpretation: extracted.interpretation ?? "",
           resetToken: `${def.id}-${Date.now()}`,
         });
-        setModalTitle(def.title);
-        setOpen(true);
+        setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
         return;
       }
 
-      // ✅ ответ пустой — ждём архив (чуть дольше, но быстро)
-      for (let i = 0; i < 5; i++) {
+      // ответ пустой — подождём архив немного
+      for (let i = 0; i < 6; i++) {
         const arch = await fetchLatestSpreadFromArchive(def.title, startedAt);
         if (arch?.cards?.length) {
           setView({
+            title: def.title,
             cards: arch.cards!,
             positions: (arch.positions ?? def.positions) as string[],
             interpretation: String(arch.interpretation ?? ""),
             resetToken: `${def.id}-arch-${Date.now()}`,
           });
-          setModalTitle(def.title);
-          setOpen(true);
+          setTimeout(() => document.getElementById("spreadResult")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
           return;
         }
-        await new Promise((res) => setTimeout(res, 650));
+        await new Promise((res) => setTimeout(res, 700));
       }
 
-      setErrText("Покупка прошла, но данные расклада не пришли. Открой Архив — запись должна быть там.");
+      setErrText("Покупка прошла, но карты/трактовка не пришли. Обычно запись появляется в Архиве.");
       setErrDebug(JSON.stringify({ buyResponse: last.data }, null, 2));
-      setErrOpen(true);
     } finally {
       setBusyId(null);
     }
@@ -385,6 +405,48 @@ export default function SpreadsPage() {
           <button className={`segBtn ${filter === "health" ? "segBtnActive" : ""}`} onClick={() => setFilter("health")}>Здоровье</button>
         </div>
       </div>
+
+      <div style={{ height: 12 }} />
+
+      {errText ? (
+        <div className="card">
+          <div className="title">Не получилось</div>
+          <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{errText}</div>
+          {errDebug ? (
+            <details style={{ marginTop: 10 }}>
+              <summary className="small" style={{ cursor: "pointer" }}>Показать детали</summary>
+              <pre className="small" style={{ whiteSpace: "pre-wrap", margin: 0, marginTop: 8 }}>{errDebug}</pre>
+            </details>
+          ) : null}
+          <div style={{ height: 10 }} />
+          <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => { setErrText(null); setErrDebug(""); }}>
+            Закрыть
+          </button>
+        </div>
+      ) : null}
+
+      {view ? (
+        <div id="spreadResult" className="card" style={{ marginTop: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <div className="title">{view.title}</div>
+            <button className="btn btnGhost" style={{ padding: "8px 10px" }} onClick={() => setView(null)}>
+              Свернуть
+            </button>
+          </div>
+
+          <div style={{ height: 10 }} />
+
+          {/* Важно для “сенсора”: даём нормальный тач-скролл */}
+          <div style={{ touchAction: "pan-y" }}>
+            <SpreadReveal
+              cards={view.cards}
+              positions={view.positions}
+              interpretation={view.interpretation}
+              resetToken={view.resetToken}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ height: 12 }} />
 
@@ -416,35 +478,6 @@ export default function SpreadsPage() {
           </div>
         ))}
       </div>
-
-      <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
-        {!view ? (
-          <p className="text">…</p>
-        ) : (
-          <SpreadReveal
-            cards={view.cards}
-            positions={view.positions}
-            interpretation={view.interpretation}
-            resetToken={view.resetToken}
-          />
-        )}
-      </Modal>
-
-      <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
-        <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
-        {errDebug ? (
-          <>
-            <div style={{ height: 10 }} />
-            <div className="card" style={{ padding: 12 }}>
-              <div className="small" style={{ whiteSpace: "pre-wrap" }}>{errDebug}</div>
-            </div>
-          </>
-        ) : null}
-        <div style={{ height: 12 }} />
-        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
-          Ок
-        </button>
-      </Modal>
     </AppShell>
   );
 }
