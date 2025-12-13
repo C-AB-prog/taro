@@ -345,19 +345,6 @@ html.modalOpen, body.modalOpen{ overflow: hidden; }
 }
 .modal > *{ position: relative; z-index: 1; }
 
-/* ✅ ФИКС: если где-то в раскладах текст задан белым — принудительно делаем читабельным */
-.modal p,
-.modal .text,
-.modal [data-interpretation],
-.modal .interpretation,
-.modal .spreadInterpretation,
-.modal .spreadText{
-  color: var(--text) !important;
-}
-.modal .small{
-  color: var(--muted) !important;
-}
-
 /* ===== Shimmer loading ===== */
 .shimmer{
   position: relative;
@@ -427,103 +414,60 @@ html.modalOpen, body.modalOpen{ overflow: hidden; }
   box-shadow: 0 0 0 4px rgba(201,162,74,.12);
 }
 
-/* ===== Wheel ===== */
-.wheelWrap{ display:flex; align-items:center; justify-content:center; padding: 8px 0 2px; }
-.wheel{
-  width: 220px;
-  height: 220px;
-  border-radius: 999px;
-  border: 1px solid rgba(201,162,74,.32);
-  background:
-    conic-gradient(from 0deg,
-      rgba(201,162,74,.95),
-      rgba(167,122,28,.95),
-      rgba(201,162,74,.95),
-      rgba(167,122,28,.95),
-      rgba(201,162,74,.95));
-  box-shadow: 0 24px 90px rgba(20,16,10,.18);
-  position: relative;
-  overflow:hidden;
-}
-.wheel:before{
-  content:"";
-  position:absolute;
-  inset: 16px;
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.65), rgba(20,16,10,.12));
-  border: 1px solid rgba(20,16,10,.08);
-}
-.pointer{
-  width: 0; height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-bottom: 18px solid rgba(167,122,28,.98);
-  filter: drop-shadow(0 10px 18px rgba(20,16,10,.18));
-  margin: 0 auto;
-}
-
-/* Sparkles */
-.sparkStage { position: relative; width: 220px; height: 220px; }
-.sparkLayer { position:absolute; inset:0; pointer-events:none; }
-.sparkDot {
-  position:absolute;
-  width: 6px; height: 6px;
-  border-radius: 999px;
-  background: rgba(201,162,74,.98);
-  filter: drop-shadow(0 12px 22px rgba(20,16,10,.18));
-}
-
-/* ===== Flip card ===== */
-.flipWrap{ width: 96px; height: 156px; perspective: 900px; position: relative; }
-.flipInner{ width:100%; height:100%; border-radius:14px; position:relative; transform-style: preserve-3d; }
-.flipFace{
-  position:absolute; inset:0;
-  border-radius:14px;
-  backface-visibility:hidden;
-  overflow:hidden;
-  border: 1px solid rgba(20,16,10,.10);
-  background: rgba(255,255,255,.72);
-}
-.flipFace img{ width:100%; height:100%; object-fit:cover; display:block; }
-.flipBack{ transform: rotateY(180deg); }
-.flipShine{
-  position:absolute;
-  inset:-40%;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(201,162,74,.26), transparent 60%),
-    linear-gradient(120deg, transparent, rgba(201,162,74,.18), transparent);
-  mix-blend-mode: multiply;
-  pointer-events:none;
-  transform: translateX(-30%);
-  opacity: .28;
-}
-.flipHint{ margin-top:8px; font-size:12px; color: rgba(111,103,92,.95); }
-
-/* ===== Archive list helpers ===== */
-.archiveList{ display:flex; flex-direction:column; gap: 10px; }
-.archiveItem{ padding: 12px; }
-.archiveRow{ display:flex; align-items:center; gap: 12px; }
-.archiveMain{ flex:1; display:flex; flex-direction:column; gap: 3px; min-width: 0; }
-.archiveTitle{
-  font-weight: 950;
-  letter-spacing:.2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.archiveMeta{ font-size: 12px; color: rgba(111,103,92,.95); }
-.thumb{
+/* ===== Spreads page ===== */
+.spreadList{ display:flex; flex-direction:column; gap: 10px; }
+.spreadCard{ padding: 14px; }
+.spreadGlyph{
   width: 44px;
-  height: 72px;
-  border-radius: 12px;
-  border: 1px solid rgba(20,16,10,.10);
-  object-fit: cover;
-  background: rgba(255,255,255,.8);
+  height: 44px;
+  border-radius: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 950;
+  font-size: 18px;
+  color: rgba(167,122,28,.98);
+  border: 1px solid rgba(201,162,74,.28);
+  background: radial-gradient(220px 100px at 30% 0%, rgba(201,162,74,.14), rgba(255,255,255,.72));
+  box-shadow: 0 12px 26px rgba(20,16,10,.08);
+  flex: 0 0 auto;
 }
-.thumbStack{ position: relative; width: 54px; height: 74px; }
-.thumbStack .t1{ position:absolute; left: 0; top: 8px; transform: rotate(-6deg); opacity:.75; }
-.thumbStack .t2{ position:absolute; left: 6px; top: 4px; transform: rotate(-2deg); opacity:.9; }
-.thumbStack .t3{ position:absolute; left: 12px; top: 0; transform: rotate(2deg); }
+.spreadTag{
+  display:inline-flex;
+  align-items:center;
+  border: 1px solid rgba(201,162,74,.22);
+  background: rgba(255,255,255,.65);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 950;
+}
+.spreadPrice{
+  font-weight: 950;
+  color: rgba(167,122,28,.98);
+  border: 1px solid rgba(201,162,74,.22);
+  background: rgba(255,255,255,.65);
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+/* Advice highlight (для трактовки в SpreadReveal) */
+.adviceBox{
+  border: 1px solid rgba(201,162,74,.32);
+  background: radial-gradient(520px 120px at 20% 0%, rgba(201,162,74,.16), rgba(255,255,255,.70));
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 14px 40px rgba(20,16,10,.08);
+}
+.adviceTitle{
+  font-weight: 950;
+  letter-spacing: .2px;
+  color: rgba(167,122,28,.98);
+  margin-bottom: 6px;
+}
+.adviceText{
+  color: var(--text);
+  line-height: 1.45;
+}
 
 /* ===== Performance: deck fast scroll ===== */
 .deckCard{
