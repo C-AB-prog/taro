@@ -11,7 +11,7 @@ import { ruTitleFromSlug } from "@/lib/ruTitles";
 type WheelItem = {
   date: string;
   card: {
-    slug?: string; // может прийти, может нет
+    slug?: string;
     titleRu: string;
     meaningRu: string;
     adviceRu: string;
@@ -30,7 +30,9 @@ type SpreadItem = {
 
 export default function ArchivePage() {
   const [data, setData] = useState<{ wheel: WheelItem[]; spreads: SpreadItem[] } | null>(null);
-  const [tab, setTab] = useState<"wheel" | "spreads">("wheel");
+
+  // ✅ ВАЖНО: по умолчанию открываем расклады
+  const [tab, setTab] = useState<"wheel" | "spreads">("spreads");
 
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -83,10 +85,10 @@ export default function ArchivePage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Раздел</div>
-            <div className="small">Выбери, что смотреть</div>
+            <div className="small">Сначала расклады — потом колесо</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>
-            {tab === "wheel" ? wheel.length : spreads.length}
+            {tab === "spreads" ? spreads.length : wheel.length}
           </div>
         </div>
 
@@ -94,18 +96,18 @@ export default function ArchivePage() {
 
         <div className="row">
           <button
-            className={`btn ${tab === "wheel" ? "btnPrimary" : "btnGhost"}`}
-            onClick={() => setTab("wheel")}
-            style={{ flex: 1 }}
-          >
-            Колесо
-          </button>
-          <button
             className={`btn ${tab === "spreads" ? "btnPrimary" : "btnGhost"}`}
             onClick={() => setTab("spreads")}
             style={{ flex: 1 }}
           >
             Расклады
+          </button>
+          <button
+            className={`btn ${tab === "wheel" ? "btnPrimary" : "btnGhost"}`}
+            onClick={() => setTab("wheel")}
+            style={{ flex: 1 }}
+          >
+            Колесо
           </button>
         </div>
       </div>
@@ -120,7 +122,49 @@ export default function ArchivePage() {
           <div style={{ height: 8 }} />
           <div className="shimmer" style={{ height: 12, width: "86%" }} />
         </div>
-      ) : tab === "wheel" ? (
+      ) : tab === "spreads" ? (
+        spreads.length === 0 ? (
+          <div className="card">
+            <div className="title">Пока пусто</div>
+            <div className="small" style={{ marginTop: 6 }}>
+              Купи расклад — и он появится здесь.
+            </div>
+          </div>
+        ) : (
+          <div className="archiveList">
+            {spreads.map((s, i) => {
+              const preview = s.cards.slice(0, 3);
+              return (
+                <motion.button
+                  key={i}
+                  className="card pressable archiveItem"
+                  style={{ textAlign: "left", cursor: "pointer" }}
+                  whileTap={{ scale: 0.99 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
+                  onClick={() => openSpread(s)}
+                >
+                  <div className="archiveRow">
+                    <div className="thumbStack">
+                      {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
+                      {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
+                      {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
+                    </div>
+
+                    <div className="archiveMain">
+                      <div className="archiveTitle">{s.spreadTitle}</div>
+                      <div className="archiveMeta">
+                        {fmt(s.createdAt)} • {s.cards.length} карт • списано {s.paidAmount}
+                      </div>
+                    </div>
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        )
+      ) : (
         wheel.length === 0 ? (
           <div className="card">
             <div className="title">Пока пусто</div>
@@ -144,13 +188,7 @@ export default function ArchivePage() {
                   onClick={() => openWheel(w)}
                 >
                   <div className="archiveRow">
-                    <img
-                      className="thumb"
-                      src={w.card.image}
-                      alt={title}
-                      loading="lazy"
-                      decoding="async"
-                    />
+                    <img className="thumb" src={w.card.image} alt={title} loading="lazy" decoding="async" />
                     <div className="archiveMain">
                       <div className="archiveTitle">{title}</div>
                       <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
@@ -161,52 +199,6 @@ export default function ArchivePage() {
             })}
           </div>
         )
-      ) : spreads.length === 0 ? (
-        <div className="card">
-          <div className="title">Пока пусто</div>
-          <div className="small" style={{ marginTop: 6 }}>
-            Купи расклад — и он появится здесь.
-          </div>
-        </div>
-      ) : (
-        <div className="archiveList">
-          {spreads.map((s, i) => {
-            const preview = s.cards.slice(0, 3);
-            return (
-              <motion.button
-                key={i}
-                className="card pressable archiveItem"
-                style={{ textAlign: "left", cursor: "pointer" }}
-                whileTap={{ scale: 0.99 }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
-                onClick={() => openSpread(s)}
-              >
-                <div className="archiveRow">
-                  <div className="thumbStack">
-                    {preview[0] ? (
-                      <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
-                    {preview[1] ? (
-                      <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
-                    {preview[2] ? (
-                      <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
-                  </div>
-
-                  <div className="archiveMain">
-                    <div className="archiveTitle">{s.spreadTitle}</div>
-                    <div className="archiveMeta">
-                      {fmt(s.createdAt)} • {s.cards.length} карт • списано {s.paidAmount}
-                    </div>
-                  </div>
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
       )}
 
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
