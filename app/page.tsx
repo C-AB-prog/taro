@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { Wheel } from "@/components/Wheel";
+import { FlipCard } from "@/components/FlipCard";
 
 type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
 
@@ -27,7 +28,9 @@ export default function HomePage() {
         className="card"
       >
         <div className="title">Карта дня</div>
-        <div className="small" style={{ marginTop: 4 }}>Одна карта для всех — но отклик всегда личный.</div>
+        <div className="small" style={{ marginTop: 4 }}>
+          Одна карта для всех — но отклик всегда личный.
+        </div>
 
         <div style={{ height: 12 }} />
 
@@ -45,14 +48,15 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="row">
-            <motion.img
-              className="img"
-              src={daily.image}
-              alt={daily.titleRu}
-              initial={{ opacity: 0, rotateY: 25, y: 6 }}
-              animate={{ opacity: 1, rotateY: 0, y: 0 }}
-              transition={{ duration: 0.35 }}
-            />
+            <div>
+              <FlipCard
+                frontSrc={daily.image}
+                backSrc={"/cards/card-back.jpg"}
+                alt={daily.titleRu}
+              />
+              <div className="flipHint">Нажми, чтобы открыть</div>
+            </div>
+
             <div className="col">
               <div>
                 <div className="title" style={{ fontSize: 16 }}>{daily.titleRu}</div>
@@ -68,7 +72,12 @@ export default function HomePage() {
       </motion.div>
 
       <div style={{ height: 12 }} />
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
+
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.05 }}
+      >
         <Wheel />
       </motion.div>
     </AppShell>
