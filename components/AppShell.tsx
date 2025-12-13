@@ -5,49 +5,31 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Modal } from "@/components/Modal";
 
-type Props = {
-  children: React.ReactNode;
-};
+type Props = { children: React.ReactNode };
 
 function IconHome(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
 function IconSpark(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
 function IconGrid(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -78,7 +60,6 @@ async function fetchBalance(): Promise<number | null> {
 
 export function AppShell({ children }: Props) {
   const pathname = usePathname();
-
   const nav = useMemo(
     () => [
       { href: "/", label: "Главная", icon: IconHome },
@@ -92,6 +73,11 @@ export function AppShell({ children }: Props) {
   const [balance, setBalance] = useState<number | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
 
+  async function refreshBalance() {
+    const b = await fetchBalance();
+    setBalance(b);
+  }
+
   useEffect(() => {
     const tg = (globalThis as any)?.Telegram?.WebApp;
     try {
@@ -99,10 +85,13 @@ export function AppShell({ children }: Props) {
       tg?.expand?.();
     } catch {}
 
-    (async () => {
-      const b = await fetchBalance();
-      setBalance(b);
-    })();
+    refreshBalance();
+
+    // ✅ слушаем событие обновления баланса
+    const on = () => refreshBalance();
+    window.addEventListener("balance:refresh", on);
+    return () => window.removeEventListener("balance:refresh", on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -138,14 +127,8 @@ export function AppShell({ children }: Props) {
             {nav.map((item) => {
               const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
-
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`navItem ${active ? "navItemActive" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                >
+                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`} aria-current={active ? "page" : undefined}>
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
@@ -158,24 +141,14 @@ export function AppShell({ children }: Props) {
 
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
         <div className="small">Покупка за Telegram Stars — заглушка. Скоро подключим.</div>
-
         <div style={{ height: 12 }} />
-
-        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
-          99 Stars → 150 валюты
-        </button>
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>99 Stars → 150 валюты</button>
         <div style={{ height: 8 }} />
-        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
-          199 Stars → 350 валюты
-        </button>
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>199 Stars → 350 валюты</button>
         <div style={{ height: 8 }} />
-        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
-          399 Stars → 800 валюты
-        </button>
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>399 Stars → 800 валюты</button>
         <div style={{ height: 8 }} />
-        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
-          799 Stars → 1800 валюты
-        </button>
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>799 Stars → 1800 валюты</button>
       </Modal>
     </>
   );
