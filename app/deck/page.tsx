@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
-import { motion } from "framer-motion";
 import { RitualHeader } from "@/components/RitualHeader";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 
@@ -111,7 +110,6 @@ export default function DeckPage() {
     const r = await fetch(`/api/cards/${slug}`, { cache: "no-store" });
     const d = await r.json();
     const c = d.card as CardMeaning;
-    // titleRu принудительно делаем русским
     setCard({ ...c, titleRu: ruTitleFromSlug(slug) });
     setOpen(true);
   }
@@ -156,7 +154,7 @@ export default function DeckPage() {
       {loading ? (
         <div className="grid">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="card" style={{ padding: 8 }}>
+            <div key={i} className="card deckCard" style={{ padding: 8 }}>
               <div className="shimmer" style={{ width: "100%", height: 160, borderRadius: 14 }} />
               <div style={{ height: 8 }} />
               <div className="shimmer" style={{ height: 12, width: "70%" }} />
@@ -166,30 +164,29 @@ export default function DeckPage() {
       ) : (
         <>
           <div className="grid">
-            {shown.map((c, i) => (
-              <motion.button
-                key={c.slug}
-                className="card pressable"
-                style={{ padding: 8, textAlign: "left", cursor: "pointer" }}
-                whileTap={{ scale: 0.98 }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.22, delay: Math.min(i, 18) * 0.02 }}
-                onClick={() => openCard(c.slug)}
-              >
-                <img
-                  className="img"
-                  src={c.image}
-                  alt={ruTitleFromSlug(c.slug)}
-                  loading="lazy"
-                  decoding="async"
-                  style={{ width: "100%", height: 160 }}
-                />
-                <div className="small" style={{ marginTop: 8, fontWeight: 950 }}>
-                  {ruTitleFromSlug(c.slug)}
-                </div>
-              </motion.button>
-            ))}
+            {shown.map((c) => {
+              const title = ruTitleFromSlug(c.slug);
+              return (
+                <button
+                  key={c.slug}
+                  className="card pressable deckCard"
+                  style={{ padding: 8, textAlign: "left", cursor: "pointer" }}
+                  onClick={() => openCard(c.slug)}
+                >
+                  <img
+                    className="img"
+                    src={c.image}
+                    alt={title}
+                    loading="lazy"
+                    decoding="async"
+                    style={{ width: "100%", height: 160 }}
+                  />
+                  <div className="small" style={{ marginTop: 8, fontWeight: 950 }}>
+                    {title}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           <div ref={sentinelRef} style={{ height: 1 }} />
@@ -216,9 +213,7 @@ export default function DeckPage() {
             <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
               <div className="small">Что означает</div>
-              <p className="text" style={{ marginTop: 6 }}>
-                {card.meaningRu}
-              </p>
+              <p className="text" style={{ marginTop: 6 }}>{card.meaningRu}</p>
             </div>
           </div>
         )}
