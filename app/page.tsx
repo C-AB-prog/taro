@@ -1,81 +1,76 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TgAuthGate } from "@/components/TgAuthGate";
-import { BottomNav } from "@/components/BottomNav";
-import { Modal } from "@/components/Modal";
+import { motion } from "framer-motion";
+import { AppShell } from "@/components/AppShell";
+import { Wheel } from "@/components/Wheel";
 
 type Card = { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
 
 export default function HomePage() {
   const [daily, setDaily] = useState<Card | null>(null);
-  const [wheel, setWheel] = useState<{ already: boolean; card: Card } | null>(null);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/daily-card").then(r => r.json()).then(d => setDaily(d.card));
+    fetch("/api/daily-card", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setDaily(d.card));
   }, []);
 
-  async function spin() {
-    const r = await fetch("/api/wheel/spin", { method: "POST" });
-    const d = await r.json();
-    setWheel({ already: d.already, card: d.card });
-    setOpen(true);
-  }
-
   return (
-    <TgAuthGate>
-      <h1 className="h1">Главная</h1>
+    <AppShell title="Главная">
+      <h1 className="h1">Твой день</h1>
 
-      <div className="card">
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="card"
+      >
         <div className="title">Карта дня</div>
+        <div className="small" style={{ marginTop: 4 }}>Одна карта для всех — но отклик всегда личный.</div>
+
+        <div style={{ height: 12 }} />
+
         {!daily ? (
-          <p className="text">Загрузка…</p>
+          <div className="row">
+            <div className="shimmer" style={{ width: 96, height: 156 }} />
+            <div className="col">
+              <div className="shimmer" style={{ height: 16, width: "60%" }} />
+              <div className="shimmer" style={{ height: 12, width: "92%" }} />
+              <div className="shimmer" style={{ height: 12, width: "86%" }} />
+              <div style={{ height: 6 }} />
+              <div className="shimmer" style={{ height: 12, width: "55%" }} />
+              <div className="shimmer" style={{ height: 12, width: "80%" }} />
+            </div>
+          </div>
         ) : (
           <div className="row">
-            <img className="img" src={daily.image} alt={daily.titleRu} />
+            <motion.img
+              className="img"
+              src={daily.image}
+              alt={daily.titleRu}
+              initial={{ opacity: 0, rotateY: 25, y: 6 }}
+              animate={{ opacity: 1, rotateY: 0, y: 0 }}
+              transition={{ duration: 0.35 }}
+            />
             <div className="col">
               <div>
-                <div className="title">{daily.titleRu}</div>
-                <p className="text">{daily.meaningRu}</p>
+                <div className="title" style={{ fontSize: 16 }}>{daily.titleRu}</div>
+                <p className="text" style={{ marginTop: 6 }}>{daily.meaningRu}</p>
               </div>
               <div>
                 <div className="small"><b>Совет</b></div>
-                <p className="text">{daily.adviceRu}</p>
+                <p className="text" style={{ marginTop: 6 }}>{daily.adviceRu}</p>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
 
       <div style={{ height: 12 }} />
-
-      <div className="card">
-        <div className="title">Колесо фортуны</div>
-        <p className="text">Можно крутить 1 раз в сутки.</p>
-        <div style={{ height: 10 }} />
-        <button className="btn btnPrimary" onClick={spin}>Крутить</button>
-      </div>
-
-      <Modal
-        open={open}
-        title={wheel?.already ? "Ты уже крутил сегодня" : "Результат колеса"}
-        onClose={() => setOpen(false)}
-      >
-        {wheel && (
-          <div className="row">
-            <img className="img" src={wheel.card.image} alt={wheel.card.titleRu} />
-            <div className="col">
-              <div className="title">{wheel.card.titleRu}</div>
-              <p className="text">{wheel.card.meaningRu}</p>
-              <div className="small"><b>Совет</b></div>
-              <p className="text">{wheel.card.adviceRu}</p>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <BottomNav />
-    </TgAuthGate>
+      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
+        <Wheel />
+      </motion.div>
+    </AppShell>
   );
 }
