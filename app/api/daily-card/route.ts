@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getOrCreateDailyCard, resolveCardImage } from "@/lib/tarot";
 import { generateCardReadingRu } from "@/lib/tarotReadings";
 import { prisma } from "@/lib/prisma";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,6 @@ function needsGen(s: unknown) {
   const t = String(s ?? "").trim();
   if (!t) return true;
 
-  // если это старые/типовые фразы — перегенерим
   const bad =
     t.includes("Сделай один небольшой шаг") ||
     t.includes("Сделай паузу, выдохни") ||
@@ -29,6 +29,9 @@ export async function GET(req: Request) {
 
   const card: any = await getOrCreateDailyCard();
 
+  // ✅ всегда используем русское имя по slug (а не то, что лежит в БД)
+  const titleRu = ruTitleFromSlug(card.slug) || String(card.titleRu ?? "");
+
   let meaningRu = card.meaningRu;
   let adviceRu = card.adviceRu;
 
@@ -36,7 +39,7 @@ export async function GET(req: Request) {
 
   if (force || needsGen(meaningRu) || needsGen(adviceRu)) {
     const gen = await generateCardReadingRu({
-      titleRu: card.titleRu,
+      titleRu,
       kind: "daily",
     });
 
@@ -44,13 +47,13 @@ export async function GET(req: Request) {
     adviceRu = gen.adviceRu;
     aiSource = gen._source;
 
-    // best-effort сохранение (не ломаемся, если модель называется иначе)
+    // best-effort сохранение
     try {
       const p: any = prisma;
       if (card?.id && p.dailyCard?.update) {
         await p.dailyCard.update({
           where: { id: card.id },
-          data: { meaningRu, adviceRu },
+          data: { titleRu, meaningRu, adviceRu },
         });
       }
     } catch {}
@@ -60,7 +63,7 @@ export async function GET(req: Request) {
     {
       card: {
         slug: card.slug,
-        titleRu: card.titleRu,
+        titleRu,
         meaningRu,
         adviceRu,
         image: resolveCardImage(card.slug),
