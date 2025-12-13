@@ -87,7 +87,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
       <div className="topbar">
         <div className="topbarInner">
           <div className="brand">
-            <div className="brandTitle">{title}</div>
+            <div className="brandTitle">✦ {title}</div>
             <div className="brandSub">Карта Дня • Daily Tarot</div>
           </div>
           <TopBar api={api} />
