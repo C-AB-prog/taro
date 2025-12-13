@@ -7,7 +7,6 @@ import { SpreadReveal } from "@/components/SpreadReveal";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 type WheelCard = { slug?: string; titleRu?: string; meaningRu: string; adviceRu: string; image: string };
-
 type WheelItemAny = any;
 type SpreadItemAny = any;
 
@@ -20,17 +19,14 @@ function fmtDate(ts: string) {
   if (Number.isNaN(d.getTime())) return ts;
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 }
-
 function fmtTime(ts: string) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
-
 function pickTs(x: any) {
   return String(x?.createdAt ?? x?.date ?? x?.ts ?? "");
 }
-
 function toWheelCard(w: any): WheelCard | null {
   const c = w?.card ?? w;
   const image = c?.image ?? w?.image;
@@ -41,7 +37,6 @@ function toWheelCard(w: any): WheelCard | null {
   if (!image || !meaningRu || !adviceRu) return null;
   return { image: String(image), meaningRu: String(meaningRu), adviceRu: String(adviceRu), slug, titleRu };
 }
-
 function wheelTitle(c: WheelCard) {
   return c.slug ? ruTitleFromSlug(c.slug) : (c.titleRu ?? "Карта");
 }
@@ -50,7 +45,8 @@ export default function ArchivePage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
 
-  const [filter, setFilter] = useState<"all" | "spreads" | "wheel">("all");
+  // ✅ только два фильтра
+  const [filter, setFilter] = useState<"spreads" | "wheel">("spreads");
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,25 +68,18 @@ export default function ArchivePage() {
 
     const res: Item[] = [];
 
-    for (const s of (Array.isArray(spreads) ? spreads : [])) {
-      res.push({ kind: "spread", ts: pickTs(s), s });
-    }
-    for (const w of (Array.isArray(wheel) ? wheel : [])) {
-      res.push({ kind: "wheel", ts: pickTs(w), w });
-    }
+    for (const s of (Array.isArray(spreads) ? spreads : [])) res.push({ kind: "spread", ts: pickTs(s), s });
+    for (const w of (Array.isArray(wheel) ? wheel : [])) res.push({ kind: "wheel", ts: pickTs(w), w });
 
     res.sort((a, b) => {
       const ta = new Date(a.ts).getTime() || 0;
       const tb = new Date(b.ts).getTime() || 0;
       if (tb !== ta) return tb - ta;
-      // при равных — расклады выше колеса
       if (a.kind === b.kind) return 0;
-      return a.kind === "spread" ? -1 : 1;
+      return a.kind === "spread" ? -1 : 1; // расклады выше
     });
 
-    if (filter === "spreads") return res.filter((x) => x.kind === "spread");
-    if (filter === "wheel") return res.filter((x) => x.kind === "wheel");
-    return res;
+    return filter === "spreads" ? res.filter((x) => x.kind === "spread") : res.filter((x) => x.kind === "wheel");
   }, [data, filter]);
 
   return (
@@ -99,13 +88,16 @@ export default function ArchivePage() {
 
       <div className="card">
         <div className="segRow segRowEqual">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>Все</button>
-          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>Расклады</button>
-          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>Колесо</button>
+          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>
+            Расклады
+          </button>
+          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>
+            Колесо
+          </button>
         </div>
 
         <div className="small" style={{ marginTop: 10 }}>
-          Здесь хранятся все спины колеса и купленные расклады. Записи неизменны.
+          Записи неизменны. Тапни по записи, чтобы раскрыть.
         </div>
       </div>
 
@@ -140,7 +132,12 @@ export default function ArchivePage() {
             const interpretation = String(s?.interpretation ?? "");
 
             return (
-              <div key={key} className="card archiveItem pressable" onClick={() => setOpenKey(isOpen ? null : key)} role="button">
+              <div
+                key={key}
+                className="card archiveItem pressable"
+                onClick={() => setOpenKey(isOpen ? null : key)}
+                role="button"
+              >
                 <div className="archiveRow">
                   <div className="thumbStack" aria-hidden="true">
                     {cards?.[0]?.image ? <img className="thumb t1" src={cards[0].image} alt="" /> : null}
@@ -154,7 +151,11 @@ export default function ArchivePage() {
                 </div>
 
                 {isOpen ? (
-                  <div style={{ marginTop: 12, touchAction: "pan-y" }}>
+                  // ✅ критично: чтобы клики по картам НЕ закрывали запись
+                  <div
+                    style={{ marginTop: 12, touchAction: "pan-y" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <SpreadReveal
                       cards={cards}
                       positions={positions?.length ? positions : cards.map((_, i) => `Карта ${i + 1}`)}
@@ -167,13 +168,17 @@ export default function ArchivePage() {
             );
           }
 
-          // wheel
           const w = it.w;
           const ts = pickTs(w);
           const c = toWheelCard(w);
 
           return (
-            <div key={key} className="card archiveItem pressable" onClick={() => setOpenKey(isOpen ? null : key)} role="button">
+            <div
+              key={key}
+              className="card archiveItem pressable"
+              onClick={() => setOpenKey(isOpen ? null : key)}
+              role="button"
+            >
               <div className="archiveRow">
                 {c?.image ? <img className="thumb" src={c.image} alt="" /> : <div className="thumb" />}
                 <div className="archiveMain">
@@ -183,7 +188,7 @@ export default function ArchivePage() {
               </div>
 
               {isOpen && c ? (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
                   <div className="row">
                     <img className="img" src={c.image} alt={wheelTitle(c)} loading="lazy" decoding="async" />
                     <div className="col">
