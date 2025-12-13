@@ -165,14 +165,25 @@ function tagGlyph(tag: SpreadDef["tag"]) {
   return "✶";
 }
 
-async function postJSON(url: string, body: any) {
+async function postTry(url: string, body: any) {
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
-  const d = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data: d };
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
+function humanizeError(e: any) {
+  const raw = String(e?.message ?? e?.error ?? e ?? "");
+  const code = raw.trim().toUpperCase();
+
+  if (code === "BUY_FAILED") return "Покупка не прошла. Обычно это временно или из-за формата запроса. Попробуй ещё раз.";
+  if (code.includes("INSUFFICIENT") || raw.toLowerCase().includes("недостат"))
+    return "Недостаточно валюты для этого расклада.";
+  if (code.includes("ALREADY")) return "Этот расклад уже есть в архиве.";
+  return raw || "Не удалось выполнить действие.";
 }
 
 export default function SpreadsPage() {
@@ -183,61 +194,64 @@ export default function SpreadsPage() {
 
   const [shopOpen, setShopOpen] = useState(false);
 
-  const byTag = useMemo(() => {
-    const map: Record<string, SpreadDef[]> = { all: [] };
-    for (const s of SPREADS) {
-      map.all.push(s);
-      map[s.tag] = map[s.tag] ?? [];
-      map[s.tag].push(s);
-    }
-    return map;
-  }, []);
+  // красивое окно ошибок вместо alert()
+  const [errOpen, setErrOpen] = useState(false);
+  const [errText, setErrText] = useState("");
 
   const [filter, setFilter] = useState<"all" | "general" | "love" | "money" | "health">("all");
-  const list = useMemo(() => byTag[filter] ?? byTag.all, [byTag, filter]);
+
+  const list = useMemo(() => {
+    if (filter === "all") return SPREADS;
+    return SPREADS.filter((s) => s.tag === filter);
+  }, [filter]);
 
   async function buy(def: SpreadDef) {
     if (busyId) return;
     setBusyId(def.id);
 
     try {
-      // 1) пробуем /api/spreads/buy
-      let res = await postJSON("/api/spreads/buy", {
-        spreadId: def.id,
-        spreadTitle: def.title,
-        paidAmount: def.price,
-        cardsCount: def.cardsCount,
-        positions: def.positions,
-      });
+      // ✅ ключевой момент: сервер может ожидать РАЗНЫЙ body.
+      // Пробуем несколько вариантов от самого "узкого" к более подробному.
+      const bodies = [
+        { spreadId: def.id },
+        { id: def.id },
+        { spreadId: def.id, spreadTitle: def.title },
+        { spreadId: def.id, title: def.title },
+        // если сервер ожидает цену/позиции — это последний (самый широкий) вариант
+        { spreadId: def.id, spreadTitle: def.title, paidAmount: def.price, cardsCount: def.cardsCount, positions: def.positions },
+      ];
 
-      // 2) если 404 — пробуем /api/spreads/purchase
-      if (!res.ok && res.status === 404) {
-        res = await postJSON("/api/spreads/purchase", {
-          spreadId: def.id,
-          spreadTitle: def.title,
-          paidAmount: def.price,
-          cardsCount: def.cardsCount,
-          positions: def.positions,
-        });
+      const endpoints = ["/api/spreads/buy", "/api/spreads/purchase"];
+
+      let res: { ok: boolean; status: number; data: any } | null = null;
+
+      for (const ep of endpoints) {
+        for (const b of bodies) {
+          const r = await postTry(ep, b);
+          // если эндпоинта нет — пробуем следующий
+          if (r.status === 404) continue;
+          // если успех — выходим
+          if (r.ok) { res = r; break; }
+          // если это валидация/формат — пробуем следующий body
+          res = r;
+        }
+        if (res?.ok) break;
       }
 
-      if (!res.ok) {
-        const msg =
-          res.data?.message ||
-          res.data?.error ||
-          "Не удалось купить расклад. Проверь баланс или попробуй ещё раз.";
-        // если не хватает баланса — открываем заглушку магазина
-        if (String(msg).toLowerCase().includes("balance") || String(msg).toLowerCase().includes("недостат")) {
-          setShopOpen(true);
-        } else {
-          alert(msg);
-        }
+      if (!res || !res.ok) {
+        const msg = humanizeError(res?.data ?? "BUY_FAILED");
+        setErrText(msg);
+        setErrOpen(true);
+
+        // если похоже на недостаток — откроем магазин
+        if (msg.toLowerCase().includes("недостат")) setShopOpen(true);
         return;
       }
 
-      const cards = (res.data?.cards ?? []) as { slug: string; image: string }[];
-      const interpretation = String(res.data?.interpretation ?? "");
-      const positions = (res.data?.positions ?? def.positions) as string[];
+      // сервер может вернуть по-разному — нормализуем
+      const cards = (res.data?.cards ?? res.data?.result?.cards ?? []) as { slug: string; image: string }[];
+      const interpretation = String(res.data?.interpretation ?? res.data?.result?.interpretation ?? "");
+      const positions = (res.data?.positions ?? res.data?.result?.positions ?? def.positions) as string[];
 
       setView({
         cards,
@@ -248,7 +262,6 @@ export default function SpreadsPage() {
 
       setModalTitle(def.title);
       setOpen(true);
-
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
     } finally {
       setBusyId(null);
@@ -264,7 +277,7 @@ export default function SpreadsPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Категории</div>
-            <div className="small">Коротко, мягко и по делу</div>
+            <div className="small">Короткое объяснение каждого расклада</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
         </div>
@@ -293,7 +306,7 @@ export default function SpreadsPage() {
       <div style={{ height: 12 }} />
 
       <div className="spreadList">
-        {list.map((s, idx) => (
+        {list.map((s) => (
           <div key={s.id} className="card spreadCard pressable" style={{ padding: 14 }}>
             <div className="row" style={{ alignItems: "center" }}>
               <div className="spreadGlyph">{tagGlyph(s.tag)}</div>
@@ -309,9 +322,7 @@ export default function SpreadsPage() {
                   <span style={{ marginLeft: 8 }}>{s.cardsCount} карт</span>
                 </div>
 
-                <div className="small" style={{ marginTop: 2 }}>
-                  {s.brief}
-                </div>
+                <div className="small" style={{ marginTop: 2 }}>{s.brief}</div>
 
                 <div style={{ height: 8 }} />
 
@@ -329,6 +340,7 @@ export default function SpreadsPage() {
         ))}
       </div>
 
+      {/* Просмотр расклада */}
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {!view ? (
           <p className="text">…</p>
@@ -342,13 +354,19 @@ export default function SpreadsPage() {
         )}
       </Modal>
 
+      {/* Красивое окно ошибки вместо alert */}
+      <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
+        <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
+        <div style={{ height: 12 }} />
+        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
+          Ок
+        </button>
+      </Modal>
+
+      {/* Магазин-заглушка */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">
-          Telegram Stars подключим позже — сейчас это заглушка.
-        </div>
-
+        <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
         <div style={{ height: 10 }} />
-
         <div className="card" style={{ padding: 12 }}>
           <div className="title">Паки валюты</div>
           <div className="small" style={{ marginTop: 6 }}>
