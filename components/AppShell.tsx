@@ -87,11 +87,18 @@ async function fetchBalance(): Promise<number | null> {
 type PackId = "pack_99" | "pack_199" | "pack_399" | "pack_799";
 
 const PACKS: Array<{ id: PackId; label: string; hint: string }> = [
-  { id: "pack_99",  label: "99 Stars → 150 валюты",  hint: "Быстро пополнить запас" },
+  { id: "pack_99", label: "99 Stars → 150 валюты", hint: "Быстро пополнить запас" },
   { id: "pack_199", label: "199 Stars → 350 валюты", hint: "Самый популярный" },
   { id: "pack_399", label: "399 Stars → 800 валюты", hint: "Выгодно для раскладов" },
   { id: "pack_799", label: "799 Stars → 1800 валюты", hint: "Максимум выгоды" },
 ];
+
+const PACK_COINS: Record<PackId, number> = {
+  pack_99: 150,
+  pack_199: 350,
+  pack_399: 800,
+  pack_799: 1800,
+};
 
 export function AppShell({ children }: Props) {
   const pathname = usePathname();
@@ -139,6 +146,29 @@ export function AppShell({ children }: Props) {
     setShopErr(null);
     setShopMsg("Открываю оплату…");
 
+    const before = typeof balance === "number" ? balance : null;
+    const expected = PACK_COINS[packId];
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    async function pollBalance(timeoutMs = 12000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const b = await fetchBalance();
+        if (typeof b === "number") {
+          setBalance(b);
+
+          if (before !== null) {
+            if (b >= before + expected) return { ok: true as const, newBalance: b, delta: b - before };
+          } else {
+            return { ok: true as const, newBalance: b, delta: expected };
+          }
+        }
+        await sleep(900);
+      }
+      return { ok: false as const };
+    }
+
     try {
       const r = await fetch("/api/shop/invoice", {
         method: "POST",
@@ -152,6 +182,8 @@ export function AppShell({ children }: Props) {
         setShopErr(
           data?.error === "UNAUTHORIZED"
             ? "Нет сессии. Открой мини-приложение через Telegram."
+            : data?.error
+            ? `Сервер: ${data.error}`
             : "Не удалось создать счёт. Попробуй ещё раз."
         );
         setBuying(null);
@@ -166,26 +198,47 @@ export function AppShell({ children }: Props) {
         return;
       }
 
-      tg.openInvoice(String(data.invoiceLink), (status: string) => {
-        // status: "paid" | "cancelled" | "failed"
+      tg.openInvoice(String(data.invoiceLink), async (status: string) => {
         if (status === "paid") {
           setShopErr(null);
-          setShopMsg("Оплата принята. Начисляю валюту…");
+          setShopMsg("Оплата принята. Проверяю начисление…");
 
-          // webhook может прийти не мгновенно — подёргаем обновление баланса несколько раз
           window.dispatchEvent(new Event("balance:refresh"));
-          setTimeout(() => window.dispatchEvent(new Event("balance:refresh")), 1200);
-          setTimeout(() => window.dispatchEvent(new Event("balance:refresh")), 2600);
 
-          (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-        } else if (status === "cancelled") {
-          setShopMsg(null);
-          setShopErr("Платёж отменён.");
-        } else if (status === "failed") {
-          setShopMsg(null);
-          setShopErr("Платёж не прошёл.");
+          const res = await pollBalance();
+
+          if (res.ok) {
+            setShopMsg(`Готово! +${res.delta} валюты ✨`);
+            (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+
+            setTimeout(() => {
+              setShopMsg(null);
+              setShopOpen(false);
+            }, 1600);
+          } else {
+            setShopMsg(null);
+            setShopErr("Платёж принят, но баланс обновляется дольше обычного. Подожди пару секунд и открой магазин снова.");
+          }
+
+          setBuying(null);
+          return;
         }
 
+        if (status === "cancelled") {
+          setShopMsg(null);
+          setShopErr("Платёж отменён.");
+          setBuying(null);
+          return;
+        }
+
+        if (status === "failed") {
+          setShopMsg(null);
+          setShopErr("Платёж не прошёл.");
+          setBuying(null);
+          return;
+        }
+
+        setShopMsg(null);
         setBuying(null);
       });
     } catch {
@@ -230,8 +283,7 @@ export function AppShell({ children }: Props) {
         <div className="navPill">
           <div className="navInner">
             {nav.map((item) => {
-              const active =
-                item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
+              const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (
                 <Link
@@ -258,7 +310,7 @@ export function AppShell({ children }: Props) {
         <div style={{ height: 12 }} />
 
         {PACKS.map((p) => (
-          <div key={p.id} style={{ marginBottom: 8 }}>
+          <div key={p.id} style={{ marginBottom: 10 }}>
             <button
               className="btn btnPrimary"
               style={{ width: "100%" }}
