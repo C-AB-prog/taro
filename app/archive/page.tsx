@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
+import { SpreadReveal } from "@/components/SpreadReveal";
 
 type WheelItem = {
   date: string;
@@ -21,17 +22,14 @@ type SpreadItem = {
 export default function ArchivePage() {
   const [data, setData] = useState<{ wheel: WheelItem[]; spreads: SpreadItem[] } | null>(null);
   const [tab, setTab] = useState<"wheel" | "spreads">("wheel");
+
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
-  const [modalBody, setModalBody] = useState<React.ReactNode>(null);
+  const [wheelItem, setWheelItem] = useState<WheelItem | null>(null);
+  const [spreadItem, setSpreadItem] = useState<SpreadItem | null>(null);
 
   useEffect(() => {
-    async function load() {
-      const r = await fetch("/api/archive", { cache: "no-store" });
-      const d = await r.json();
-      setData(d);
-    }
-    load();
+    fetch("/api/archive", { cache: "no-store" }).then((r) => r.json()).then(setData);
   }, []);
 
   const wheel = useMemo(() => data?.wheel ?? [], [data]);
@@ -42,58 +40,23 @@ export default function ArchivePage() {
   }
 
   function openWheel(item: WheelItem) {
+    setSpreadItem(null);
+    setWheelItem(item);
     setModalTitle(`Колесо • ${fmt(item.date)}`);
-    setModalBody(
-      <div className="row">
-        <img className="img" src={item.card.image} alt={item.card.titleRu} />
-        <div className="col">
-          <div className="title" style={{ fontSize: 16 }}>{item.card.titleRu}</div>
-          <p className="text" style={{ marginTop: 6 }}>{item.card.meaningRu}</p>
-          <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
-          <p className="text" style={{ marginTop: 6 }}>{item.card.adviceRu}</p>
-        </div>
-      </div>
-    );
     setOpen(true);
   }
 
   function openSpread(item: SpreadItem) {
+    setWheelItem(null);
+    setSpreadItem(item);
     setModalTitle(`${item.spreadTitle} • ${fmt(item.createdAt)}`);
-    setModalBody(
-      <>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <div className="small">Списано: <b>{item.paidAmount}</b></div>
-          <div className="badge" style={{ padding: "8px 12px" }}>
-            {item.cards.length} карт
-          </div>
-        </div>
-
-        <div style={{ height: 10 }} />
-
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          {item.cards.map((c) => (
-            <motion.img
-              key={c.slug}
-              className="img"
-              src={c.image}
-              alt={c.slug}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18 }}
-              style={{ width: 80, height: 130 }}
-            />
-          ))}
-        </div>
-
-        <hr className="hr" />
-
-        <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.45, color: "rgba(255,255,255,.9)" }}>
-          {item.interpretation}
-        </pre>
-      </>
-    );
     setOpen(true);
   }
+
+  const resetToken = useMemo(() => {
+    if (!spreadItem) return "none";
+    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}`;
+  }, [spreadItem]);
 
   return (
     <AppShell title="Архив">
@@ -203,7 +166,25 @@ export default function ArchivePage() {
       )}
 
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
-        {modalBody}
+        {wheelItem ? (
+          <div className="row">
+            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} />
+            <div className="col">
+              <div className="title" style={{ fontSize: 16 }}>{wheelItem.card.titleRu}</div>
+              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
+              <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
+              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.adviceRu}</p>
+            </div>
+          </div>
+        ) : spreadItem ? (
+          <SpreadReveal
+            cards={spreadItem.cards}
+            interpretation={spreadItem.interpretation}
+            resetToken={resetToken}
+          />
+        ) : (
+          <p className="text">…</p>
+        )}
       </Modal>
     </AppShell>
   );
