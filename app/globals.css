@@ -443,3 +443,61 @@ a{ color:inherit; text-decoration:none; }
 .thumbStack .t2{ position:absolute; left: 6px; top: 4px; transform: rotate(-2deg); opacity:.9; }
 .thumbStack .t3{ position:absolute; left: 12px; top: 0; transform: rotate(2deg); }
 .chev{ opacity:.9; }
+/* ===== Floating Pill Tabbar ===== */
+
+/* больше места снизу под плавающую панель */
+.container{
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
+}
+
+/* сама “плавающая” зона */
+.navFloat{
+  background: transparent;
+  border-top: 0;
+  padding: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+/* “пилюля” */
+.navPill{
+  max-width: 520px;
+  margin: 0 auto;
+  background: rgba(255,255,255,.88);
+  border: 1px solid rgba(20,16,10,.10);
+  border-radius: 22px;
+  padding: 10px 10px;
+  box-shadow:
+    0 18px 45px rgba(20,16,10,.16),
+    0 2px 0 rgba(255,255,255,.55) inset;
+  backdrop-filter: blur(16px);
+  position: relative;
+  overflow: hidden;
+}
+
+/* золотой “ореол” сверху */
+.navPill::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  pointer-events:none;
+  background: radial-gradient(520px 120px at 50% -10%, rgba(201,162,74,.20), transparent 60%);
+  opacity: .95;
+}
+
+/* элементы внутри пилюли */
+.navInnerPremium{
+  display:flex;
+  gap: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.navItem{
+  border-radius: 16px;
+  padding: 10px 6px;
+}
+
+.navItemActive{
+  background: rgba(201,162,74,.12);
+  border-color: rgba(201,162,74,.28);
+}
