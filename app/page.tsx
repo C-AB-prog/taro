@@ -39,7 +39,7 @@ export default function HomePage() {
   }
 
   return (
-    <AppShell title="Главная">
+    <AppShell>
       <RitualHeader label="Твой знак на сегодня" />
 
       <div className="card">
@@ -55,7 +55,6 @@ export default function HomePage() {
         <div style={{ height: 12 }} />
 
         <div className="row">
-          {/* Flip */}
           <button
             className="pressable"
             onClick={onFlip}
@@ -84,7 +83,6 @@ export default function HomePage() {
             <div className="flipHint">{flipped ? "Твоя карта" : "Нажми, чтобы открыть"}</div>
           </button>
 
-          {/* Text */}
           <div className="col">
             <div className="title" style={{ fontSize: 16 }}>
               {flipped ? daily.titleRu : "…"}
