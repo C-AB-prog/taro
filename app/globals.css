@@ -262,3 +262,55 @@ a{ color:inherit; text-decoration:none; }
   background: rgba(255,255,255,.92);
   filter: drop-shadow(0 12px 22px rgba(0,0,0,.55));
 }
+/* Flip card (3D) */
+.flipWrap{
+  width: 96px;
+  height: 156px;
+  perspective: 900px;
+  position: relative;
+}
+
+.flipInner{
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.flipFace{
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  backface-visibility: hidden;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+}
+
+.flipFace img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.flipBack{
+  transform: rotateY(180deg);
+}
+
+.flipShine{
+  position:absolute;
+  inset:-40%;
+  background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.22), transparent 60%),
+              linear-gradient(120deg, transparent, rgba(255,255,255,.18), transparent);
+  mix-blend-mode: screen;
+  pointer-events:none;
+  transform: translateX(-30%);
+}
+
+.flipHint{
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,.65);
+}
