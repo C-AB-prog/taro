@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
+import { SpreadReveal } from "@/components/SpreadReveal";
 
 type Spread = { key: string; titleRu: string; cardsCount: number; price: number };
-type View = { spreadTitle: string; paidAmount: number; cards: { slug: string; image: string }[]; interpretation: string };
+type View = {
+  spreadTitle: string;
+  paidAmount: number;
+  cards: { slug: string; image: string }[];
+  interpretation: string;
+};
 
 export default function SpreadsPage() {
   const [spreads, setSpreads] = useState<Spread[]>([]);
@@ -15,7 +21,7 @@ export default function SpreadsPage() {
   const [title, setTitle] = useState("Твоя трактовка");
 
   useEffect(() => {
-    fetch("/api/spreads").then(r => r.json()).then(d => setSpreads(d.spreads));
+    fetch("/api/spreads").then((r) => r.json()).then((d) => setSpreads(d.spreads));
   }, []);
 
   async function buy(spreadKey: string) {
@@ -33,10 +39,15 @@ export default function SpreadsPage() {
       return;
     }
 
-    setTitle("Твоя трактовка");
+    setTitle("Расклад готов");
     setView(d.view);
     setOpen(true);
   }
+
+  const resetToken = useMemo(() => {
+    if (!view) return "none";
+    return `${view.spreadTitle}|${view.paidAmount}|${view.cards.map((c) => c.slug).join(",")}`;
+  }, [view]);
 
   return (
     <AppShell title="Расклады">
@@ -66,25 +77,11 @@ export default function SpreadsPage() {
           <p className="text">Ок.</p>
         ) : (
           <>
-            <div className="small"><b>{view.spreadTitle}</b> • списано {view.paidAmount}</div>
-            <div style={{ height: 10 }} />
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {view.cards.map((c) => (
-                <motion.img
-                  key={c.slug}
-                  className="img"
-                  src={c.image}
-                  alt={c.slug}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18 }}
-                />
-              ))}
+            <div className="small">
+              <b>{view.spreadTitle}</b> • списано {view.paidAmount}
             </div>
-            <hr className="hr" />
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.45, color: "rgba(255,255,255,.9)" }}>
-              {view.interpretation}
-            </pre>
+            <div style={{ height: 10 }} />
+            <SpreadReveal cards={view.cards} interpretation={view.interpretation} resetToken={resetToken} />
           </>
         )}
       </Modal>
