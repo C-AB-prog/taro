@@ -7,7 +7,7 @@ import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
 
 type SpreadDef = {
-  id: string; // наш ключ (в UI)
+  id: string; // предполагаемый ключ для бэка
   title: string;
   price: number;
   cardsCount: number;
@@ -24,75 +24,35 @@ type View = {
 };
 
 const SPREADS: SpreadDef[] = [
-  {
-    id: "three_cards",
-    title: "Три карты",
-    price: 125,
-    cardsCount: 3,
-    tag: "general",
+  { id: "three", title: "Три карты", price: 125, cardsCount: 3, tag: "general",
     brief: "Прошлое • Настоящее • Будущее — быстрый расклад на ситуацию.",
-    positions: ["Прошлое", "Настоящее", "Будущее"],
+    positions: ["Прошлое","Настоящее","Будущее"],
   },
-  {
-    id: "couple_future",
-    title: "Будущее пары",
-    price: 125,
-    cardsCount: 3,
-    tag: "love",
+  { id: "couple_future", title: "Будущее пары", price: 125, cardsCount: 3, tag: "love",
     brief: "Мысли партнёра, что между вами сейчас, и его чувства.",
-    positions: ["Мысли партнёра", "Что между вами сейчас", "Чувства партнёра"],
+    positions: ["Мысли партнёра","Что между вами сейчас","Чувства партнёра"],
   },
-  {
-    id: "station_for_two",
-    title: "Вокзал для двоих",
-    price: 250,
-    cardsCount: 2,
-    tag: "love",
+  { id: "station_for_two", title: "Вокзал для двоих", price: 250, cardsCount: 2, tag: "love",
     brief: "Твои мысли и мысли партнёра — как вы видите отношения.",
-    positions: ["Твои мысли", "Мысли партнёра"],
+    positions: ["Твои мысли","Мысли партнёра"],
   },
-  {
-    id: "money_on_barrel",
-    title: "Деньги на бочку",
-    price: 350,
-    cardsCount: 5,
-    tag: "money",
+  { id: "money_on_barrel", title: "Деньги на бочку", price: 350, cardsCount: 5, tag: "money",
     brief: "Отношение к деньгам: траты, установки, что поможет.",
-    positions: ["Отношение", "Как трачу", "Что ограничивает", "Что поможет", "Итог"],
+    positions: ["Отношение","Как трачу","Что ограничивает","Что поможет","Итог"],
   },
-  {
-    id: "money_tree",
-    title: "Денежное дерево",
-    price: 450,
-    cardsCount: 5,
-    tag: "money",
+  { id: "money_tree", title: "Денежное дерево", price: 450, cardsCount: 5, tag: "money",
     brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
-    positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
+    positions: ["Корень","Настоящее","Помощники","Блоки","Итог"],
   },
-  {
-    id: "my_health",
-    title: "Моё здоровье",
-    price: 550,
-    cardsCount: 7,
-    tag: "health",
+  { id: "my_health", title: "Моё здоровье", price: 550, cardsCount: 7, tag: "health",
     brief: "Самодиагностика: что влияет, что поддержит, тенденция.",
-    positions: ["S", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация", "Тенденция"],
+    positions: ["S","Физика","Эмоции","Что истощает","Что поддержит","Рекомендация","Тенденция"],
   },
-  {
-    id: "doctor_aibolit",
-    title: "Доктор Айболит",
-    price: 800,
-    cardsCount: 9,
-    tag: "health",
+  { id: "aibolit", title: "Доктор Айболит", price: 800, cardsCount: 9, tag: "health",
     brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
     positions: ["1","2","3","4","5","6","7","8","9"],
   },
-  {
-    id: "celtic_cross",
-    title: "Кельтский крест",
-    price: 1500,
-    cardsCount: 10,
-    tag: "general",
+  { id: "celtic_cross", title: "Кельтский крест", price: 1500, cardsCount: 10, tag: "general",
     brief: "Глубоко: причины, скрытые влияния, развитие, исход.",
     positions: ["1","2","3","4","5","6","7","8","9","10"],
   },
@@ -127,28 +87,38 @@ async function postJSON(url: string, body: any) {
   return { ok: r.ok, status: r.status, data };
 }
 
+async function getJSON(url: string) {
+  const initData = getInitData();
+  const r = await fetch(url, {
+    method: "GET",
+    headers: {
+      "x-telegram-init-data": initData,
+      "x-telegram-webapp-init-data": initData,
+    },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
 function idVariants(def: SpreadDef) {
-  const base = def.id; // snake_case
+  const base = def.id;
   const kebab = base.replace(/_/g, "-");
-  const compact = base.replace(/_/g, "");
-  const shortAliases: string[] = [];
-
-  // важные “человеческие” алиасы — очень часто бэк так и называет
-  if (def.title === "Три карты") shortAliases.push("three", "threecards", "three-cards");
-  if (def.title === "Кельтский крест") shortAliases.push("celtic", "celticcross", "celtic-cross");
-  if (def.title === "Доктор Айболит") shortAliases.push("aibolit", "doctor", "doctor-aibolit");
-
-  // иногда бэк ждёт РУ название
+  const snake = base.replace(/-/g, "_");
+  const compact = base.replace(/[-_]/g, "");
   const ru = def.title;
 
-  // уникальный список
-  const all = [base, kebab, compact, ...shortAliases, ru];
-  return Array.from(new Set(all.filter(Boolean)));
+  const aliases: string[] = [];
+  if (def.title === "Три карты") aliases.push("three_cards", "three-cards", "threecards");
+  if (def.title === "Кельтский крест") aliases.push("celtic", "celticcross", "celtic-cross");
+  if (def.title === "Доктор Айболит") aliases.push("doctor_aibolit", "doctor-aibolit");
+
+  return Array.from(new Set([base, kebab, snake, compact, ...aliases, ru].filter(Boolean)));
 }
 
 function prettyErr(d: any) {
   const raw = String(d?.message ?? d?.error ?? d ?? "BUY_FAILED");
-  if (raw.toUpperCase() === "BUY_FAILED") return "Покупка не прошла. Сервер отклонил запрос.";
+  if (raw.toUpperCase() === "BUY_FAILED") return "Покупка не прошла (BUY_FAILED). Сервер отклонил запрос.";
   return raw;
 }
 
@@ -175,48 +145,65 @@ export default function SpreadsPage() {
 
     try {
       const variants = idVariants(def);
+      let last: { ok: boolean; status: number; data: any } | null = null;
 
-      // пробуем несколько spreadId — пока не сработает
-      let lastRes: { ok: boolean; status: number; data: any } | null = null;
+      for (const id of variants) {
+        // ✅ максимально безопасно: НЕ шлём цену/позиции (чтобы не было “несовпадений” на бэке)
+        const bodies = [
+          { spreadId: id },
+          { id },
+          { spreadKey: id },
+          { slug: id },
+          { key: id },
+        ];
 
-      for (const candidate of variants) {
-        const payload = {
-          // бэки обычно читают одно из этих полей
-          spreadId: candidate,
-          id: candidate,
-          key: candidate,
-          slug: candidate,
+        // 1) POST /api/spreads/buy
+        for (const b of bodies) {
+          const r = await postJSON("/api/spreads/buy", b);
+          last = r;
+          if (r.ok) break;
+          if (r.status === 404) break;
+        }
+        if (last?.ok) break;
 
-          // оставим и нормальные поля — пусть будут
-          spreadTitle: def.title,
-          title: def.title,
-          paidAmount: def.price,
-          price: def.price,
-          cardsCount: def.cardsCount,
-          positions: def.positions,
-        };
+        // 2) POST /api/spreads/purchase (fallback)
+        if (last?.status === 404) {
+          for (const b of bodies) {
+            const r = await postJSON("/api/spreads/purchase", b);
+            last = r;
+            if (r.ok) break;
+            if (r.status === 404) break;
+          }
+          if (last?.ok) break;
+        }
 
-        let res = await postJSON("/api/spreads/buy", payload);
-        if (!res.ok && res.status === 404) res = await postJSON("/api/spreads/purchase", payload);
-
-        lastRes = res;
-
-        if (res.ok) break;
-
-        // если сервер явно говорит “unknown spread / not found spread” — пробуем дальше
-        // если другая ошибка (например insufficient) — тоже покажем, но после попыток
+        // 3) GET варианты (иногда бэк сделан так)
+        const qs = encodeURIComponent(id);
+        const getTry = [
+          `/api/spreads/buy?spreadId=${qs}`,
+          `/api/spreads/buy?id=${qs}`,
+          `/api/spreads/buy?spreadKey=${qs}`,
+          `/api/spreads/purchase?spreadId=${qs}`,
+          `/api/spreads/purchase?id=${qs}`,
+        ];
+        for (const u of getTry) {
+          const r = await getJSON(u);
+          last = r;
+          if (r.ok) break;
+        }
+        if (last?.ok) break;
       }
 
-      if (!lastRes || !lastRes.ok) {
-        setErrText(prettyErr(lastRes?.data));
-        setErrDebug(lastRes ? JSON.stringify(lastRes.data, null, 2) : "");
+      if (!last || !last.ok) {
+        setErrText(prettyErr(last?.data));
+        setErrDebug(last ? JSON.stringify(last.data, null, 2) : "");
         setErrOpen(true);
         return;
       }
 
-      const cards = (lastRes.data?.cards ?? lastRes.data?.result?.cards ?? []) as { slug: string; image: string }[];
-      const interpretation = String(lastRes.data?.interpretation ?? lastRes.data?.result?.interpretation ?? "");
-      const positions = (lastRes.data?.positions ?? lastRes.data?.result?.positions ?? def.positions) as string[];
+      const cards = (last.data?.cards ?? last.data?.result?.cards ?? []) as { slug: string; image: string }[];
+      const interpretation = String(last.data?.interpretation ?? last.data?.result?.interpretation ?? "");
+      const positions = (last.data?.positions ?? last.data?.result?.positions ?? def.positions) as string[];
 
       setView({ cards, positions, interpretation, resetToken: `${def.id}-${Date.now()}` });
       setModalTitle(def.title);
@@ -299,6 +286,7 @@ export default function SpreadsPage() {
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
+
         {errDebug ? (
           <>
             <div style={{ height: 10 }} />
@@ -307,6 +295,7 @@ export default function SpreadsPage() {
             </div>
           </>
         ) : null}
+
         <div style={{ height: 12 }} />
         <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>Ок</button>
       </Modal>
