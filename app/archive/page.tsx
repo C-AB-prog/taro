@@ -22,13 +22,9 @@ type SpreadItem = {
   interpretation: string;
 };
 
-type Item =
-  | { kind: "wheel"; ts: string; w: WheelItem }
-  | { kind: "spread"; ts: string; s: SpreadItem };
-
 export default function ArchivePage() {
   const [data, setData] = useState<{ wheel: WheelItem[]; spreads: SpreadItem[] } | null>(null);
-  const [filter, setFilter] = useState<"all" | "wheel" | "spread">("all");
+  const [tab, setTab] = useState<"wheel" | "spreads">("wheel");
 
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -41,59 +37,30 @@ export default function ArchivePage() {
       .then(setData);
   }, []);
 
-  const items: Item[] = useMemo(() => {
-    if (!data) return [];
-
-    const wheelItems: Item[] = data.wheel.map((w) => ({
-      kind: "wheel" as const,
-      ts: w.date,
-      w,
-    }));
-
-    const spreadItems: Item[] = data.spreads.map((s) => ({
-      kind: "spread" as const,
-      ts: s.createdAt,
-      s,
-    }));
-
-    const all: Item[] = [...wheelItems, ...spreadItems].sort(
-      (a, b) => +new Date(b.ts) - +new Date(a.ts)
-    );
-
-    if (filter === "wheel") return all.filter((x) => x.kind === "wheel");
-    if (filter === "spread") return all.filter((x) => x.kind === "spread");
-    return all;
-  }, [data, filter]);
-
-  const counts = useMemo(() => {
-    const w = data?.wheel.length ?? 0;
-    const s = data?.spreads.length ?? 0;
-    return { w, s, all: w + s };
-  }, [data]);
+  const wheel = useMemo(() => data?.wheel ?? [], [data]);
+  const spreads = useMemo(() => data?.spreads ?? [], [data]);
 
   function fmt(d: string) {
     return new Date(d).toLocaleDateString("ru-RU");
   }
 
-  function openWheel(w: WheelItem) {
+  function openWheel(item: WheelItem) {
     setSpreadItem(null);
-    setWheelItem(w);
-    setModalTitle(`Колесо • ${fmt(w.date)}`);
+    setWheelItem(item);
+    setModalTitle(`${fmt(item.date)} • Колесо`);
     setOpen(true);
   }
 
-  function openSpread(s: SpreadItem) {
+  function openSpread(item: SpreadItem) {
     setWheelItem(null);
-    setSpreadItem(s);
-    setModalTitle(`${s.spreadTitle} • ${fmt(s.createdAt)}`);
+    setSpreadItem(item);
+    setModalTitle(`${fmt(item.createdAt)} • ${item.spreadTitle}`);
     setOpen(true);
   }
 
   const resetToken = useMemo(() => {
     if (!spreadItem) return "none";
-    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards
-      .map((c) => c.slug)
-      .join(",")}|${spreadItem.createdAt}`;
+    return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}|${spreadItem.createdAt}`;
   }, [spreadItem]);
 
   const spreadPositions =
@@ -102,39 +69,35 @@ export default function ArchivePage() {
   return (
     <AppShell title="Архив">
       <h1 className="h1">Архив</h1>
-      <RitualHeader label="Твой журнал" />
+      <RitualHeader label="Твоя история" />
 
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div className="title">Фильтр</div>
-            <div className="small">Собранные знаки и расклады</div>
+            <div className="title">Раздел</div>
+            <div className="small">Выбери, что смотреть</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>
-            {items.length}
+            {tab === "wheel" ? wheel.length : spreads.length}
           </div>
         </div>
 
         <div style={{ height: 12 }} />
 
-        <div className="segRow">
+        <div className="row">
           <button
-            className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`}
-            onClick={() => setFilter("all")}
+            className={`btn ${tab === "wheel" ? "btnPrimary" : "btnGhost"}`}
+            onClick={() => setTab("wheel")}
+            style={{ flex: 1 }}
           >
-            Всё • {counts.all}
+            Колесо
           </button>
           <button
-            className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`}
-            onClick={() => setFilter("wheel")}
+            className={`btn ${tab === "spreads" ? "btnPrimary" : "btnGhost"}`}
+            onClick={() => setTab("spreads")}
+            style={{ flex: 1 }}
           >
-            Колесо • {counts.w}
-          </button>
-          <button
-            className={`segBtn ${filter === "spread" ? "segBtnActive" : ""}`}
-            onClick={() => setFilter("spread")}
-          >
-            Расклады • {counts.s}
+            Расклады
           </button>
         </div>
       </div>
@@ -149,53 +112,53 @@ export default function ArchivePage() {
           <div style={{ height: 8 }} />
           <div className="shimmer" style={{ height: 12, width: "86%" }} />
         </div>
-      ) : items.length === 0 ? (
+      ) : tab === "wheel" ? (
+        wheel.length === 0 ? (
+          <div className="card">
+            <div className="title">Пока пусто</div>
+            <div className="small" style={{ marginTop: 6 }}>
+              Покрути колесо на главной — и здесь появится запись.
+            </div>
+          </div>
+        ) : (
+          <div className="archiveList">
+            {wheel.map((w, i) => (
+              <motion.button
+                key={i}
+                className="card pressable archiveItem"
+                style={{ textAlign: "left", cursor: "pointer" }}
+                whileTap={{ scale: 0.99 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
+                onClick={() => openWheel(w)}
+              >
+                <div className="archiveRow">
+                  <img className="thumb" src={w.card.image} alt={w.card.titleRu} loading="lazy" decoding="async" />
+                  <div className="archiveMain">
+                    <div className="archiveTitle">{w.card.titleRu}</div>
+                    <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
+                  </div>
+                  <IconChevronRight className="chev" />
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        )
+      ) : spreads.length === 0 ? (
         <div className="card">
           <div className="title">Пока пусто</div>
           <div className="small" style={{ marginTop: 6 }}>
-            Покрути колесо или купи расклад — и здесь появятся записи.
+            Купи расклад — и он появится здесь.
           </div>
         </div>
       ) : (
         <div className="archiveList">
-          {items.map((it, i) => {
-            if (it.kind === "wheel") {
-              const w = it.w;
-              return (
-                <motion.button
-                  key={`w-${w.date}-${i}`}
-                  className="card pressable archiveItem"
-                  style={{ textAlign: "left", cursor: "pointer" }}
-                  whileTap={{ scale: 0.99 }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
-                  onClick={() => openWheel(w)}
-                >
-                  <div className="archiveRow">
-                    <img
-                      className="thumb"
-                      src={w.card.image}
-                      alt={w.card.titleRu}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <div className="archiveMain">
-                      <div className="archiveTitle">{w.card.titleRu}</div>
-                      <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
-                    </div>
-                    <IconChevronRight className="chev" />
-                  </div>
-                </motion.button>
-              );
-            }
-
-            const s = it.s;
+          {spreads.map((s, i) => {
             const preview = s.cards.slice(0, 3);
-
             return (
               <motion.button
-                key={`s-${s.createdAt}-${i}`}
+                key={i}
                 className="card pressable archiveItem"
                 style={{ textAlign: "left", cursor: "pointer" }}
                 whileTap={{ scale: 0.99 }}
@@ -206,15 +169,9 @@ export default function ArchivePage() {
               >
                 <div className="archiveRow">
                   <div className="thumbStack">
-                    {preview[0] ? (
-                      <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
-                    {preview[1] ? (
-                      <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
-                    {preview[2] ? (
-                      <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" />
-                    ) : null}
+                    {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
                   </div>
 
                   <div className="archiveMain">
