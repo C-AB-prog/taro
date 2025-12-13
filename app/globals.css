@@ -105,7 +105,7 @@ img{ max-width: 100%; display:block; }
   color: rgba(23,18,12,.92);
 }
 
-/* баланс/бейдж — спокойный, без “другого шрифта” */
+/* баланс/бейдж */
 .badge{
   display:inline-flex;
   align-items:center;
@@ -118,6 +118,14 @@ img{ max-width: 100%; display:block; }
   font-size: 13px;
   font-weight: 800;
   color: rgba(23,18,12,.90);
+}
+
+.badgeDot{
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(202,162,76,.95);
+  box-shadow: 0 6px 12px rgba(0,0,0,.10);
 }
 
 /* ===== cards ===== */
@@ -138,7 +146,7 @@ img{ max-width: 100%; display:block; }
   filter: brightness(.99);
 }
 
-/* ===== buttons (не “перерисованные”, спокойные) ===== */
+/* ===== buttons ===== */
 .btn{
   border: 1px solid rgba(20,16,10,.14);
   background: rgba(255,255,255,.86);
@@ -181,6 +189,16 @@ img{ max-width: 100%; display:block; }
 .segBtnActive{
   border-color: rgba(202,162,76,.45);
   background: rgba(245,232,196,.64);
+}
+
+/* ✅ одинаковые по ширине кнопки фильтра (колода/архив/расклады) */
+.segRowEqual{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.segRowEqual .segBtn{
+  width: 100%;
 }
 
 /* ===== advice ===== */
@@ -368,7 +386,7 @@ img{ max-width: 100%; display:block; }
   color: rgba(202,162,76,.95);
 }
 
-/* ===== modal (если компонент Modal использует эти классы — хорошо; если нет — не мешает) ===== */
+/* ===== modal classes (если Modal их использует) ===== */
 .modalBackdrop{
   position: fixed;
   inset: 0;
@@ -407,7 +425,7 @@ img{ max-width: 100%; display:block; }
 }
 .modalBody{ padding: 14px; }
 
-/* ===== Minimal Wheel (стрелка вниз) ===== */
+/* ===== Minimal Wheel ===== */
 .wheelMinimal{
   display:flex;
   justify-content:center;
