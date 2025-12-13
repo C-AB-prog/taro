@@ -15,18 +15,18 @@ type SpreadKey =
   | "money_tree"
   | "money_on_barrel";
 
+type Category = "situation" | "love" | "money" | "health";
+
 type SpreadMeta = {
   key: SpreadKey;
   title: string;
   about: string;
   cardsCount: number;
   price: number;
+  cat: Category;
 };
 
-type SpreadCard = {
-  slug: string;
-  image: string;
-};
+type SpreadCard = { slug: string; image: string };
 
 type SpreadView = {
   spreadTitle: string;
@@ -60,13 +60,34 @@ function gridCols(n: number) {
   return 3;
 }
 
+function PricePill({ price }: { price: number }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: "1px solid rgba(176,142,66,.35)",
+        background: "rgba(176,142,66,.10)",
+        color: "rgba(26,22,16,.92)",
+        fontWeight: 900,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {price} <span style={{ fontWeight: 700, opacity: 0.85 }}>валюты</span>
+    </span>
+  );
+}
+
 function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: string }) {
   const n = view.cards.length;
   const cols = gridCols(n);
 
   const [revealed, setRevealed] = useState<boolean[]>(() => Array(n).fill(false));
 
-  // при новом раскладе — всё закрыто
+  // новый расклад: все закрыты
   useEffect(() => {
     setRevealed(Array(n).fill(false));
   }, [resetToken, n]);
@@ -76,15 +97,38 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
   const { main, advice } = useMemo(() => splitInterpretation(view.interpretation), [view.interpretation]);
 
+  const cardFrameStyle: React.CSSProperties = {
+    width: "100%",
+    aspectRatio: "2 / 3",
+    borderRadius: 16,
+    overflow: "hidden",
+    background: "rgba(26,22,16,.06)",
+    border: "1px solid rgba(20,16,10,.10)",
+  };
+
+  const imgStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+  };
+
   return (
     <div>
-      <div className="card" style={{ marginTop: 6 }}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+      <div
+        className="card"
+        style={{
+          padding: 14,
+          border: "1px solid rgba(176,142,66,.22)",
+          background: "rgba(255,255,255,.72)",
+        }}
+      >
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
           <div className="small" style={{ opacity: 0.92 }}>
-            Открывай карты по очереди — трактовка появится, когда откроешь все.
+            Открой все карты, чтобы увидеть трактовку.
           </div>
           <div className="small" style={{ opacity: 0.8 }}>
-            Открыто: {openedCount}/{n}
+            Открыто: <b>{openedCount}</b>/<b>{n}</b>
           </div>
         </div>
       </div>
@@ -118,7 +162,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
               }
               style={{
                 border: "1px solid rgba(20,16,10,.10)",
-                background: "rgba(255,255,255,.78)",
+                background: "rgba(255,255,255,.80)",
                 borderRadius: 18,
                 padding: 10,
                 cursor: "pointer",
@@ -126,29 +170,44 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
               }}
               aria-label={pos}
             >
-              <div className="small" style={{ fontWeight: 900, marginBottom: 6 }}>
+              <div className="small" style={{ fontWeight: 900, marginBottom: 8 }}>
                 {pos}
               </div>
 
-              <div className="flipWrap" style={{ width: "100%" }}>
+              {/* flip */}
+              <div style={cardFrameStyle}>
                 <div
-                  className="flipInner"
                   style={{
-                    transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
-                    transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                    width: "100%",
+                    height: "100%",
+                    position: "relative",
                     transformStyle: "preserve-3d",
+                    transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                    transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
                   }}
                 >
-                  <div className="flipFace" style={{ backfaceVisibility: "hidden" }}>
-                    <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" />
+                  {/* front */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      backfaceVisibility: "hidden",
+                    }}
+                  >
+                    <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" style={imgStyle} />
                     <div className="flipShine" />
                   </div>
 
+                  {/* back */}
                   <div
-                    className="flipFace flipBack"
-                    style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      backfaceVisibility: "hidden",
+                      transform: "rotateY(180deg)",
+                    }}
                   >
-                    <img src={c.image} alt={titleRu} loading="lazy" decoding="async" />
+                    <img src={c.image} alt={titleRu} loading="lazy" decoding="async" style={imgStyle} />
                   </div>
                 </div>
               </div>
@@ -164,22 +223,21 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
       <div style={{ height: 12 }} />
 
       {!allOpen ? (
-        <div className="card">
+        <div className="card" style={{ padding: 14 }}>
           <div className="title" style={{ fontSize: 16 }}>
-            Трактовка
+            Трактовка скрыта
           </div>
-          <div className="small" style={{ marginTop: 6 }}>
-            Открой все карты, чтобы увидеть трактовку и совет.
+          <div className="small" style={{ marginTop: 6, opacity: 0.9 }}>
+            Открой все карты — и текст появится.
           </div>
         </div>
       ) : (
-        <div className="card">
+        <div className="card" style={{ padding: 14 }}>
           <div className="title" style={{ fontSize: 16 }}>
             Трактовка
           </div>
-
-          <div className="small" style={{ marginTop: 4 }}>
-            Теперь картина сложилась — прочитай внимательно.
+          <div className="small" style={{ marginTop: 4, opacity: 0.9 }}>
+            Картина сложилась — читай спокойно и вдумчиво.
           </div>
 
           <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
@@ -206,60 +264,65 @@ export default function SpreadsPage() {
         title: "Три карты",
         cardsCount: 3,
         price: 125,
-        about:
-          "Прошлое • Настоящее • Будущее — простой расклад, чтобы увидеть динамику ситуации и куда всё ведёт.",
+        cat: "situation",
+        about: "Прошлое • Настоящее • Будущее — чтобы увидеть динамику ситуации и куда всё ведёт.",
       },
       {
         key: "celtic_cross",
         title: "Кельтский крест",
         cardsCount: 10,
         price: 1500,
-        about:
-          "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
+        cat: "situation",
+        about: "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
       },
       {
         key: "vokzal_dlya_dvoih",
         title: "Вокзал для двоих",
         cardsCount: 2,
         price: 250,
-        about:
-          "Про отношения в паре: твои мысли и мысли партнёра — что происходит между вами сейчас.",
-      },
-      {
-        key: "doctor_aibolit",
-        title: "Доктор Айболит",
-        cardsCount: 9,
-        price: 900,
-        about:
-          "Комплексный взгляд на здоровье: ключевые влияния сверху и снизу, общий баланс состояния.",
-      },
-      {
-        key: "my_health",
-        title: "Моё здоровье",
-        cardsCount: 6,
-        price: 450,
-        about:
-          "Самодиагностика: что с ресурсом сейчас, что мешает восстановлению и что поможет улучшить самочувствие.",
+        cat: "love",
+        about: "Мысли гадающего и партнёра — что происходит между вами сейчас.",
       },
       {
         key: "money_tree",
         title: "Денежное дерево",
         cardsCount: 5,
         price: 500,
-        about:
-          "Финансы: корни прошлого → ствол настоящего → помощники → помехи → плоды (итог).",
+        cat: "money",
+        about: "Финансы: корни прошлого → настоящее → помощники → помехи → итог.",
       },
       {
         key: "money_on_barrel",
         title: "Деньги на бочку",
         cardsCount: 5,
         price: 600,
-        about:
-          "Отношение к деньгам и расходам: как ты тратишь, где утекает, что стоит поменять.",
+        cat: "money",
+        about: "Как ты относишься к деньгам и расходам — где утекает и что поменять.",
+      },
+      {
+        key: "doctor_aibolit",
+        title: "Доктор Айболит",
+        cardsCount: 9,
+        price: 900,
+        cat: "health",
+        about: "Комплексный взгляд на здоровье: влияния сверху и снизу, баланс состояния.",
+      },
+      {
+        key: "my_health",
+        title: "Моё здоровье",
+        cardsCount: 6,
+        price: 450,
+        cat: "health",
+        about: "Самодиагностика: что с ресурсом, что мешает восстановлению, что поможет.",
       },
     ],
     []
   );
+
+  // фильтр: как в колоде, но без “Все”
+  const [cat, setCat] = useState<Category>("situation");
+
+  const filtered = useMemo(() => spreads.filter((s) => s.cat === cat), [spreads, cat]);
 
   const [loadingKey, setLoadingKey] = useState<SpreadKey | null>(null);
   const [view, setView] = useState<SpreadView | null>(null);
@@ -316,20 +379,62 @@ export default function SpreadsPage() {
       window.dispatchEvent(new Event("balance:refresh"));
       (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
     } catch (e: any) {
-      if (e?.name === "AbortError") setErr("Расклад готовится дольше обычного. Попробуй ещё раз (или проверь интернет).");
+      if (e?.name === "AbortError") setErr("Расклад готовится дольше обычного. Попробуй ещё раз.");
       else setErr("Ошибка сети. Попробуй ещё раз.");
     } finally {
       setLoadingKey(null);
     }
   }
 
+  const filterBtns = useMemo(
+    () =>
+      [
+        { k: "situation" as const, label: "Ситуация" },
+        { k: "love" as const, label: "Отношения" },
+        { k: "money" as const, label: "Деньги" },
+        { k: "health" as const, label: "Здоровье" },
+      ] as const,
+    []
+  );
+
   return (
     <AppShell>
       <RitualHeader label="Расклады" />
 
-      <div className="card">
-        <div className="small">
-          Выбери расклад — выпадут карты и появится трактовка. Всё сохраняется в архиве.
+      {/* фильтр как в колоде (без “Все”) */}
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          border: "1px solid rgba(176,142,66,.18)",
+          background: "rgba(255,255,255,.72)",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: 8,
+          }}
+        >
+          {filterBtns.map((b) => {
+            const active = cat === b.k;
+            return (
+              <button
+                key={b.k}
+                className={`btn ${active ? "btnPrimary" : "btnGhost"}`}
+                onClick={() => setCat(b.k)}
+                type="button"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 999,
+                }}
+              >
+                {b.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -346,15 +451,17 @@ export default function SpreadsPage() {
       <div style={{ height: err ? 12 : 0 }} />
 
       <div style={{ display: "grid", gap: 12 }}>
-        {spreads.map((s) => (
+        {filtered.map((s) => (
           <div key={s.key} className="card" style={{ padding: 14 }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
               <div>
                 <div className="title" style={{ fontSize: 16 }}>
                   {s.title}
                 </div>
-                <div className="small" style={{ marginTop: 2, opacity: 0.9 }}>
-                  {s.cardsCount} карт • <b>{s.price}</b> валюты
+
+                <div className="small" style={{ marginTop: 6, opacity: 0.92, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800 }}>{s.cardsCount} карт</span>
+                  <PricePill price={s.price} />
                 </div>
               </div>
 
@@ -362,7 +469,7 @@ export default function SpreadsPage() {
                 className="btn btnPrimary"
                 onClick={() => buy(s.key)}
                 disabled={!!loadingKey}
-                style={{ padding: "10px 14px", borderRadius: 999 }}
+                style={{ padding: "10px 14px", borderRadius: 999, whiteSpace: "nowrap" }}
               >
                 {loadingKey === s.key ? "Готовлю…" : "Сделать"}
               </button>
