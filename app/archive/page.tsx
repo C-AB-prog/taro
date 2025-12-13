@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
+import { RitualHeader } from "@/components/RitualHeader";
 
 type WheelItem = {
   date: string;
@@ -62,11 +63,15 @@ export default function ArchivePage() {
     return `${spreadItem.spreadTitle}|${spreadItem.paidAmount}|${spreadItem.cards.map((c) => c.slug).join(",")}|${spreadItem.createdAt}`;
   }, [spreadItem]);
 
-  const spreadPositions = spreadItem?.positions ?? spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ?? [];
+  const spreadPositions =
+    spreadItem?.positions ??
+    spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ??
+    [];
 
   return (
     <AppShell title="Архив">
       <h1 className="h1">Архив</h1>
+      <RitualHeader label="Следы твоих раскладов" />
 
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -114,13 +119,15 @@ export default function ArchivePage() {
           {wheel.length === 0 ? (
             <div className="card">
               <div className="title">Пока пусто</div>
-              <div className="small" style={{ marginTop: 6 }}>Покрути колесо на главной — и здесь появится запись.</div>
+              <div className="small" style={{ marginTop: 6 }}>
+                Покрути колесо на главной — и здесь появится запись.
+              </div>
             </div>
           ) : (
             wheel.map((w, i) => (
               <motion.button
                 key={i}
-                className="card"
+                className="card pressable"
                 style={{ textAlign: "left", cursor: "pointer" }}
                 whileTap={{ scale: 0.99 }}
                 initial={{ opacity: 0, y: 10 }}
@@ -133,7 +140,9 @@ export default function ArchivePage() {
                     <div className="title">{w.card.titleRu}</div>
                     <div className="small">{fmt(w.date)} • Колесо фортуны</div>
                   </div>
-                  <div className="badge" style={{ padding: "8px 12px" }}>Открыть</div>
+                  <div className="badge" style={{ padding: "8px 12px" }}>
+                    Открыть
+                  </div>
                 </div>
               </motion.button>
             ))
@@ -144,13 +153,15 @@ export default function ArchivePage() {
           {spreads.length === 0 ? (
             <div className="card">
               <div className="title">Пока пусто</div>
-              <div className="small" style={{ marginTop: 6 }}>Купи расклад — и он появится здесь.</div>
+              <div className="small" style={{ marginTop: 6 }}>
+                Купи расклад — и он появится здесь.
+              </div>
             </div>
           ) : (
             spreads.map((s, i) => (
               <motion.button
                 key={i}
-                className="card"
+                className="card pressable"
                 style={{ textAlign: "left", cursor: "pointer" }}
                 whileTap={{ scale: 0.99 }}
                 initial={{ opacity: 0, y: 10 }}
@@ -161,9 +172,13 @@ export default function ArchivePage() {
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div className="title">{s.spreadTitle}</div>
-                    <div className="small">{fmt(s.createdAt)} • списано {s.paidAmount}</div>
+                    <div className="small">
+                      {fmt(s.createdAt)} • списано {s.paidAmount}
+                    </div>
                   </div>
-                  <div className="badge" style={{ padding: "8px 12px" }}>Открыть</div>
+                  <div className="badge" style={{ padding: "8px 12px" }}>
+                    Открыть
+                  </div>
                 </div>
               </motion.button>
             ))
@@ -174,12 +189,26 @@ export default function ArchivePage() {
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {wheelItem ? (
           <div className="row">
-            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} loading="lazy" decoding="async" />
+            <img
+              className="img"
+              src={wheelItem.card.image}
+              alt={wheelItem.card.titleRu}
+              loading="lazy"
+              decoding="async"
+            />
             <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>{wheelItem.card.titleRu}</div>
-              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
-              <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
-              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.adviceRu}</p>
+              <div className="title" style={{ fontSize: 16 }}>
+                {wheelItem.card.titleRu}
+              </div>
+              <p className="text" style={{ marginTop: 6 }}>
+                {wheelItem.card.meaningRu}
+              </p>
+              <div className="small" style={{ marginTop: 8 }}>
+                <b>Совет</b>
+              </div>
+              <p className="text" style={{ marginTop: 6 }}>
+                {wheelItem.card.adviceRu}
+              </p>
             </div>
           </div>
         ) : spreadItem ? (
