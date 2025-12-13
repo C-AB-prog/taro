@@ -516,3 +516,4 @@ html.modalOpen, body.modalOpen{
 .modalOverlay{
   overscroll-behavior: none;
 }
+.chev { opacity: .25; transform: scale(.85); }
