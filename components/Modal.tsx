@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,7 +20,7 @@ export function Modal({
 
   useEffect(() => setMounted(true), []);
 
-  // 🔒 Lock background scroll while modal is open (iOS-friendly)
+  // 🔒 lock background scroll while modal open
   useEffect(() => {
     if (!open) return;
 
@@ -43,7 +43,7 @@ export function Modal({
       html.classList.remove("modalOpen");
       body.classList.remove("modalOpen");
 
-      const top = body.style.top; // "-123px"
+      const top = body.style.top;
       body.style.position = "";
       body.style.top = "";
       body.style.left = "";
@@ -71,43 +71,55 @@ export function Modal({
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="modalBackdrop modalOverlay"
+          className="modalOverlay"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onMouseDown={onClose}
-          onTouchMove={(e) => {
-            // запрещаем скролл/drag на фоне
-            e.preventDefault();
-          }}
+          onClick={onClose}
         >
           <motion.div
-            className="modalSheet"
+            className="modal"
             initial={{ y: 18, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 18, opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.18 }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchMove={(e) => {
-              // разрешаем скролл внутри модалки (не даём событию уйти на оверлей)
-              e.stopPropagation();
+            onClick={(e) => e.stopPropagation()}
+            // ✅ важно: разрешаем скролл внутри модалки
+            style={{
+              maxHeight: "86vh",
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
             }}
           >
-            <div className="modalCard modal">
-              <div className="modalHeader">
-                <div className="modalTitle">{title}</div>
-                <button
-                  type="button"
-                  className="btn btnGhost"
-                  style={{ padding: "10px 12px" }}
-                  onClick={onClose}
-                >
-                  Закрыть
-                </button>
+            <div
+              className="row"
+              style={{
+                justifyContent: "space-between",
+                alignItems: "center",
+                position: "sticky",
+                top: 0,
+                background: "rgba(255,255,255,.92)",
+                backdropFilter: "blur(10px)",
+                zIndex: 2,
+                paddingBottom: 10,
+              }}
+            >
+              <div className="title" style={{ fontSize: 16 }}>
+                {title}
               </div>
-
-              <div className="modalBody">{children}</div>
+              <button
+                className="btn btnGhost"
+                style={{ padding: "10px 12px" }}
+                onClick={onClose}
+                type="button"
+              >
+                Закрыть
+              </button>
             </div>
+
+            {children}
+            <div style={{ height: 8 }} />
           </motion.div>
         </motion.div>
       ) : null}
