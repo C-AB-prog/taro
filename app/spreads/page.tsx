@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TgAuthGate } from "@/components/TgAuthGate";
-import { BottomNav } from "@/components/BottomNav";
+import { AppShell } from "@/components/AppShell";
 import { Modal } from "@/components/Modal";
+import { motion } from "framer-motion";
 
 type Spread = { key: string; titleRu: string; cardsCount: number; price: number };
-type PurchaseView = { spreadTitle: string; paidAmount: number; cards: { slug: string; image: string }[]; interpretation: string };
+type View = { spreadTitle: string; paidAmount: number; cards: { slug: string; image: string }[]; interpretation: string };
 
 export default function SpreadsPage() {
   const [spreads, setSpreads] = useState<Spread[]>([]);
-  const [modal, setModal] = useState<{ open: boolean; title: string; body?: PurchaseView }>({ open: false, title: "" });
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<View | null>(null);
+  const [title, setTitle] = useState("Твоя трактовка");
 
   useEffect(() => {
     fetch("/api/spreads").then(r => r.json()).then(d => setSpreads(d.spreads));
@@ -25,77 +27,67 @@ export default function SpreadsPage() {
 
     const d = await r.json();
     if (!r.ok) {
-      setModal({ open: true, title: d.error === "NOT_ENOUGH_BALANCE" ? "Не хватает баланса" : "Ошибка покупки" });
+      setTitle(d.error === "NOT_ENOUGH_BALANCE" ? "Не хватает баланса" : "Ошибка");
+      setView(null);
+      setOpen(true);
       return;
     }
 
-    setModal({
-      open: true,
-      title: "Твоя трактовка",
-      body: d.view,
-    });
-  }
-
-  async function topup(tgStars: number) {
-    const r = await fetch("/api/topup/mock", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tgStars }),
-    });
-    const d = await r.json();
-    setModal({ open: true, title: "Баланс пополнен", body: undefined });
+    setTitle("Твоя трактовка");
+    setView(d.view);
+    setOpen(true);
   }
 
   return (
-    <TgAuthGate>
+    <AppShell title="Расклады">
       <h1 className="h1">Расклады</h1>
 
-      <div className="card">
-        <div className="title">Пополнить (заглушка Stars)</div>
-        <div className="row">
-          <button className="btn btnGhost" onClick={() => topup(99)}>99⭐ → 150</button>
-          <button className="btn btnGhost" onClick={() => topup(199)}>199⭐ → 350</button>
-        </div>
-        <div style={{ height: 8 }} />
-        <div className="row">
-          <button className="btn btnGhost" onClick={() => topup(399)}>399⭐ → 800</button>
-          <button className="btn btnGhost" onClick={() => topup(799)}>799⭐ → 1800</button>
-        </div>
-      </div>
-
-      <div style={{ height: 12 }} />
-
-      {spreads.map((s) => (
-        <div key={s.key} className="card" style={{ marginBottom: 12 }}>
+      {spreads.map((s, i) => (
+        <motion.div
+          key={s.key}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: i * 0.03 }}
+          className="card"
+          style={{ marginBottom: 12 }}
+        >
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div className="title">{s.titleRu}</div>
-              <div className="small">{s.cardsCount} карт • цена {s.price}</div>
+              <div className="small">{s.cardsCount} карт • цена <b>{s.price}</b></div>
             </div>
             <button className="btn btnPrimary" onClick={() => buy(s.key)}>Купить</button>
           </div>
-        </div>
+        </motion.div>
       ))}
 
-      <Modal open={modal.open} title={modal.title} onClose={() => setModal({ open: false, title: "" })}>
-        {!modal.body ? (
+      <Modal open={open} title={title} onClose={() => setOpen(false)}>
+        {!view ? (
           <p className="text">Ок.</p>
         ) : (
           <>
-            <div className="small"><b>{modal.body.spreadTitle}</b> • списано {modal.body.paidAmount}</div>
+            <div className="small"><b>{view.spreadTitle}</b> • списано {view.paidAmount}</div>
             <div style={{ height: 10 }} />
             <div className="row" style={{ flexWrap: "wrap" }}>
-              {modal.body.cards.map((c) => (
-                <img key={c.slug} className="img" src={c.image} alt={c.slug} />
+              {view.cards.map((c) => (
+                <motion.img
+                  key={c.slug}
+                  className="img"
+                  src={c.image}
+                  alt={c.slug}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18 }}
+                />
               ))}
             </div>
             <hr className="hr" />
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.35 }}>{modal.body.interpretation}</pre>
+            <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.45, color: "rgba(255,255,255,.9)" }}>
+              {view.interpretation}
+            </pre>
           </>
         )}
       </Modal>
-
-      <BottomNav />
-    </TgAuthGate>
+    </AppShell>
   );
 }
