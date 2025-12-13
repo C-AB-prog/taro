@@ -11,7 +11,6 @@ function splitAdvice(text: string): { body: string; advice: string } {
   const t = (text ?? "").trim();
   if (!t) return { body: "", advice: "" };
 
-  // Ищем явный "Совет:" (или "Рекомендация:")
   const re = /(?:^|\n)\s*(совет|рекомендация)\s*[:—-]\s*/i;
   const m = re.exec(t);
 
@@ -22,12 +21,9 @@ function splitAdvice(text: string): { body: string; advice: string } {
     return { body: before, advice: after };
   }
 
-  // Если "Совет:" нет — последняя смысловая часть = совет
   const parts = t.split(/\n\s*\n/g).map((p) => p.trim()).filter(Boolean);
   if (parts.length <= 1) return { body: "", advice: t };
-  const advice = parts[parts.length - 1];
-  const body = parts.slice(0, -1).join("\n\n");
-  return { body, advice };
+  return { body: parts.slice(0, -1).join("\n\n"), advice: parts[parts.length - 1] };
 }
 
 export function SpreadReveal({
@@ -72,21 +68,13 @@ export function SpreadReveal({
 
   return (
     <div>
-      <div className="small">
-        <b>Карты</b>
-      </div>
-
+      <div className="small"><b>Карты</b></div>
       <div style={{ height: 10 }} />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 10,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
         {cards.map((c, i) => {
           const isOpen = opened[i];
+
           return (
             <button
               key={`${c.slug}-${i}`}
@@ -101,27 +89,47 @@ export function SpreadReveal({
                 textAlign: "left",
               }}
             >
-              <img
-                src={isOpen ? c.image : "/cards/card-back.jpg"}
-                alt={safePositions[i]}
-                loading="lazy"
-                decoding="async"
-                style={{
-                  width: "100%",
-                  height: 160,
-                  objectFit: "cover",
-                  borderRadius: 14,
-                  display: "block",
-                  border: "1px solid rgba(20,16,10,.10)",
-                  background: "rgba(255,255,255,.8)",
-                }}
-              />
+              {/* Flip container (адаптивный) */}
+              <div style={{ width: "100%", height: 160, perspective: 900, position: "relative" }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: 14,
+                    transformStyle: "preserve-3d",
+                    transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
+                    transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                  }}
+                >
+                  {/* front (back card) */}
+                  <div className="flipFace" style={{ borderRadius: 14 }}>
+                    <img
+                      src="/cards/card-back.jpg"
+                      alt="Рубашка"
+                      loading="lazy"
+                      decoding="async"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                    <div className="flipShine" />
+                  </div>
+
+                  {/* back (face card) */}
+                  <div className="flipFace flipBack" style={{ borderRadius: 14 }}>
+                    <img
+                      src={c.image}
+                      alt={safePositions[i]}
+                      loading="lazy"
+                      decoding="async"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div className="small" style={{ marginTop: 8, fontWeight: 950, color: "var(--text)" }}>
                 {safePositions[i]}
               </div>
-
-              <div className="small" style={{ marginTop: 2, opacity: 0.95, color: "var(--muted)" }}>
+              <div className="small" style={{ marginTop: 2, color: "var(--muted)" }}>
                 {isOpen ? "Открыта" : "Нажми, чтобы открыть"}
               </div>
             </button>
@@ -144,21 +152,15 @@ export function SpreadReveal({
 
           {body ? (
             <>
-              <div className="small" style={{ marginTop: 10 }}>
-                <b>Трактовка</b>
-              </div>
-              <p className="text" style={{ marginTop: 8, color: "var(--text)", whiteSpace: "pre-wrap" }}>
-                {body}
-              </p>
+              <div className="small" style={{ marginTop: 10 }}><b>Трактовка</b></div>
+              <p className="text" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{body}</p>
             </>
           ) : null}
 
           {advice ? (
             <div className="adviceBox" style={{ marginTop: 12 }}>
               <div className="adviceTitle">Совет</div>
-              <div className="adviceText" style={{ whiteSpace: "pre-wrap" }}>
-                {advice}
-              </div>
+              <div className="adviceText" style={{ whiteSpace: "pre-wrap" }}>{advice}</div>
             </div>
           ) : null}
         </>
