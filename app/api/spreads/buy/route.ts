@@ -9,6 +9,12 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function unauthorized() {
+  const res = NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  res.cookies.set("session", "", { path: "/", maxAge: 0 });
+  return res;
+}
+
 function guessTagByTitle(titleRu: string): "general" | "love" | "money" | "health" {
   const t = (titleRu || "").toLowerCase();
   if (t.includes("здоров") || t.includes("айболит")) return "health";
@@ -19,10 +25,17 @@ function guessTagByTitle(titleRu: string): "general" | "love" | "money" | "healt
 
 export async function POST(req: Request) {
   const token = cookies().get("session")?.value;
-  if (!token) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!token) return unauthorized();
 
-  const { spreadKey } = await req.json();
-  const session = await verifySession(token);
+  let session: any;
+  try {
+    session = await verifySession(token);
+  } catch {
+    return unauthorized();
+  }
+
+  const { spreadKey } = await req.json().catch(() => ({}));
+  if (!spreadKey) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
 
   try {
     const purchase: any = await buySpread(session.userId, spreadKey);
@@ -32,11 +45,8 @@ export async function POST(req: Request) {
 
     const spreadTitle = purchase.spread.titleRu;
     const tag = guessTagByTitle(spreadTitle);
-
-    // ✅ русские названия карт идут в ИИ
     const cardTitlesRu = slugs.map((slug) => ruTitleFromSlug(slug));
 
-    // ✅ генерим не-шаблонную трактовку
     const gen = await generateSpreadReadingRu({
       spreadTitle,
       positions,
@@ -44,19 +54,13 @@ export async function POST(req: Request) {
       tag,
     });
 
-    // важно: чтобы UI корректно выделял совет
     const interpretation = `${gen.interpretationRu}\n\nСовет: ${gen.adviceRu}`;
 
-    // ✅ сохраняем в покупку (неизменно для архива)
-    try {
-      const p: any = prisma;
-      if (purchase?.id && p.spreadPurchase?.update) {
-        await p.spreadPurchase.update({
-          where: { id: purchase.id },
-          data: { interpretation },
-        });
-      }
-    } catch {}
+    // сохранить финальную трактовку (архив неизменен)
+    await prisma.spreadPurchase.update({
+      where: { id: purchase.id },
+      data: { interpretation },
+    });
 
     const view = {
       spreadTitle,
@@ -66,11 +70,12 @@ export async function POST(req: Request) {
       interpretation,
     };
 
-    return NextResponse.json({ ok: true, view });
+    return NextResponse.json({ ok: true, view }, { headers: { "Cache-Control": "no-store" } });
   } catch (e: any) {
     if (e?.message === "NOT_ENOUGH_BALANCE") {
       return NextResponse.json({ error: "NOT_ENOUGH_BALANCE" }, { status: 402 });
     }
+    // НИКОГДА не кидаем 500 наружу — чтобы у юзера не появлялся “код”
     return NextResponse.json({ error: "BUY_FAILED" }, { status: 400 });
   }
 }
