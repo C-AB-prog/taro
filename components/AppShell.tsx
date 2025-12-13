@@ -1,61 +1,91 @@
 "use client";
 
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 
-function IconHome({ active }: { active: boolean }) {
+type Props = {
+  children: React.ReactNode;
+};
+
+function IconHome(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
-      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" />
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
-function IconSpreads({ active }: { active: boolean }) {
+function IconSpark(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
-      <path d="M7 7h10v14H7V7Z" stroke="currentColor" strokeWidth="2" />
-      <path d="M5 3h10v4" stroke="currentColor" strokeWidth="2" />
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
-function IconDeck({ active }: { active: boolean }) {
+function IconGrid(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
-      <path d="M7 4h10v16H7V4Z" stroke="currentColor" strokeWidth="2" />
-      <path d="M5 6h2M17 6h2" stroke="currentColor" strokeWidth="2" />
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
-function IconArchive({ active }: { active: boolean }) {
+function IconClock(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: active ? 1 : 0.75 }}>
-      <path d="M4 7h16v14H4V7Z" stroke="currentColor" strokeWidth="2" />
-      <path d="M6 3h12v4H6V3Z" stroke="currentColor" strokeWidth="2" />
-      <path d="M9 11h6" stroke="currentColor" strokeWidth="2" />
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 6v6l4 2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
 async function fetchBalance(): Promise<number | null> {
-  // поддержим разные роуты — где-то у тебя /api/me, где-то /api/user
-  const urls = ["/api/me", "/api/user", "/api/profile"];
-  for (const u of urls) {
+  // пытаемся быть совместимыми с твоими роутами
+  const urls = ["/api/me", "/api/user", "/api/balance"];
+  for (const url of urls) {
     try {
-      const r = await fetch(u, { cache: "no-store" });
-      if (r.status === 404) continue;
-      const d = await r.json().catch(() => ({}));
+      const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) continue;
-
+      const d = await r.json().catch(() => ({}));
       const b =
-        typeof d?.balance === "number"
-          ? d.balance
-          : typeof d?.user?.balance === "number"
-          ? d.user.balance
-          : null;
-
+        d?.balance ??
+        d?.user?.balance ??
+        d?.me?.balance ??
+        d?.data?.balance ??
+        null;
       if (typeof b === "number") return b;
+      const nb = Number(b);
+      if (Number.isFinite(nb)) return nb;
     } catch {
       // ignore
     }
@@ -63,47 +93,66 @@ async function fetchBalance(): Promise<number | null> {
   return null;
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children }: Props) {
   const pathname = usePathname();
+
+  const nav = useMemo(
+    () => [
+      { href: "/", label: "Главная", icon: IconHome },
+      { href: "/spreads", label: "Расклады", icon: IconSpark },
+      { href: "/deck", label: "Колода", icon: IconGrid },
+      { href: "/archive", label: "Архив", icon: IconClock },
+    ],
+    []
+  );
+
   const [balance, setBalance] = useState<number | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    // Telegram WebApp init (без фанатизма)
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    try {
+      tg?.ready?.();
+      tg?.expand?.();
+    } catch {}
+
+    // баланс
     (async () => {
       const b = await fetchBalance();
-      if (!cancelled) setBalance(b);
+      setBalance(b);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
+  }, []);
 
-  const nav = [
-    { href: "/", label: "Главная", icon: IconHome },
-    { href: "/spreads", label: "Расклады", icon: IconSpreads },
-    { href: "/deck", label: "Колода", icon: IconDeck },
-    { href: "/archive", label: "Архив", icon: IconArchive },
-  ];
+  // ✅ фикс: когда модалка открыта — блокируем прокрутку фона
+  useEffect(() => {
+    if (!shopOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [shopOpen]);
 
   return (
     <>
-      {/* TOPBAR: только название + баланс + плюс */}
       <div className="topbar">
         <div className="topbarInner">
-          <div className="brand">
-            <div className="brandTitle">Карта Дня | Daily Tarot</div>
-          </div>
+          <div className="brandTitle">Карта Дня | Daily Tarot</div>
 
-          <div className="row" style={{ alignItems: "center", gap: 8 }}>
-            <div className="badge" style={{ padding: "8px 10px" }}>
-              ✦ {balance === null ? "—" : balance}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="badge" aria-label="Баланс">
+              <span className="badgeDot" aria-hidden="true" />
+              Баланс&nbsp;
+              <b>{balance === null ? "—" : balance}</b>
             </div>
+
             <button
-              className="btn btnPrimary"
-              style={{ padding: "10px 12px", borderRadius: 14, width: 42 }}
+              type="button"
+              className="btn btnGhost"
+              style={{ padding: "8px 12px", borderRadius: 999 }}
               onClick={() => setShopOpen(true)}
-              aria-label="Магазин"
+              aria-label="Открыть магазин"
             >
               +
             </button>
@@ -111,23 +160,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <div className="container">{children}</div>
+      <main className="container">{children}</main>
 
-      {/* Bottom nav остаётся */}
       <div className="nav navFloat">
         <div className="navPill">
-          <div className="navInner navInnerPremium">
-            {nav.map((n) => {
-              const active = pathname === n.href;
-              const Ico = n.icon;
+          <div className="navInner">
+            {nav.map((item) => {
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname?.startsWith(item.href);
+
+              const Icon = item.icon;
+
               return (
                 <Link
-                  key={n.href}
-                  href={n.href}
+                  key={item.href}
+                  href={item.href}
                   className={`navItem ${active ? "navItemActive" : ""}`}
+                  aria-current={active ? "page" : undefined}
                 >
-                  <Ico active={active} />
-                  <div className={`navLabel ${active ? "navLabelActive" : ""}`}>{n.label}</div>
+                  <Icon className="icon" />
+                  <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
                 </Link>
               );
@@ -136,16 +190,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Магазин-заглушка */}
+      {/* Магазин — модалка как ты просил (та же Modal) */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">Telegram Stars подключим позже — сейчас это заглушка.</div>
-        <div style={{ height: 10 }} />
-        <div className="card" style={{ padding: 12 }}>
-          <div className="title">Паки валюты</div>
-          <div className="small" style={{ marginTop: 6 }}>
-            99 ⭐ → 150 • 199 ⭐ → 350 • 399 ⭐ → 800 • 799 ⭐ → 1800
-          </div>
+        <div className="small">
+          Покупка за Telegram Stars — заглушка. Скоро подключим.
         </div>
+
+        <div style={{ height: 12 }} />
+
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
+          99 Stars → 150 валюты
+        </button>
+        <div style={{ height: 8 }} />
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
+          199 Stars → 350 валюты
+        </button>
+        <div style={{ height: 8 }} />
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
+          399 Stars → 800 валюты
+        </button>
+        <div style={{ height: 8 }} />
+        <button className="btn btnPrimary" style={{ width: "100%" }} disabled>
+          799 Stars → 1800 валюты
+        </button>
+
+        <div style={{ height: 12 }} />
+        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setShopOpen(false)}>
+          Закрыть
+        </button>
       </Modal>
     </>
   );
