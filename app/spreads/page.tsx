@@ -7,7 +7,7 @@ import { RitualHeader } from "@/components/RitualHeader";
 import { SpreadReveal } from "@/components/SpreadReveal";
 
 type SpreadDef = {
-  id: string;
+  id: string; // наш ключ (в UI)
   title: string;
   price: number;
   cardsCount: number;
@@ -25,7 +25,7 @@ type View = {
 
 const SPREADS: SpreadDef[] = [
   {
-    id: "three",
+    id: "three_cards",
     title: "Три карты",
     price: 125,
     cardsCount: 3,
@@ -66,7 +66,7 @@ const SPREADS: SpreadDef[] = [
     price: 450,
     cardsCount: 5,
     tag: "money",
-    brief: "Про деньги системно: корень, настоящее, помощники, блоки, итог.",
+    brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
     positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
   },
   {
@@ -75,11 +75,11 @@ const SPREADS: SpreadDef[] = [
     price: 550,
     cardsCount: 7,
     tag: "health",
-    brief: "Мягкая самодиагностика: что влияет, что поддержит, тенденция.",
+    brief: "Самодиагностика: что влияет, что поддержит, тенденция.",
     positions: ["S", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация", "Тенденция"],
   },
   {
-    id: "aibolit",
+    id: "doctor_aibolit",
     title: "Доктор Айболит",
     price: 800,
     cardsCount: 9,
@@ -93,7 +93,7 @@ const SPREADS: SpreadDef[] = [
     price: 1500,
     cardsCount: 10,
     tag: "general",
-    brief: "Глубоко и подробно: причины, скрытые влияния, развитие, исход.",
+    brief: "Глубоко: причины, скрытые влияния, развитие, исход.",
     positions: ["1","2","3","4","5","6","7","8","9","10"],
   },
 ];
@@ -106,7 +106,9 @@ function tagLabel(tag: SpreadDef["tag"]) {
 }
 
 function getInitData() {
-  return (globalThis as any)?.Telegram?.WebApp?.initData ? String((globalThis as any).Telegram.WebApp.initData) : "";
+  return (globalThis as any)?.Telegram?.WebApp?.initData
+    ? String((globalThis as any).Telegram.WebApp.initData)
+    : "";
 }
 
 async function postJSON(url: string, body: any) {
@@ -119,9 +121,35 @@ async function postJSON(url: string, body: any) {
       "x-telegram-webapp-init-data": initData,
     },
     body: JSON.stringify({ ...(body ?? {}), initData }),
+    cache: "no-store",
   });
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };
+}
+
+function idVariants(def: SpreadDef) {
+  const base = def.id; // snake_case
+  const kebab = base.replace(/_/g, "-");
+  const compact = base.replace(/_/g, "");
+  const shortAliases: string[] = [];
+
+  // важные “человеческие” алиасы — очень часто бэк так и называет
+  if (def.title === "Три карты") shortAliases.push("three", "threecards", "three-cards");
+  if (def.title === "Кельтский крест") shortAliases.push("celtic", "celticcross", "celtic-cross");
+  if (def.title === "Доктор Айболит") shortAliases.push("aibolit", "doctor", "doctor-aibolit");
+
+  // иногда бэк ждёт РУ название
+  const ru = def.title;
+
+  // уникальный список
+  const all = [base, kebab, compact, ...shortAliases, ru];
+  return Array.from(new Set(all.filter(Boolean)));
+}
+
+function prettyErr(d: any) {
+  const raw = String(d?.message ?? d?.error ?? d ?? "BUY_FAILED");
+  if (raw.toUpperCase() === "BUY_FAILED") return "Покупка не прошла. Сервер отклонил запрос.";
+  return raw;
 }
 
 export default function SpreadsPage() {
@@ -146,43 +174,49 @@ export default function SpreadsPage() {
     setBusyId(def.id);
 
     try {
-      // максимально совместимый body (на случай как бэк ожидает поля)
-      const payload = {
-        spreadId: def.id,
-        id: def.id,
-        key: def.id,
-        slug: def.id,
+      const variants = idVariants(def);
 
-        title: def.title,
-        name: def.title,
-        spread: def.title,
-        spreadTitle: def.title,
+      // пробуем несколько spreadId — пока не сработает
+      let lastRes: { ok: boolean; status: number; data: any } | null = null;
 
-        price: def.price,
-        paidAmount: def.price,
+      for (const candidate of variants) {
+        const payload = {
+          // бэки обычно читают одно из этих полей
+          spreadId: candidate,
+          id: candidate,
+          key: candidate,
+          slug: candidate,
 
-        cardsCount: def.cardsCount,
-        positions: def.positions,
-      };
+          // оставим и нормальные поля — пусть будут
+          spreadTitle: def.title,
+          title: def.title,
+          paidAmount: def.price,
+          price: def.price,
+          cardsCount: def.cardsCount,
+          positions: def.positions,
+        };
 
-      let res = await postJSON("/api/spreads/buy", payload);
-      if (!res.ok && res.status === 404) res = await postJSON("/api/spreads/purchase", payload);
+        let res = await postJSON("/api/spreads/buy", payload);
+        if (!res.ok && res.status === 404) res = await postJSON("/api/spreads/purchase", payload);
 
-      if (!res.ok) {
-        const raw = res.data?.message ?? res.data?.error ?? "BUY_FAILED";
-        setErrText(
-          raw === "BUY_FAILED"
-            ? "Покупка не прошла. Скорее всего, бэк не узнаёт этот расклад (id/название)."
-            : String(raw)
-        );
-        setErrDebug(JSON.stringify(res.data, null, 2));
+        lastRes = res;
+
+        if (res.ok) break;
+
+        // если сервер явно говорит “unknown spread / not found spread” — пробуем дальше
+        // если другая ошибка (например insufficient) — тоже покажем, но после попыток
+      }
+
+      if (!lastRes || !lastRes.ok) {
+        setErrText(prettyErr(lastRes?.data));
+        setErrDebug(lastRes ? JSON.stringify(lastRes.data, null, 2) : "");
         setErrOpen(true);
         return;
       }
 
-      const cards = (res.data?.cards ?? res.data?.result?.cards ?? []) as { slug: string; image: string }[];
-      const interpretation = String(res.data?.interpretation ?? res.data?.result?.interpretation ?? "");
-      const positions = (res.data?.positions ?? res.data?.result?.positions ?? def.positions) as string[];
+      const cards = (lastRes.data?.cards ?? lastRes.data?.result?.cards ?? []) as { slug: string; image: string }[];
+      const interpretation = String(lastRes.data?.interpretation ?? lastRes.data?.result?.interpretation ?? "");
+      const positions = (lastRes.data?.positions ?? lastRes.data?.result?.positions ?? def.positions) as string[];
 
       setView({ cards, positions, interpretation, resetToken: `${def.id}-${Date.now()}` });
       setModalTitle(def.title);
@@ -203,7 +237,7 @@ export default function SpreadsPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="title">Категории</div>
-            <div className="small">Короткое описание + трактовка</div>
+            <div className="small">Короткое описание каждого расклада</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>{list.length}</div>
         </div>
@@ -254,13 +288,17 @@ export default function SpreadsPage() {
         {!view ? (
           <p className="text">…</p>
         ) : (
-          <SpreadReveal cards={view.cards} positions={view.positions} interpretation={view.interpretation} resetToken={view.resetToken} />
+          <SpreadReveal
+            cards={view.cards}
+            positions={view.positions}
+            interpretation={view.interpretation}
+            resetToken={view.resetToken}
+          />
         )}
       </Modal>
 
       <Modal open={errOpen} title="Не получилось" onClose={() => setErrOpen(false)}>
         <p className="text" style={{ whiteSpace: "pre-wrap" }}>{errText}</p>
-
         {errDebug ? (
           <>
             <div style={{ height: 10 }} />
@@ -269,11 +307,8 @@ export default function SpreadsPage() {
             </div>
           </>
         ) : null}
-
         <div style={{ height: 12 }} />
-        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>
-          Ок
-        </button>
+        <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => setErrOpen(false)}>Ок</button>
       </Modal>
     </AppShell>
   );
