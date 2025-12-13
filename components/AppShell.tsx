@@ -10,78 +10,32 @@ type Props = { children: React.ReactNode };
 function IconHome(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
 function IconSpark(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
 function IconGrid(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
 function IconClock(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M12 6v6l4 2"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
-}
-
-async function fetchBalance(): Promise<number | null> {
-  const urls = ["/api/me", "/api/user", "/api/balance"];
-  for (const url of urls) {
-    try {
-      const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) continue;
-      const d = await r.json().catch(() => ({}));
-      const b =
-        d?.balance ?? d?.user?.balance ?? d?.me?.balance ?? d?.data?.balance ?? null;
-      if (typeof b === "number") return b;
-      const nb = Number(b);
-      if (Number.isFinite(nb)) return nb;
-    } catch {}
-  }
-  return null;
 }
 
 type PackId = "pack_99" | "pack_199" | "pack_399" | "pack_799";
@@ -99,6 +53,40 @@ const PACK_COINS: Record<PackId, number> = {
   pack_399: 800,
   pack_799: 1800,
 };
+
+async function ensureSession(): Promise<boolean> {
+  try {
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    const initData = tg?.initData;
+    if (!initData) return false;
+
+    const r = await fetch("/api/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ initData }),
+    });
+
+    const d = await r.json().catch(() => ({}));
+    return !!(r.ok && d?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: false; status: number }> {
+  try {
+    const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+    if (!r.ok) return { ok: false, status: r.status };
+    const d = await r.json().catch(() => ({}));
+    const b = d?.balance ?? d?.me?.balance;
+    const nb = Number(b);
+    if (Number.isFinite(nb)) return { ok: true, balance: nb };
+    return { ok: false, status: 500 };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
 
 export function AppShell({ children }: Props) {
   const pathname = usePathname();
@@ -120,8 +108,24 @@ export function AppShell({ children }: Props) {
   const [shopErr, setShopErr] = useState<string | null>(null);
 
   async function refreshBalance() {
-    const b = await fetchBalance();
-    setBalance(b);
+    // 1) пробуем /api/me
+    const r1 = await fetchMeBalance();
+    if (r1.ok) {
+      setBalance(r1.balance);
+      return;
+    }
+
+    // 2) если 401 — пробуем переавторизоваться и повторить
+    if (r1.status === 401) {
+      await ensureSession();
+      const r2 = await fetchMeBalance();
+      if (r2.ok) {
+        setBalance(r2.balance);
+        return;
+      }
+    }
+
+    setBalance(null);
   }
 
   useEffect(() => {
@@ -132,25 +136,13 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      // ✅ авто-логин (создаёт пользователя и ставит session-cookie)
-      try {
-        const initData = tg?.initData;
-        if (initData) {
-          await fetch("/api/auth/telegram", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ initData }),
-          });
-        }
-      } catch {}
-
-      // ✅ затем обновляем баланс
+      // важное: сначала создаём сессию, потом баланс
+      await ensureSession();
       await refreshBalance();
     };
 
     run();
 
-    // ✅ слушаем событие обновления баланса
     const on = () => refreshBalance();
     window.addEventListener("balance:refresh", on);
     return () => window.removeEventListener("balance:refresh", on);
@@ -172,15 +164,11 @@ export function AppShell({ children }: Props) {
     async function pollBalance(timeoutMs = 12000) {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
-        const b = await fetchBalance();
-        if (typeof b === "number") {
-          setBalance(b);
-
-          if (before !== null) {
-            if (b >= before + expected) return { ok: true as const, delta: b - before };
-          } else {
-            return { ok: true as const, delta: expected };
-          }
+        const r = await fetchMeBalance();
+        if (r.ok) {
+          setBalance(r.balance);
+          if (before !== null && r.balance >= before + expected) return { ok: true as const, delta: r.balance - before };
+          if (before === null) return { ok: true as const, delta: expected };
         }
         await sleep(900);
       }
@@ -188,18 +176,26 @@ export function AppShell({ children }: Props) {
     }
 
     try {
-      const r = await fetch("/api/shop/invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId }),
-      });
+      const makeInvoice = async () =>
+        fetch("/api/shop/invoice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ packId }),
+        });
+
+      let r = await makeInvoice();
+      if (r.status === 401) {
+        await ensureSession();
+        r = await makeInvoice();
+      }
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok || !data?.invoiceLink) {
         setShopMsg(null);
         setShopErr(
           data?.error === "UNAUTHORIZED"
-            ? "Нет сессии. Открой мини-приложение через Telegram."
+            ? "Не получилось создать сессию. Открой мини-приложение именно через кнопку «Открыть» в боте."
             : data?.error
             ? `Сервер: ${data.error}`
             : "Не удалось создать счёт. Попробуй ещё раз."
@@ -227,14 +223,13 @@ export function AppShell({ children }: Props) {
           if (res.ok) {
             setShopMsg(`Готово! +${res.delta} валюты ✨`);
             (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-
             setTimeout(() => {
               setShopMsg(null);
               setShopOpen(false);
             }, 1600);
           } else {
             setShopMsg(null);
-            setShopErr("Платёж принят, но баланс обновляется дольше обычного. Подожди пару секунд и открой магазин снова.");
+            setShopErr("Платёж принят, но баланс обновляется дольше обычного. Подожди и открой магазин снова.");
           }
 
           setBuying(null);
@@ -303,12 +298,7 @@ export function AppShell({ children }: Props) {
               const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`navItem ${active ? "navItemActive" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                >
+                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`} aria-current={active ? "page" : undefined}>
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
@@ -320,20 +310,12 @@ export function AppShell({ children }: Props) {
       </div>
 
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <div className="small">
-          Пополнение внутренней валюты через Telegram Stars. Начисление обычно занимает пару секунд.
-        </div>
-
+        <div className="small">Пополнение внутренней валюты через Telegram Stars.</div>
         <div style={{ height: 12 }} />
 
         {PACKS.map((p) => (
           <div key={p.id} style={{ marginBottom: 10 }}>
-            <button
-              className="btn btnPrimary"
-              style={{ width: "100%" }}
-              disabled={!!buying}
-              onClick={() => buyPack(p.id)}
-            >
+            <button className="btn btnPrimary" style={{ width: "100%" }} disabled={!!buying} onClick={() => buyPack(p.id)}>
               {buying === p.id ? "Ожидаю оплату…" : p.label}
             </button>
             <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
@@ -343,7 +325,6 @@ export function AppShell({ children }: Props) {
         ))}
 
         {shopMsg ? <div className="small" style={{ marginTop: 10 }}>{shopMsg}</div> : null}
-
         {shopErr ? (
           <div className="small" style={{ marginTop: 10 }}>
             <b>Не получилось:</b> {shopErr}
