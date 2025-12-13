@@ -6,6 +6,7 @@ import { Modal } from "@/components/Modal";
 import { motion } from "framer-motion";
 import { SpreadReveal } from "@/components/SpreadReveal";
 import { RitualHeader } from "@/components/RitualHeader";
+import { IconChevronRight } from "@/components/Icons";
 
 type WheelItem = {
   date: string;
@@ -15,16 +16,19 @@ type WheelItem = {
 type SpreadItem = {
   createdAt: string;
   spreadTitle: string;
-  spreadKey?: string;
   paidAmount: number;
   positions?: string[];
   cards: { slug: string; image: string }[];
   interpretation: string;
 };
 
+type Item =
+  | { kind: "wheel"; ts: string; w: WheelItem }
+  | { kind: "spread"; ts: string; s: SpreadItem };
+
 export default function ArchivePage() {
   const [data, setData] = useState<{ wheel: WheelItem[]; spreads: SpreadItem[] } | null>(null);
-  const [tab, setTab] = useState<"wheel" | "spreads">("wheel");
+  const [filter, setFilter] = useState<"all" | "wheel" | "spread">("all");
 
   const [open, setOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -37,24 +41,39 @@ export default function ArchivePage() {
       .then(setData);
   }, []);
 
-  const wheel = useMemo(() => data?.wheel ?? [], [data]);
-  const spreads = useMemo(() => data?.spreads ?? [], [data]);
+  const items: Item[] = useMemo(() => {
+    if (!data) return [];
+    const all: Item[] = [
+      ...data.wheel.map((w) => ({ kind: "wheel", ts: w.date, w })),
+      ...data.spreads.map((s) => ({ kind: "spread", ts: s.createdAt, s })),
+    ];
+    all.sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
+    if (filter === "wheel") return all.filter((x) => x.kind === "wheel");
+    if (filter === "spread") return all.filter((x) => x.kind === "spread");
+    return all;
+  }, [data, filter]);
+
+  const counts = useMemo(() => {
+    const w = data?.wheel.length ?? 0;
+    const s = data?.spreads.length ?? 0;
+    return { w, s, all: w + s };
+  }, [data]);
 
   function fmt(d: string) {
     return new Date(d).toLocaleDateString("ru-RU");
   }
 
-  function openWheel(item: WheelItem) {
+  function openWheel(w: WheelItem) {
     setSpreadItem(null);
-    setWheelItem(item);
-    setModalTitle(`Колесо • ${fmt(item.date)}`);
+    setWheelItem(w);
+    setModalTitle(`Колесо • ${fmt(w.date)}`);
     setOpen(true);
   }
 
-  function openSpread(item: SpreadItem) {
+  function openSpread(s: SpreadItem) {
     setWheelItem(null);
-    setSpreadItem(item);
-    setModalTitle(`${item.spreadTitle} • ${fmt(item.createdAt)}`);
+    setSpreadItem(s);
+    setModalTitle(`${s.spreadTitle} • ${fmt(s.createdAt)}`);
     setOpen(true);
   }
 
@@ -64,42 +83,44 @@ export default function ArchivePage() {
   }, [spreadItem]);
 
   const spreadPositions =
-    spreadItem?.positions ??
-    spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ??
-    [];
+    spreadItem?.positions ?? spreadItem?.cards.map((_, i) => `Позиция ${i + 1}`) ?? [];
 
   return (
     <AppShell title="Архив">
       <h1 className="h1">Архив</h1>
-      <RitualHeader label="Следы твоих раскладов" />
+      <RitualHeader label="Твой журнал" />
 
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div className="title">История</div>
-            <div className="small">Все твои прокруты и расклады сохраняются здесь</div>
+            <div className="title">Фильтр</div>
+            <div className="small">Собранные знаки и расклады</div>
           </div>
           <div className="badge" style={{ padding: "8px 12px" }}>
-            {tab === "wheel" ? `${wheel.length} прокрутов` : `${spreads.length} раскладов`}
+            {items.length}
           </div>
         </div>
 
         <div style={{ height: 12 }} />
 
-        <div className="row">
+        <div className="segRow">
           <button
-            className={`btn ${tab === "wheel" ? "btnPrimary" : "btnGhost"}`}
-            onClick={() => setTab("wheel")}
-            style={{ flex: 1 }}
+            className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("all")}
           >
-            Колесо
+            Всё • {counts.all}
           </button>
           <button
-            className={`btn ${tab === "spreads" ? "btnPrimary" : "btnGhost"}`}
-            onClick={() => setTab("spreads")}
-            style={{ flex: 1 }}
+            className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("wheel")}
           >
-            Расклады
+            Колесо • {counts.w}
+          </button>
+          <button
+            className={`segBtn ${filter === "spread" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("spread")}
+          >
+            Расклады • {counts.s}
           </button>
         </div>
       </div>
@@ -114,101 +135,85 @@ export default function ArchivePage() {
           <div style={{ height: 8 }} />
           <div className="shimmer" style={{ height: 12, width: "86%" }} />
         </div>
-      ) : tab === "wheel" ? (
-        <div className="col">
-          {wheel.length === 0 ? (
-            <div className="card">
-              <div className="title">Пока пусто</div>
-              <div className="small" style={{ marginTop: 6 }}>
-                Покрути колесо на главной — и здесь появится запись.
-              </div>
-            </div>
-          ) : (
-            wheel.map((w, i) => (
-              <motion.button
-                key={i}
-                className="card pressable"
-                style={{ textAlign: "left", cursor: "pointer" }}
-                whileTap={{ scale: 0.99 }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: Math.min(i, 14) * 0.02 }}
-                onClick={() => openWheel(w)}
-              >
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div className="title">{w.card.titleRu}</div>
-                    <div className="small">{fmt(w.date)} • Колесо фортуны</div>
-                  </div>
-                  <div className="badge" style={{ padding: "8px 12px" }}>
-                    Открыть
-                  </div>
-                </div>
-              </motion.button>
-            ))
-          )}
+      ) : items.length === 0 ? (
+        <div className="card">
+          <div className="title">Пока пусто</div>
+          <div className="small" style={{ marginTop: 6 }}>
+            Покрути колесо или купи расклад — и здесь появятся записи.
+          </div>
         </div>
       ) : (
-        <div className="col">
-          {spreads.length === 0 ? (
-            <div className="card">
-              <div className="title">Пока пусто</div>
-              <div className="small" style={{ marginTop: 6 }}>
-                Купи расклад — и он появится здесь.
-              </div>
-            </div>
-          ) : (
-            spreads.map((s, i) => (
+        <div className="archiveList">
+          {items.map((it, i) => {
+            if (it.kind === "wheel") {
+              const w = it.w;
+              return (
+                <motion.button
+                  key={`w-${w.date}-${i}`}
+                  className="card pressable archiveItem"
+                  style={{ textAlign: "left", cursor: "pointer" }}
+                  whileTap={{ scale: 0.99 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
+                  onClick={() => openWheel(w)}
+                >
+                  <div className="archiveRow">
+                    <img className="thumb" src={w.card.image} alt={w.card.titleRu} loading="lazy" decoding="async" />
+                    <div className="archiveMain">
+                      <div className="archiveTitle">{w.card.titleRu}</div>
+                      <div className="archiveMeta">{fmt(w.date)} • Колесо фортуны</div>
+                    </div>
+                    <IconChevronRight className="chev" />
+                  </div>
+                </motion.button>
+              );
+            }
+
+            const s = it.s;
+            const preview = s.cards.slice(0, 3);
+            return (
               <motion.button
-                key={i}
-                className="card pressable"
+                key={`s-${s.createdAt}-${i}`}
+                className="card pressable archiveItem"
                 style={{ textAlign: "left", cursor: "pointer" }}
                 whileTap={{ scale: 0.99 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: Math.min(i, 14) * 0.02 }}
+                transition={{ duration: 0.18, delay: Math.min(i, 16) * 0.02 }}
                 onClick={() => openSpread(s)}
               >
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div className="title">{s.spreadTitle}</div>
-                    <div className="small">
-                      {fmt(s.createdAt)} • списано {s.paidAmount}
+                <div className="archiveRow">
+                  <div className="thumbStack">
+                    {preview[0] ? <img className="thumb t1" src={preview[0].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[1] ? <img className="thumb t2" src={preview[1].image} alt="" loading="lazy" decoding="async" /> : null}
+                    {preview[2] ? <img className="thumb t3" src={preview[2].image} alt="" loading="lazy" decoding="async" /> : null}
+                  </div>
+
+                  <div className="archiveMain">
+                    <div className="archiveTitle">{s.spreadTitle}</div>
+                    <div className="archiveMeta">
+                      {fmt(s.createdAt)} • {s.cards.length} карт • списано {s.paidAmount}
                     </div>
                   </div>
-                  <div className="badge" style={{ padding: "8px 12px" }}>
-                    Открыть
-                  </div>
+
+                  <IconChevronRight className="chev" />
                 </div>
               </motion.button>
-            ))
-          )}
+            );
+          })}
         </div>
       )}
 
       <Modal open={open} title={modalTitle} onClose={() => setOpen(false)}>
         {wheelItem ? (
           <div className="row">
-            <img
-              className="img"
-              src={wheelItem.card.image}
-              alt={wheelItem.card.titleRu}
-              loading="lazy"
-              decoding="async"
-            />
+            <img className="img" src={wheelItem.card.image} alt={wheelItem.card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>
-                {wheelItem.card.titleRu}
-              </div>
-              <p className="text" style={{ marginTop: 6 }}>
-                {wheelItem.card.meaningRu}
-              </p>
-              <div className="small" style={{ marginTop: 8 }}>
-                <b>Совет</b>
-              </div>
-              <p className="text" style={{ marginTop: 6 }}>
-                {wheelItem.card.adviceRu}
-              </p>
+              <div className="title" style={{ fontSize: 16 }}>{wheelItem.card.titleRu}</div>
+              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.meaningRu}</p>
+              <div className="small" style={{ marginTop: 8 }}><b>Совет</b></div>
+              <p className="text" style={{ marginTop: 6 }}>{wheelItem.card.adviceRu}</p>
             </div>
           </div>
         ) : spreadItem ? (
