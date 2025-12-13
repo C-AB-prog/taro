@@ -38,6 +38,10 @@ model Card {
   meaningRu String   @default("")
   adviceRu  String   @default("")
   createdAt DateTime @default(now())
+
+  // ✅ обратные связи
+  dailyCards DailyCard[]
+  wheelSpins WheelSpin[]
 }
 
 model DailyCard {
@@ -64,6 +68,9 @@ model Spread {
   titleRu    String
   cardsCount Int
   price      Int
+
+  // ✅ обратная связь
+  purchases SpreadPurchase[]
 }
 
 model SpreadPurchase {
