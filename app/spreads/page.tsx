@@ -26,35 +26,66 @@ type View = {
 type Err = { text: string; debug?: string };
 
 const SPREADS: SpreadDef[] = [
-  { id: "three", title: "Три карты", price: 125, cardsCount: 3, tag: "general",
+  {
+    id: "three",
+    title: "Три карты",
+    price: 125,
+    cardsCount: 3,
+    tag: "general",
     brief: "Прошлое • Настоящее • Будущее — быстрый расклад на ситуацию.",
     positions: ["Прошлое", "Настоящее", "Будущее"],
   },
-  { id: "couple_future", title: "Будущее пары", price: 125, cardsCount: 3, tag: "love",
-    brief: "Мысли партнёра, что между вами сейчас, и его чувства.",
-    positions: ["Мысли партнёра", "Что между вами сейчас", "Чувства партнёра"],
-  },
-  { id: "station_for_two", title: "Вокзал для двоих", price: 250, cardsCount: 2, tag: "love",
+  {
+    id: "station_for_two",
+    title: "Вокзал для двоих",
+    price: 250,
+    cardsCount: 2,
+    tag: "love",
     brief: "Твои мысли и мысли партнёра — как вы видите отношения.",
     positions: ["Твои мысли", "Мысли партнёра"],
   },
-  { id: "money_on_barrel", title: "Деньги на бочку", price: 350, cardsCount: 5, tag: "money",
+  {
+    id: "money_on_barrel",
+    title: "Деньги на бочку",
+    price: 350,
+    cardsCount: 5,
+    tag: "money",
     brief: "Отношение к деньгам: траты, установки, что поможет.",
     positions: ["Отношение", "Как трачу", "Что ограничивает", "Что поможет", "Итог"],
   },
-  { id: "money_tree", title: "Денежное дерево", price: 450, cardsCount: 5, tag: "money",
+  {
+    id: "money_tree",
+    title: "Денежное дерево",
+    price: 450,
+    cardsCount: 5,
+    tag: "money",
     brief: "Деньги системно: корень, настоящее, помощники, блоки, итог.",
     positions: ["Корень", "Настоящее", "Помощники", "Блоки", "Итог"],
   },
-  { id: "my_health", title: "Моё здоровье", price: 550, cardsCount: 6, tag: "health",
+  {
+    id: "my_health",
+    title: "Моё здоровье",
+    price: 550,
+    cardsCount: 6,
+    tag: "health",
     brief: "Самодиагностика: состояние, что истощает, что поддержит и рекомендация.",
     positions: ["Текущее состояние", "Физика", "Эмоции", "Что истощает", "Что поддержит", "Рекомендация"],
   },
-  { id: "aibolit", title: "Доктор Айболит", price: 800, cardsCount: 9, tag: "health",
+  {
+    id: "aibolit",
+    title: "Доктор Айболит",
+    price: 800,
+    cardsCount: 9,
+    tag: "health",
     brief: "Комплексный взгляд на здоровье: поддержка, уязвимости, фокус.",
     positions: ["1","2","3","4","5","6","7","8","9"],
   },
-  { id: "celtic_cross", title: "Кельтский крест", price: 1500, cardsCount: 10, tag: "general",
+  {
+    id: "celtic_cross",
+    title: "Кельтский крест",
+    price: 1500,
+    cardsCount: 10,
+    tag: "general",
     brief: "Глубоко: причины, скрытые влияния, развитие, исход.",
     positions: ["1","2","3","4","5","6","7","8","9","10"],
   },
@@ -99,9 +130,7 @@ async function postJSON(url: string, body: any, timeoutMs = 6500) {
 }
 
 function extractView(resData: any, fallbackPositions: string[]) {
-  // ✅ сервер кладёт в data.view
   const root = resData?.view ?? resData?.result?.view ?? resData?.purchase?.view ?? resData;
-
   const cards = (root?.cards ?? []) as { slug: string; image: string }[];
   const interpretation = String(root?.interpretation ?? "");
   const positions = (root?.positions ?? fallbackPositions) as string[];
@@ -115,7 +144,6 @@ function keyVariants(def: SpreadDef) {
   const extra: string[] = [];
 
   if (def.id === "three") extra.push("three_cards", "three-cards", "Три карты");
-  if (def.id === "couple_future") extra.push("future_pair", "futurePair", "coupleFuture", "Будущее пары");
   if (def.id === "station_for_two") extra.push("station-for-two", "Вокзал для двоих");
   if (def.id === "money_tree") extra.push("money-tree", "Денежное дерево");
   if (def.id === "money_on_barrel") extra.push("money-on-barrel", "Деньги на бочку");
@@ -170,7 +198,7 @@ export default function SpreadsPage() {
             last = { ep, body, ok: r.ok, status: r.status, data: r.data };
 
             const errCode = String(r.data?.error ?? r.data?.message ?? "").toUpperCase();
-            if (errCode === "BUY_FAILED") continue; // пробуем другой ключ
+            if (errCode === "BUY_FAILED") continue;
 
             if (!r.ok) {
               const s = String(r.data?.error ?? r.data?.message ?? "").toLowerCase();
@@ -182,7 +210,6 @@ export default function SpreadsPage() {
 
             const extracted = extractView(r.data, def.positions);
 
-            // ✅ УСПЕХ: есть cards
             if (Array.isArray(extracted.cards) && extracted.cards.length > 0) {
               setViews((m) => ({
                 ...m,
@@ -195,14 +222,11 @@ export default function SpreadsPage() {
                 },
               }));
 
-              // ✅ обновим баланс в шапке
               window.dispatchEvent(new Event("balance:refresh"));
-
               window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-              return; // 🔥 важно: не продолжаем и НЕ ставим ошибку
+              return;
             }
 
-            // ok, но без cards
             setErrs((m) => ({
               ...m,
               [def.id]: {
@@ -215,7 +239,6 @@ export default function SpreadsPage() {
         }
       }
 
-      // если дошли сюда — успеха не было
       setErrs((m) => ({
         ...m,
         [def.id]: {
@@ -238,7 +261,6 @@ export default function SpreadsPage() {
       <RitualHeader label="Расклады" />
 
       <div className="card">
-        {/* без “Все”, но по умолчанию показываем все */}
         <div className="segRow segRowEqual">
           <button className={`segBtn ${filter === "general" ? "segBtnActive" : ""}`} onClick={() => setFilter(filter === "general" ? "all" : "general")}>
             Ситуация
@@ -261,7 +283,6 @@ export default function SpreadsPage() {
 
       <div style={{ height: 12 }} />
 
-      {/* расстояние между раскладами */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {list.map((s) => {
           const isBusy = busyId === s.id;
@@ -294,15 +315,9 @@ export default function SpreadsPage() {
                 {isBusy ? "Готовлю…" : "Сделать расклад"}
               </button>
 
-              {/* ✅ сворачиваем, когда расклад уже показан */}
               {isActive && (v || err) ? (
                 <div style={{ marginTop: 10 }}>
-                  <button
-                    type="button"
-                    className="btn btnGhost"
-                    style={{ width: "100%" }}
-                    onClick={() => collapseIfActive(s.id)}
-                  >
+                  <button type="button" className="btn btnGhost" style={{ width: "100%" }} onClick={() => collapseIfActive(s.id)}>
                     Свернуть
                   </button>
                 </div>
@@ -310,12 +325,7 @@ export default function SpreadsPage() {
 
               {isActive && v ? (
                 <div style={{ marginTop: 12, touchAction: "pan-y" }} onClick={(e) => e.stopPropagation()}>
-                  <SpreadReveal
-                    cards={v.cards}
-                    positions={v.positions}
-                    interpretation={v.interpretation}
-                    resetToken={v.resetToken}
-                  />
+                  <SpreadReveal cards={v.cards} positions={v.positions} interpretation={v.interpretation} resetToken={v.resetToken} />
                 </div>
               ) : null}
 
