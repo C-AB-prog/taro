@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { resolveCardImage } from "@/lib/tarot";
+import { resolveCardImage, spreadPositions } from "@/lib/tarot";
 
 export async function GET() {
   const token = cookies().get("session")?.value;
@@ -25,7 +25,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    wheel: wheel.map(w => ({
+    wheel: wheel.map((w) => ({
       date: w.date,
       card: {
         slug: w.card.slug,
@@ -33,14 +33,19 @@ export async function GET() {
         meaningRu: w.card.meaningRu,
         adviceRu: w.card.adviceRu,
         image: resolveCardImage(w.card.slug),
-      }
+      },
     })),
-    spreads: spreads.map(s => ({
-      createdAt: s.createdAt,
-      spreadTitle: s.spread.titleRu,
-      paidAmount: s.paidAmount,
-      cards: (s.cardsJson as any[]).map((slug) => ({ slug, image: resolveCardImage(String(slug)) })),
-      interpretation: s.interpretation,
-    })),
+    spreads: spreads.map((s) => {
+      const slugs = s.cardsJson as unknown as string[];
+      return {
+        createdAt: s.createdAt,
+        spreadTitle: s.spread.titleRu,
+        spreadKey: s.spread.key,
+        paidAmount: s.paidAmount,
+        positions: spreadPositions(s.spread.key, slugs.length),
+        cards: slugs.map((slug) => ({ slug, image: resolveCardImage(String(slug)) })),
+        interpretation: s.interpretation,
+      };
+    }),
   });
 }
