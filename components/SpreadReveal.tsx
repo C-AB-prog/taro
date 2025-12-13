@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 export type SpreadCard = {
   slug: string;
@@ -13,11 +14,9 @@ function splitAdvice(text: string): { body: string; advice: string } {
 
   const re = /(?:^|\n)\s*(совет|рекомендация)\s*[:—-]\s*/i;
   const m = re.exec(t);
-
   if (m && m.index >= 0) {
-    const idx = m.index;
-    const before = t.slice(0, idx).trim();
-    const after = t.slice(idx).replace(re, "").trim();
+    const before = t.slice(0, m.index).trim();
+    const after = t.slice(m.index).replace(re, "").trim();
     return { body: before, advice: after };
   }
 
@@ -74,6 +73,7 @@ export function SpreadReveal({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
         {cards.map((c, i) => {
           const isOpen = opened[i];
+          const cardTitle = ruTitleFromSlug(c.slug);
 
           return (
             <button
@@ -89,7 +89,6 @@ export function SpreadReveal({
                 textAlign: "left",
               }}
             >
-              {/* Flip container (адаптивный) */}
               <div style={{ width: "100%", height: 160, perspective: 900, position: "relative" }}>
                 <div
                   style={{
@@ -101,7 +100,6 @@ export function SpreadReveal({
                     transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
                   }}
                 >
-                  {/* front (back card) */}
                   <div className="flipFace" style={{ borderRadius: 14 }}>
                     <img
                       src="/cards/card-back.jpg"
@@ -113,11 +111,10 @@ export function SpreadReveal({
                     <div className="flipShine" />
                   </div>
 
-                  {/* back (face card) */}
                   <div className="flipFace flipBack" style={{ borderRadius: 14 }}>
                     <img
                       src={c.image}
-                      alt={safePositions[i]}
+                      alt={cardTitle}
                       loading="lazy"
                       decoding="async"
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
@@ -127,10 +124,11 @@ export function SpreadReveal({
               </div>
 
               <div className="small" style={{ marginTop: 8, fontWeight: 950, color: "var(--text)" }}>
-                {safePositions[i]}
+                {isOpen ? cardTitle : "Нажми, чтобы открыть"}
               </div>
+
               <div className="small" style={{ marginTop: 2, color: "var(--muted)" }}>
-                {isOpen ? "Открыта" : "Нажми, чтобы открыть"}
+                {safePositions[i]}
               </div>
             </button>
           );
