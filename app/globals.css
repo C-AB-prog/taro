@@ -339,3 +339,104 @@ a{ color:inherit; text-decoration:none; }
   transform: translateX(-30%);
 }
 .flipHint{ margin-top:8px; font-size:12px; color: rgba(184,176,160,.9); }
+
+/* ===== Premium polish (black + champagne gold) ===== */
+
+/* чуть светлее и “дороже” золото */
+:root{
+  --gold:#e7c981;
+  --gold2:#c79b3a;
+}
+
+/* тонкий “шум” на карточках — ощущение премиума */
+.card{
+  overflow: hidden;
+}
+.card::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  pointer-events:none;
+  opacity:.10;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(231,201,129,.18), transparent 55%),
+    radial-gradient(circle at 80% 10%, rgba(231,201,129,.10), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%);
+}
+
+/* мягкий “glow” при тапе */
+.card:active{
+  border-color: rgba(231,201,129,.28);
+}
+
+/* кнопки: внутренняя тень + аккуратный блеск */
+.btn{
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.btnPrimary{
+  box-shadow:
+    0 14px 40px rgba(231,201,129,.14),
+    inset 0 1px 0 rgba(255,255,255,.22);
+}
+.btnPrimary:active{
+  filter: brightness(.98);
+}
+
+/* бейджи чуть чище */
+.badge{
+  border-color: rgba(231,201,129,.22);
+}
+
+/* красивый разделитель “ритуал” */
+.ritualLine{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin: 10px 0 14px;
+  color: rgba(184,176,160,.95);
+}
+.ritualLine::before,
+.ritualLine::after{
+  content:"";
+  flex:1;
+  height:1px;
+  background: linear-gradient(90deg, transparent, rgba(231,201,129,.28), transparent);
+}
+.ritualDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(231,201,129,.95);
+  box-shadow: 0 0 0 4px rgba(231,201,129,.10);
+}
+
+/* микро-анимация: карточки в списках чуть “поднимаются” при нажатии */
+.pressable{
+  transition: transform .12s ease, border-color .12s ease;
+}
+.pressable:active{
+  transform: scale(.99);
+  border-color: rgba(231,201,129,.26);
+}
+
+/* навигация: активная подсветка тоньше и элегантнее */
+.navItemActive{
+  border-color: rgba(231,201,129,.38);
+  background:
+    radial-gradient(240px 120px at 50% 0%, rgba(231,201,129,.14), rgba(255,255,255,.02));
+}
+
+/* модалка: лёгкий верхний блик */
+.modal{
+  position: relative;
+  overflow:hidden;
+}
+.modal::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  pointer-events:none;
+  background: radial-gradient(520px 120px at 30% -10%, rgba(231,201,129,.16), transparent 60%);
+  opacity:.8;
+}
+
