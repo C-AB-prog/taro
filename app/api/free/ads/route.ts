@@ -5,11 +5,44 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const rows = await prisma.advertiserChannel.findMany({
-    where: { isActive: true },
-    orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
-    select: { username: true, title: true },
-  });
+  try {
+    // пробуем новый вариант (с url)
+    const rows = (await prisma.$queryRaw`
+      SELECT "title", COALESCE("url",'') AS "url", COALESCE("username",'') AS "username"
+      FROM "AdvertiserChannel"
+      WHERE "isActive" = true
+      ORDER BY "sort" ASC, "createdAt" DESC
+      LIMIT 200
+    `) as Array<{ title: string; url: string; username: string }>;
 
-  return NextResponse.json({ ok: true, items: rows });
+    const items = rows.map((r) => ({
+      title: r.title,
+      url: r.url ? r.url : (r.username ? `https://t.me/${r.username}` : ""),
+      username: r.username || null,
+    })).filter((x) => !!x.url);
+
+    return NextResponse.json({ ok: true, items });
+  } catch {
+    // fallback если таблица старая (без url)
+    try {
+      const rows2 = (await prisma.$queryRaw`
+        SELECT "title","username"
+        FROM "AdvertiserChannel"
+        WHERE "isActive" = true
+        ORDER BY "sort" ASC, "createdAt" DESC
+        LIMIT 200
+      `) as Array<{ title: string; username: string }>;
+
+      return NextResponse.json({
+        ok: true,
+        items: rows2.map((r) => ({
+          title: r.title,
+          url: `https://t.me/${r.username}`,
+          username: r.username,
+        })),
+      });
+    } catch {
+      return NextResponse.json({ ok: true, items: [] });
+    }
+  }
 }
