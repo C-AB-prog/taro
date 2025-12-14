@@ -7,9 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
+const ADMIN_TG_ID = process.env.BOT_ADMIN_TG_ID || ""; // твой tg id для /stats
 
 async function ensurePaymentsTable() {
-  // создадим таблицу один раз (если уже есть — no-op)
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "StarsPayment" (
       "telegramChargeId" TEXT PRIMARY KEY,
@@ -27,6 +27,7 @@ async function ensurePaymentsTable() {
   `);
 }
 
+// ⚠️ оставляю твою логику, но делаю вставку безопаснее для кавычек в payload
 async function markProcessed(params: {
   telegramChargeId: string;
   userId: string;
@@ -37,27 +38,110 @@ async function markProcessed(params: {
 }) {
   await ensurePaymentsTable();
 
-  const rows = await prisma.$executeRawUnsafe(`
+  // вернёт 1 если вставили, 0 если уже был
+  const rows = await prisma.$executeRawUnsafe(
+    `
     INSERT INTO "StarsPayment" ("telegramChargeId","userId","packId","stars","coins","payload")
-    VALUES ('${params.telegramChargeId}', '${params.userId}', '${params.packId}', ${params.stars}, ${params.coins}, '${params.payload}')
+    VALUES ($1,$2,$3,$4,$5,$6)
     ON CONFLICT ("telegramChargeId") DO NOTHING;
-  `);
+  `,
+    params.telegramChargeId,
+    params.userId,
+    params.packId,
+    params.stars,
+    params.coins,
+    params.payload
+  );
 
-  // в postgres это обычно 0 или 1 — если 0, значит уже обработали
   return Number(rows) > 0;
 }
 
+function isAdmin(tgId: string | number | undefined | null) {
+  if (!ADMIN_TG_ID) return false;
+  return String(tgId ?? "") === String(ADMIN_TG_ID);
+}
+
+function startOfTodayUtc() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+async function sendStats(chatId: number) {
+  const total = await prisma.user.count();
+
+  const today = startOfTodayUtc();
+  const newToday = await prisma.user.count({
+    where: { createdAt: { gte: today } },
+  });
+
+  const activeToday = await prisma.user.count({
+    where: { lastSeenAt: { gte: today } },
+  });
+
+  const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const active30d = await prisma.user.count({
+    where: { lastSeenAt: { gte: d30 } },
+  });
+
+  const text =
+    `📊 *Daily Tarot — статистика*\n\n` +
+    `👥 Всего пользователей: *${total}*\n` +
+    `🆕 Новых сегодня: *${newToday}*\n` +
+    `🔥 Активных сегодня: *${activeToday}*\n` +
+    `📅 Активных за 30 дней: *${active30d}*`;
+
+  await tgCall("sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "Markdown",
+  });
+}
+
 export async function POST(req: Request) {
-  // простая проверка secret_token от Telegram setWebhook
+  // проверка secret_token от Telegram setWebhook
   const gotSecret = req.headers.get("x-telegram-bot-api-secret-token") || "";
   if (SECRET && gotSecret !== SECRET) {
-    return NextResponse.json({ ok: true }); // не палим детали
+    return NextResponse.json({ ok: true });
   }
 
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
 
-  // 1) pre_checkout_query — надо ответить за 10 сек :contentReference[oaicite:8]{index=8}
+  // ---- 0) обычные сообщения (команды) ----
+  const msg = update.message;
+  const text = msg?.text ? String(msg.text) : "";
+  const fromId = msg?.from?.id;
+  const chatId = msg?.chat?.id;
+
+  // обновляем lastSeenAt по tgId если пользователь существует (это будет “активность в боте”)
+  if (fromId) {
+    try {
+      await prisma.user.updateMany({
+        where: { tgId: String(fromId) },
+        data: { lastSeenAt: new Date() },
+      });
+    } catch {}
+  }
+
+  if (text && chatId) {
+    const cmd = text.trim().split(/\s+/)[0];
+
+    if (cmd === "/stats" || cmd === "/stats@YourBotName") {
+      if (!isAdmin(fromId)) {
+        await tgCall("sendMessage", {
+          chat_id: chatId,
+          text: "⛔️ Команда доступна только администратору.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await sendStats(chatId);
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  // ---- 1) pre_checkout_query — ответить быстро ----
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     const payload = String(q.invoice_payload || "");
@@ -73,9 +157,7 @@ export async function POST(req: Request) {
     }
 
     const pack = SHOP_PACKS[parsed.packId];
-    const ok =
-      q.currency === "XTR" &&
-      Number(q.total_amount) === pack.stars; // Stars = amount в XTR :contentReference[oaicite:9]{index=9}
+    const ok = q.currency === "XTR" && Number(q.total_amount) === pack.stars;
 
     await tgCall("answerPreCheckoutQuery", {
       pre_checkout_query_id: q.id,
@@ -86,10 +168,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // 2) successful_payment — начисляем валюту
-  const msg = update.message;
+  // ---- 2) successful_payment — начисляем валюту ----
   const sp = msg?.successful_payment;
-
   if (sp) {
     const payload = String(sp.invoice_payload || "");
     const parsed = parsePayload(payload);
@@ -97,14 +177,12 @@ export async function POST(req: Request) {
 
     const pack = SHOP_PACKS[parsed.packId];
 
-    // в Stars валюта XTR и prices один элемент, total_amount = сумма в Stars :contentReference[oaicite:10]{index=10}
     if (sp.currency !== "XTR") return NextResponse.json({ ok: true });
     if (Number(sp.total_amount) !== pack.stars) return NextResponse.json({ ok: true });
 
     const telegramChargeId = String(sp.telegram_payment_charge_id || "");
     if (!telegramChargeId) return NextResponse.json({ ok: true });
 
-    // идемпотентность (чтобы не начислить дважды)
     const inserted = await markProcessed({
       telegramChargeId,
       userId: parsed.userId,
@@ -115,12 +193,22 @@ export async function POST(req: Request) {
     });
 
     if (inserted) {
-      // ✅ начисляем внутриигровую валюту
-      await prisma.user.update({
+      const u = await prisma.user.update({
         where: { id: parsed.userId },
-        data: { balance: { increment: pack.coins } },
+        data: { balance: { increment: pack.coins }, lastSeenAt: new Date() },
+        select: { balance: true },
       });
+
+      // ✅ чтобы не было ощущения “вечно начисляем” — отправим подтверждение
+      if (chatId) {
+        await tgCall("sendMessage", {
+          chat_id: chatId,
+          text: `✨ Начислено: +${pack.coins} валюты.\nТекущий баланс: ${u.balance}`,
+        });
+      }
     }
+
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ ok: true });
