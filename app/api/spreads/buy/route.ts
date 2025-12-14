@@ -17,7 +17,6 @@ function guessTagByTitle(titleRu: string): "general" | "love" | "money" | "healt
 }
 
 export async function POST(req: Request) {
-  // ✅ авторизация: cookie session ИЛИ x-telegram-init-data (fallback)
   let userId = "";
   try {
     userId = await requireUserId(req);
@@ -38,7 +37,6 @@ export async function POST(req: Request) {
     const tag = guessTagByTitle(spreadTitle);
     const cardTitlesRu = slugs.map((slug) => ruTitleFromSlug(slug));
 
-    // ✅ генерируем трактовку ИИ, но если ИИ упал — не ломаем покупку
     let interpretation: string = purchase.interpretation || "";
     try {
       const gen = await generateSpreadReadingRu({
@@ -50,13 +48,12 @@ export async function POST(req: Request) {
 
       interpretation = `${gen.interpretationRu}\n\nСовет: ${gen.adviceRu}`;
 
-      // архив неизменен — сохраняем финальную трактовку
       await prisma.spreadPurchase.update({
         where: { id: purchase.id },
         data: { interpretation },
       });
     } catch {
-      // оставляем то, что уже есть в purchase.interpretation
+      // если ИИ временно упал — не ломаем покупку
     }
 
     const view = {
@@ -72,7 +69,6 @@ export async function POST(req: Request) {
     if (e?.message === "NOT_ENOUGH_BALANCE") {
       return NextResponse.json({ error: "NOT_ENOUGH_BALANCE" }, { status: 402 });
     }
-    // ✅ наружу НЕ выдаём 500 (чтобы юзеру не показывался “код”)
     return NextResponse.json({ error: "BUY_FAILED" }, { status: 400 });
   }
 }
