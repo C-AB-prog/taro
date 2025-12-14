@@ -7,7 +7,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  // ✅ авторизация: cookie session ИЛИ x-telegram-init-data (fallback)
   let userId = "";
   try {
     userId = await requireUserId(req);
@@ -34,14 +33,13 @@ export async function POST(req: Request) {
       title: `Пополнение: ${pack.coins} валюты`,
       description: `Пак ${pack.stars} Stars → ${pack.coins} внутриигровой валюты`,
       payload,
-      provider_token: "", // Stars
+      provider_token: "",
       currency: "XTR",
       prices: [{ label: `${pack.stars} Stars`, amount: pack.stars }],
     });
 
     return NextResponse.json({ ok: true, invoiceLink: link }, { headers: { "Cache-Control": "no-store" } });
-  } catch (e: any) {
-    // ✅ наружу лучше не давать “сырые” ошибки
+  } catch {
     return NextResponse.json({ ok: false, error: "INVOICE_FAILED" }, { status: 400 });
   }
 }
