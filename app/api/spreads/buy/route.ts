@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { verifySession } from "@/lib/auth";
 import { buySpread, resolveCardImage, spreadPositions } from "@/lib/tarot";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 import { generateSpreadReadingRu } from "@/lib/tarotReadings";
 import { prisma } from "@/lib/prisma";
+import { requireUserId } from "@/lib/requireUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function unauthorized() {
-  const res = NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  res.cookies.set("session", "", { path: "/", maxAge: 0 });
-  return res;
-}
 
 function guessTagByTitle(titleRu: string): "general" | "love" | "money" | "health" {
   const t = (titleRu || "").toLowerCase();
@@ -24,21 +17,19 @@ function guessTagByTitle(titleRu: string): "general" | "love" | "money" | "healt
 }
 
 export async function POST(req: Request) {
-  const token = cookies().get("session")?.value;
-  if (!token) return unauthorized();
-
-  let session: any;
+  // ✅ авторизация: cookie session ИЛИ x-telegram-init-data (fallback)
+  let userId = "";
   try {
-    session = await verifySession(token);
+    userId = await requireUserId(req);
   } catch {
-    return unauthorized();
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const { spreadKey } = await req.json().catch(() => ({}));
   if (!spreadKey) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
 
   try {
-    const purchase: any = await buySpread(session.userId, spreadKey);
+    const purchase: any = await buySpread(userId, spreadKey);
 
     const slugs = purchase.cardsJson as unknown as string[];
     const positions = spreadPositions(spreadKey, slugs.length);
@@ -47,20 +38,26 @@ export async function POST(req: Request) {
     const tag = guessTagByTitle(spreadTitle);
     const cardTitlesRu = slugs.map((slug) => ruTitleFromSlug(slug));
 
-    const gen = await generateSpreadReadingRu({
-      spreadTitle,
-      positions,
-      cardTitlesRu,
-      tag,
-    });
+    // ✅ генерируем трактовку ИИ, но если ИИ упал — не ломаем покупку
+    let interpretation: string = purchase.interpretation || "";
+    try {
+      const gen = await generateSpreadReadingRu({
+        spreadTitle,
+        positions,
+        cardTitlesRu,
+        tag,
+      });
 
-    const interpretation = `${gen.interpretationRu}\n\nСовет: ${gen.adviceRu}`;
+      interpretation = `${gen.interpretationRu}\n\nСовет: ${gen.adviceRu}`;
 
-    // сохранить финальную трактовку (архив неизменен)
-    await prisma.spreadPurchase.update({
-      where: { id: purchase.id },
-      data: { interpretation },
-    });
+      // архив неизменен — сохраняем финальную трактовку
+      await prisma.spreadPurchase.update({
+        where: { id: purchase.id },
+        data: { interpretation },
+      });
+    } catch {
+      // оставляем то, что уже есть в purchase.interpretation
+    }
 
     const view = {
       spreadTitle,
@@ -75,7 +72,7 @@ export async function POST(req: Request) {
     if (e?.message === "NOT_ENOUGH_BALANCE") {
       return NextResponse.json({ error: "NOT_ENOUGH_BALANCE" }, { status: 402 });
     }
-    // НИКОГДА не кидаем 500 наружу — чтобы у юзера не появлялся “код”
+    // ✅ наружу НЕ выдаём 500 (чтобы юзеру не показывался “код”)
     return NextResponse.json({ error: "BUY_FAILED" }, { status: 400 });
   }
 }
