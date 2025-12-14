@@ -7,206 +7,43 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
-const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, "");
-
-const ADMIN_IDS = (process.env.ADMIN_TG_IDS || "")
+const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // https://taro-hazel.vercel.app
+const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-function isAdmin(tgId: any) {
-  return ADMIN_IDS.includes(String(tgId));
+function isAdmin(tgId?: number | string | null) {
+  if (!tgId) return false;
+  return ADMIN_TG_IDS.includes(String(tgId));
 }
 
-async function ensureBotTables() {
-  // состояние диалога для админ-режима
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "BotState" (
-      "tgId" TEXT PRIMARY KEY,
-      "state" TEXT NOT NULL,
-      "dataText" TEXT NOT NULL DEFAULT '{}',
-      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  // рекламодатели
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdvertiserChannel" (
-      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "url" TEXT NOT NULL UNIQUE,
-      "username" TEXT,
-      "title" TEXT NOT NULL,
-      "photoFileId" TEXT,
-      "reward" INTEGER NOT NULL DEFAULT 100,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdvertiserChannel_createdAt_idx"
-    ON "AdvertiserChannel" ("createdAt");
-  `);
+function normCmd(text: string) {
+  const t = String(text || "").trim();
+  if (!t.startsWith("/")) return { cmd: "", args: "" };
+  const first = t.split(/\s+/)[0] || "";
+  const cmd = first.split("@")[0].toLowerCase(); // /stat@bot -> /stat
+  const args = t.slice(first.length).trim();
+  return { cmd, args };
 }
 
-async function getState(tgId: string) {
-  await ensureBotTables();
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT "state","dataText" FROM "BotState" WHERE "tgId"='${tgId}' LIMIT 1`
-  );
-  const row = rows?.[0];
-  if (!row) return null;
-  let data: any = {};
-  try {
-    data = JSON.parse(row.dataText || "{}");
-  } catch {}
-  return { state: String(row.state), data };
-}
-
-async function setState(tgId: string, state: string, data: any = {}) {
-  await ensureBotTables();
-  const dataText = JSON.stringify(data ?? {});
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO "BotState" ("tgId","state","dataText")
-    VALUES ('${tgId}', '${state}', '${dataText.replace(/'/g, "''")}')
-    ON CONFLICT ("tgId") DO UPDATE
-    SET "state"=EXCLUDED."state", "dataText"=EXCLUDED."dataText", "updatedAt"=now();
-  `);
-}
-
-async function clearState(tgId: string) {
-  await ensureBotTables();
-  await prisma.$executeRawUnsafe(`DELETE FROM "BotState" WHERE "tgId"='${tgId}'`);
-}
-
-function parseTmeLink(input: string): { url: string; username?: string } | null {
+function normalizeTgUrl(input: string) {
   const s = String(input || "").trim();
-  if (!s) return null;
-
-  // принимаем https://t.me/xxx или http://t.me/xxx
-  const m1 = s.match(/https?:\/\/t\.me\/([A-Za-z0-9_]{4,})/i);
-  if (m1) return { url: `https://t.me/${m1[1]}`, username: m1[1] };
-
-  // принимаем @xxx
-  const m2 = s.match(/^@([A-Za-z0-9_]{4,})$/);
-  if (m2) return { url: `https://t.me/${m2[1]}`, username: m2[1] };
-
-  return null;
+  if (!s) return "";
+  if (s.startsWith("https://") || s.startsWith("http://")) return s;
+  if (s.startsWith("t.me/")) return `https://${s}`;
+  if (s.startsWith("@")) return `https://t.me/${s.slice(1)}`;
+  return s;
 }
 
-async function sendWelcome(chatId: number) {
-  const caption =
-    "✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n" +
-    "Каждый день — одна общая карта для всех.\n" +
-    "А ещё есть Колесо Фортуны и расклады, которые помогают мягко разобраться в ситуации.\n\n" +
-    "Нажми кнопку ниже — и откроем твою карту.";
-
-  // ⚠️ просили: в приветствии должна быть только ОДНА ссылка/кнопка
-  const keyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: "Посмотреть карту дня",
-          web_app: { url: APP_URL || "https://t.me" },
-        },
-      ],
-    ],
-  };
-
-  if (APP_URL) {
-    // шлём картинку с твоего домена
-    await tgCall("sendPhoto", {
-      chat_id: chatId,
-      photo: `${APP_URL}/logo.png`,
-      caption,
-      reply_markup: keyboard,
-    });
-  } else {
-    await tgCall("sendMessage", {
-      chat_id: chatId,
-      text: caption,
-      reply_markup: keyboard,
-      disable_web_page_preview: true,
-    });
-  }
-}
-
-async function sendStat(chatId: number) {
-  // твои индексы/колонки уже добавлены: createdAt/lastSeenAt
-  const total = await prisma.user.count().catch(() => 0);
-
-  const rows1 = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "createdAt" >= date_trunc('day', now())`
-  );
-  const todayNew = Number(rows1?.[0]?.c ?? 0);
-
-  const rows2 = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= date_trunc('day', now())`
-  );
-  const activeToday = Number(rows2?.[0]?.c ?? 0);
-
-  const rows3 = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= now() - interval '30 days'`
-  );
-  const active30 = Number(rows3?.[0]?.c ?? 0);
-
-  const text =
-    "📊 Статистика\n\n" +
-    `Всего пользователей: ${total}\n` +
-    `Новых сегодня: ${todayNew}\n` +
-    `Активных сегодня: ${activeToday}\n` +
-    `Активных за 30 дней: ${active30}`;
-
-  await tgCall("sendMessage", { chat_id: chatId, text });
-}
-
-async function upsertAdvertiserByUrl(params: {
-  url: string;
-  username?: string | null;
-  title: string;
-  photoFileId?: string | null;
-  reward: number;
-}) {
-  await ensureBotTables();
-
-  const url = params.url.replace(/'/g, "''");
-  const username = (params.username || "").replace(/'/g, "''");
-  const title = (params.title || "").replace(/'/g, "''");
-  const photo = (params.photoFileId || "").replace(/'/g, "''");
-  const reward = Number(params.reward || 100);
-
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO "AdvertiserChannel" ("url","username","title","photoFileId","reward")
-    VALUES ('${url}', ${username ? `'${username}'` : "NULL"}, '${title}', ${photo ? `'${photo}'` : "NULL"}, ${reward})
-    ON CONFLICT ("url") DO UPDATE
-    SET "username"=EXCLUDED."username",
-        "title"=EXCLUDED."title",
-        "photoFileId"=EXCLUDED."photoFileId",
-        "reward"=EXCLUDED."reward";
-  `);
-}
-
-async function listAdsText() {
-  await ensureBotTables();
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT "title","url","reward" FROM "AdvertiserChannel" ORDER BY "createdAt" DESC LIMIT 30`
-  );
-
-  if (!rows?.length) return "Пока нет рекламодателей.";
-
-  let t = "📣 Рекламодатели в приложении:\n\n";
-  rows.forEach((r, idx) => {
-    t += `${idx + 1}) ${r.title}\n${r.url}\nБонус: +${r.reward}\n\n`;
-  });
-  return t.trim();
-}
-
-async function deleteAdByUrl(url: string) {
-  await ensureBotTables();
-  const u = url.replace(/'/g, "''");
-  await prisma.$executeRawUnsafe(`DELETE FROM "AdvertiserChannel" WHERE "url"='${u}'`);
-}
+/* ================== Stars payments ================== */
 
 async function ensurePaymentsTable() {
+  // на всякий — если расширение уже есть, будет no-op
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "StarsPayment" (
       "telegramChargeId" TEXT PRIMARY KEY,
@@ -234,27 +71,122 @@ async function markProcessed(params: {
 }) {
   await ensurePaymentsTable();
 
-  const q = `
+  const rows = await prisma.$executeRaw`
     INSERT INTO "StarsPayment" ("telegramChargeId","userId","packId","stars","coins","payload")
-    VALUES ($1,$2,$3,$4,$5,$6)
+    VALUES (${params.telegramChargeId}, ${params.userId}, ${params.packId}, ${params.stars}, ${params.coins}, ${params.payload})
     ON CONFLICT ("telegramChargeId") DO NOTHING;
   `;
 
-  // Prisma параметризированный вариант через $executeRawUnsafe тут сложнее,
-  // поэтому делаем безопасно простым экранированием для payload (у нас payload наш).
-  const rows = await prisma.$executeRawUnsafe(`
-    INSERT INTO "StarsPayment" ("telegramChargeId","userId","packId","stars","coins","payload")
-    VALUES ('${params.telegramChargeId.replace(/'/g, "''")}',
-            '${params.userId.replace(/'/g, "''")}',
-            '${params.packId.replace(/'/g, "''")}',
-            ${params.stars},
-            ${params.coins},
-            '${params.payload.replace(/'/g, "''")}')
-    ON CONFLICT ("telegramChargeId") DO NOTHING;
+  return Number(rows) > 0; // 1 если вставили, 0 если уже было
+}
+
+/* ================== Ad offers ================== */
+
+async function ensureOffersTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "AdOffer" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      "title" TEXT NOT NULL,
+      "url" TEXT NOT NULL UNIQUE,
+      "reward" INTEGER NOT NULL DEFAULT 100,
+      "active" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 
-  return Number(rows) > 0;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "AdClaim" (
+      "userId" TEXT NOT NULL,
+      "offerId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY ("userId","offerId")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
+  `);
 }
+
+/* ================== Stats ================== */
+
+async function ensureUserStatsCols() {
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "User"
+      ADD COLUMN IF NOT EXISTS "lastSeenAt" timestamptz NOT NULL DEFAULT now();
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_lastSeenAt_idx" ON "User" ("lastSeenAt");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_createdAt_idx" ON "User" ("createdAt");`);
+  } catch {}
+}
+
+async function getStats() {
+  await ensureUserStatsCols();
+
+  const total = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS c FROM "User";`);
+  const todayNew = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*)::int AS c FROM "User" WHERE "createdAt" >= date_trunc('day', now());`
+  );
+  const todayActive = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= date_trunc('day', now());`
+  );
+  const m30 = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= now() - interval '30 days';`
+  );
+
+  return {
+    total: Number(total?.[0]?.c || 0),
+    todayNew: Number(todayNew?.[0]?.c || 0),
+    todayActive: Number(todayActive?.[0]?.c || 0),
+    m30: Number(m30?.[0]?.c || 0),
+  };
+}
+
+/* ================== Welcome ================== */
+
+async function sendWelcome(chatId: number) {
+  const text =
+    `✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n` +
+    `• Карта дня — общий знак для всех\n` +
+    `• Колесо фортуны — 1 раз в сутки\n` +
+    `• Расклады — с поэтичной трактовкой\n\n` +
+    `Нажми кнопку ниже 👇`;
+
+  const kb =
+    APP_URL
+      ? {
+          inline_keyboard: [
+            [{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }],
+          ],
+        }
+      : undefined;
+
+  // если есть /public/logo.png — отправим фото, иначе текст
+  if (APP_URL) {
+    try {
+      await tgCall("sendPhoto", {
+        chat_id: chatId,
+        photo: `${APP_URL}/logo.png`,
+        caption: text,
+        reply_markup: kb,
+      });
+      return;
+    } catch {}
+  }
+
+  await tgCall("sendMessage", {
+    chat_id: chatId,
+    text,
+    reply_markup: kb,
+  });
+}
+
+/* ================== Webhook ================== */
 
 export async function POST(req: Request) {
   // secret_token проверка
@@ -266,7 +198,7 @@ export async function POST(req: Request) {
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
 
-  // ====== 1) Payments: pre_checkout_query ======
+  // 1) pre_checkout_query (Stars)
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     const payload = String(q.invoice_payload || "");
@@ -293,8 +225,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // ====== 2) Payments: successful_payment ======
-  const msg = update.message;
+  // 2) successful_payment (Stars)
+  const msg = update.message || update.edited_message;
   const sp = msg?.successful_payment;
 
   if (sp) {
@@ -325,11 +257,11 @@ export async function POST(req: Request) {
         data: { balance: { increment: pack.coins } },
       });
 
-      // необязательно, но приятно
+      // опционально уведомим в чат
       try {
         await tgCall("sendMessage", {
           chat_id: msg.chat.id,
-          text: `✨ Начислено +${pack.coins} валюты. Спасибо!`,
+          text: `Готово ✨ Начислено +${pack.coins} валюты.`,
         });
       } catch {}
     }
@@ -337,131 +269,138 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // ====== 3) Обычные сообщения: /start, /stat, добавление рекламодателей ======
-  if (msg?.text) {
-    const chatId = Number(msg.chat?.id);
-    const fromId = msg.from?.id;
+  // 3) команды
+  const text = String(msg?.text || "").trim();
+  if (msg?.chat?.id && text.startsWith("/")) {
+    const chatId = Number(msg.chat.id);
+    const fromId = msg?.from?.id ? Number(msg.from.id) : null;
 
-    const text = String(msg.text || "").trim();
+    const { cmd, args } = normCmd(text);
 
-    // /start — приветствие
-    if (text.startsWith("/start")) {
+    if (cmd === "/start") {
       await sendWelcome(chatId);
       return NextResponse.json({ ok: true });
     }
 
-    // /stat — только админ
-    if (text === "/stat" || text === "стат" || text === "Стат") {
+    if (cmd === "/stat") {
       if (!isAdmin(fromId)) {
-        await tgCall("sendMessage", { chat_id: chatId, text: "Команда доступна только администратору." });
-      } else {
-        await sendStat(chatId);
+        await tgCall("sendMessage", { chat_id: chatId, text: "Команда доступна только админу." });
+        return NextResponse.json({ ok: true });
       }
+
+      const s = await getStats();
+      await tgCall("sendMessage", {
+        chat_id: chatId,
+        text:
+          `📊 Статистика\n\n` +
+          `Всего пользователей: ${s.total}\n` +
+          `Новых сегодня: ${s.todayNew}\n` +
+          `Активных сегодня: ${s.todayActive}\n` +
+          `Активных за 30 дней: ${s.m30}`,
+      });
+
       return NextResponse.json({ ok: true });
     }
 
-    // ===== Админ: управление рекламодателями (через диалог) =====
-    if (isAdmin(fromId)) {
-      const tgId = String(fromId);
+    if (cmd === "/addad") {
+      if (!isAdmin(fromId)) {
+        await tgCall("sendMessage", { chat_id: chatId, text: "Команда доступна только админу." });
+        return NextResponse.json({ ok: true });
+      }
 
-      // команды
-      if (text === "/addad" || text === "Добавить рекламодателя") {
-        await setState(tgId, "await_ad_url", {});
+      // формат: /addad Название | https://t.me/channel | 100
+      const raw = String(args || "");
+      const parts = raw.split("|").map((s) => s.trim()).filter(Boolean);
+
+      const title = parts[0] || "";
+      const url = normalizeTgUrl(parts[1] || "");
+      const reward = Number(parts[2] || 100);
+
+      if (!title || !url) {
         await tgCall("sendMessage", {
           chat_id: chatId,
-          text: "Ок! Пришли ссылку на канал рекламодателя (пример: https://t.me/CodeAdsBusiness).",
+          text: `Формат:\n/addad Название | https://t.me/channel | 100`,
         });
         return NextResponse.json({ ok: true });
       }
 
-      if (text === "/ads" || text === "Список рекламодателей") {
-        const t = await listAdsText();
-        await tgCall("sendMessage", { chat_id: chatId, text: t, disable_web_page_preview: true });
+      if (!Number.isFinite(reward) || reward <= 0 || reward > 100000) {
+        await tgCall("sendMessage", { chat_id: chatId, text: "Неверная награда (reward)." });
         return NextResponse.json({ ok: true });
       }
 
-      if (text.startsWith("/delad")) {
-        const arg = text.replace("/delad", "").trim();
-        const parsed = parseTmeLink(arg);
-        if (!parsed) {
-          await tgCall("sendMessage", {
-            chat_id: chatId,
-            text: "Пришли ссылку на канал для удаления. Пример:\n/delad https://t.me/SomeChannel",
-          });
-          return NextResponse.json({ ok: true });
-        }
+      await ensureOffersTables();
 
-        await deleteAdByUrl(parsed.url);
-        await tgCall("sendMessage", { chat_id: chatId, text: "Удалил. (Если был в списке)" });
-        return NextResponse.json({ ok: true });
-      }
+      await prisma.$executeRaw`
+        INSERT INTO "AdOffer" ("title","url","reward","active")
+        VALUES (${title}, ${url}, ${reward}, true)
+        ON CONFLICT ("url") DO UPDATE
+        SET "title" = EXCLUDED."title",
+            "reward" = EXCLUDED."reward",
+            "active" = true
+      `;
 
-      // wizard step
-      const st = await getState(tgId);
+      await tgCall("sendMessage", {
+        chat_id: chatId,
+        text: `✅ Добавлено/обновлено:\n${title}\n${url}\nБонус: +${reward}`,
+      });
 
-      if (st?.state === "await_ad_url") {
-        const parsed = parseTmeLink(text);
-        if (!parsed) {
-          await tgCall("sendMessage", {
-            chat_id: chatId,
-            text: "Не похоже на ссылку. Пришли в формате https://t.me/username",
-          });
-          return NextResponse.json({ ok: true });
-        }
-
-        // пробуем вытянуть title/аватар (для публичных каналов часто работает)
-        let title = parsed.username ? parsed.username : parsed.url;
-        let photoFileId: string | null = null;
-
-        if (parsed.username) {
-          try {
-            const chat = await tgCall<any>("getChat", { chat_id: `@${parsed.username}` });
-            if (chat?.title) title = String(chat.title);
-            const fid = chat?.photo?.small_file_id || chat?.photo?.big_file_id;
-            if (fid) photoFileId = String(fid);
-          } catch {
-            // норм — просто без меты
-          }
-        }
-
-        await setState(tgId, "await_ad_reward", {
-          url: parsed.url,
-          username: parsed.username || null,
-          title,
-          photoFileId,
-        });
-
-        await tgCall("sendMessage", {
-          chat_id: chatId,
-          text: `Канал: ${title}\nСсылка: ${parsed.url}\n\nТеперь пришли награду (числом), например 100.`,
-          disable_web_page_preview: true,
-        });
-        return NextResponse.json({ ok: true });
-      }
-
-      if (st?.state === "await_ad_reward") {
-        const n = Number(text.replace(/[^\d]/g, ""));
-        const reward = Number.isFinite(n) && n > 0 ? Math.min(n, 100000) : 100;
-
-        await upsertAdvertiserByUrl({
-          url: st.data.url,
-          username: st.data.username,
-          title: st.data.title || st.data.url,
-          photoFileId: st.data.photoFileId,
-          reward,
-        });
-
-        await clearState(tgId);
-
-        await tgCall("sendMessage", {
-          chat_id: chatId,
-          text: `Готово ✅\nДобавил рекламодателя:\n${st.data.title}\n${st.data.url}\nБонус: +${reward}`,
-          disable_web_page_preview: true,
-        });
-
-        return NextResponse.json({ ok: true });
-      }
+      return NextResponse.json({ ok: true });
     }
+
+    if (cmd === "/delad") {
+      if (!isAdmin(fromId)) {
+        await tgCall("sendMessage", { chat_id: chatId, text: "Команда доступна только админу." });
+        return NextResponse.json({ ok: true });
+      }
+
+      const target = String(args || "").trim();
+      if (!target) {
+        await tgCall("sendMessage", {
+          chat_id: chatId,
+          text: `Формат:\n/delad https://t.me/channel\nили\n/delad <offerId>`,
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await ensureOffersTables();
+
+      const looksUrl =
+        target.startsWith("http://") ||
+        target.startsWith("https://") ||
+        target.startsWith("@") ||
+        target.includes("t.me/");
+
+      let updated = 0;
+
+      if (looksUrl) {
+        const url = normalizeTgUrl(target);
+        const rows = await prisma.$executeRaw`
+          UPDATE "AdOffer"
+          SET "active" = false
+          WHERE "url" = ${url}
+        `;
+        updated = Number(rows) || 0;
+      } else {
+        const rows = await prisma.$executeRaw`
+          UPDATE "AdOffer"
+          SET "active" = false
+          WHERE "id" = ${target}
+        `;
+        updated = Number(rows) || 0;
+      }
+
+      await tgCall("sendMessage", {
+        chat_id: chatId,
+        text: updated > 0 ? "✅ Удалено (выключено)." : "Не нашёл такой оффер.",
+      });
+
+      return NextResponse.json({ ok: true });
+    }
+
+    // неизвестная команда
+    await tgCall("sendMessage", { chat_id: chatId, text: "Не понял команду. Доступно: /start /stat /addad /delad" });
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ ok: true });
