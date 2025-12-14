@@ -1,33 +1,41 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function unauthorized() {
-  const res = NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  res.cookies.set("session", "", { path: "/", maxAge: 0 });
-  return res;
-}
-
 export async function GET() {
   const token = cookies().get("session")?.value;
-  if (!token) return unauthorized();
+  if (!token) return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
 
-  let session: any;
+  let session: { userId: string };
   try {
     session = await verifySession(token);
   } catch {
-    return unauthorized();
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const me = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { id: true, balance: true, username: true, firstName: true },
-  });
-  if (!me) return unauthorized();
+  // lastSeenAt (если колонка есть) — обновляем raw SQL, без Prisma-типа
+  try {
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET "lastSeenAt" = now()
+      WHERE "id" = ${session.userId}
+    `;
+  } catch {}
 
-  return NextResponse.json({ ok: true, me, balance: me.balance }, { headers: { "Cache-Control": "no-store" } });
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, balance: true },
+  });
+
+  if (!user) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+
+  return NextResponse.json({
+    ok: true,
+    balance: user.balance,
+    user,
+  });
 }
