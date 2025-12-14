@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
-import { spinWheel, resolveCardImage } from "@/lib/tarot";
 import { prisma } from "@/lib/prisma";
-import { generateCardReadingRu } from "@/lib/tarotReadings";
+import { resolveCardImage } from "@/lib/tarot";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
+import { generateCardReadingRu } from "@/lib/tarotReadings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function mskDayStartUtc(d = new Date()) {
+  const nowMs = d.getTime();
+  const mskNow = nowMs + MSK_OFFSET_MS;
+  const day = Math.floor(mskNow / DAY_MS);
+  const startMsk = day * DAY_MS;
+  const startUtc = startMsk - MSK_OFFSET_MS;
+  return new Date(startUtc);
+}
 
 function nextMskMidnightInMinutes() {
   const nowMs = Date.now();
@@ -24,10 +33,8 @@ function nextMskMidnightInMinutes() {
 function looksTemplate(meaning: string, advice: string) {
   const m = (meaning || "").toLowerCase();
   const a = (advice || "").toLowerCase();
-
   if (m.length < 60 || a.length < 20) return true;
 
-  // маркеры “шаблонности” (если вдруг остались старые тексты)
   const bad = [
     "важный мотив",
     "скрытый смысл происходящего",
@@ -38,7 +45,7 @@ function looksTemplate(meaning: string, advice: string) {
   return bad.some((x) => m.includes(x) || a.includes(x));
 }
 
-export async function POST() {
+export async function GET() {
   const token = cookies().get("session")?.value;
   if (!token) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
@@ -49,52 +56,44 @@ export async function POST() {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const result = await spinWheel(session.userId);
-  const mins = nextMskMidnightInMinutes();
+  const todayKey = mskDayStartUtc();
+  const nextInMinutes = nextMskMidnightInMinutes();
 
-  // Card из spinWheel может быть с пустыми/старыми текстами → гидрируем
-  const slug = result.card.slug;
+  const spin = await prisma.wheelSpin.findUnique({
+    where: { userId_date: { userId: session.userId, date: todayKey } },
+    include: { card: true },
+  });
+
+  if (!spin) {
+    return NextResponse.json({ already: false, nextInMinutes });
+  }
+
+  const slug = spin.card.slug;
   const titleRu = ruTitleFromSlug(slug);
 
-  let meaningRu = result.card.meaningRu || "";
-  let adviceRu = result.card.adviceRu || "";
-  let aiSource: "db" | "ai" = "db";
-  let model: string | null = null;
-  let forced = false;
+  let meaningRu = spin.card.meaningRu || "";
+  let adviceRu = spin.card.adviceRu || "";
 
   const needAi = looksTemplate(meaningRu, adviceRu) || !meaningRu || !adviceRu;
 
   if (needAi) {
     try {
-      forced = true;
-      const gen = await generateCardReadingRu({
-        titleRu,
-        kind: "wheel",
-      });
+      const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
       meaningRu = gen.meaningRu;
       adviceRu = gen.adviceRu;
-      model = (gen as any)?.model ?? null;
-      aiSource = "ai";
 
-      // сохраняем в БД, чтобы дальше было быстрее
       await prisma.card.update({
         where: { slug },
-        data: {
-          titleRu,
-          meaningRu,
-          adviceRu,
-        },
+        data: { titleRu, meaningRu, adviceRu },
       });
     } catch {
-      // если ИИ упал — просто отдаём то, что есть
-      aiSource = "db";
-      forced = false;
+      // если ИИ временно недоступен — отдаём как есть
     }
   }
 
   return NextResponse.json({
-    already: result.already,
-    nextInMinutes: mins,
+    already: true,
+    nextInMinutes,
     card: {
       slug,
       titleRu,
@@ -102,8 +101,5 @@ export async function POST() {
       adviceRu,
       image: resolveCardImage(slug),
     },
-    aiSource,
-    model,
-    forced,
   });
 }
