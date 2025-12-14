@@ -12,12 +12,18 @@ function unauthorized() {
   return res;
 }
 
-async function ensureOffersTables() {
+async function ensureTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdOffer" (
+    CREATE TABLE IF NOT EXISTS "AdvertiserChannel" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "title" TEXT NOT NULL,
       "url" TEXT NOT NULL UNIQUE,
+      "username" TEXT,
+      "title" TEXT NOT NULL,
+      "photoFileId" TEXT,
       "reward" INTEGER NOT NULL DEFAULT 100,
       "active" BOOLEAN NOT NULL DEFAULT true,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -25,12 +31,17 @@ async function ensureOffersTables() {
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdClaim" (
+    CREATE TABLE IF NOT EXISTS "AdvertiserClaim" (
       "userId" TEXT NOT NULL,
-      "offerId" TEXT NOT NULL,
+      "channelId" TEXT NOT NULL,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY ("userId","offerId")
+      PRIMARY KEY ("userId","channelId")
     );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "AdvertiserClaim_userId_idx"
+    ON "AdvertiserClaim" ("userId");
   `);
 }
 
@@ -45,37 +56,46 @@ export async function POST(req: Request) {
     return unauthorized();
   }
 
-  await ensureOffersTables();
+  await ensureTables();
 
   const body = await req.json().catch(() => ({}));
   const offerId = String(body?.offerId || "").trim();
   if (!offerId) return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
 
-  const offerRows = await prisma.$queryRaw<
-    Array<{ reward: number; title: string; url: string }>
-  >`SELECT "reward","title","url" FROM "AdOffer" WHERE "id" = ${offerId} AND "active" = true LIMIT 1`;
-
-  const offer = offerRows[0];
-  if (!offer) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-
-  // идемпотентно: 1 раз на оффер
-  const inserted = await prisma.$executeRaw`
-    INSERT INTO "AdClaim" ("userId","offerId")
-    VALUES (${session.userId}, ${offerId})
-    ON CONFLICT ("userId","offerId") DO NOTHING
+  const rows = await prisma.$queryRaw<
+    Array<{ reward: number }>
+  >`
+    SELECT "reward"
+    FROM "AdvertiserChannel"
+    WHERE "id" = ${offerId} AND "active" = true
+    LIMIT 1
   `;
 
-  if (Number(inserted) > 0) {
-    await prisma.user.update({
-      where: { id: session.userId },
-      data: { balance: { increment: offer.reward } },
-    });
+  const offer = rows[0];
+  if (!offer) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-    // опционально лог транзакций, если хочешь:
-    // await prisma.transaction.create({ data: { userId: session.userId, type: "grant", amount: offer.reward, provider: "system", providerPayload: { offerId } } as any });
+  // 1 раз на канал (идемпотентно)
+  const inserted = await prisma.$executeRaw`
+    INSERT INTO "AdvertiserClaim" ("userId","channelId")
+    VALUES (${session.userId}, ${offerId})
+    ON CONFLICT ("userId","channelId") DO NOTHING
+  `;
 
-    return NextResponse.json({ ok: true, granted: true, reward: offer.reward }, { headers: { "Cache-Control": "no-store" } });
+  if (Number(inserted) <= 0) {
+    // уже забирал
+    return NextResponse.json(
+      { ok: false, error: "ALREADY" },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
-  return NextResponse.json({ ok: true, granted: false, reward: offer.reward }, { headers: { "Cache-Control": "no-store" } });
+  await prisma.user.update({
+    where: { id: session.userId },
+    data: { balance: { increment: Number(offer.reward) } },
+  });
+
+  return NextResponse.json(
+    { ok: true, reward: Number(offer.reward) },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
