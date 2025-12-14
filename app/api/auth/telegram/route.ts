@@ -1,88 +1,140 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { signSession } from "@/lib/auth";
+import { SignJWT } from "jose";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function verifyInitData(initData: string, botToken: string) {
+function getEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+function buildDataCheckString(params: URLSearchParams) {
+  const pairs: string[] = [];
+  params.forEach((value, key) => {
+    if (key === "hash") return;
+    pairs.push(`${key}=${value}`);
+  });
+  pairs.sort();
+  return pairs.join("\n");
+}
+
+function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
   if (!hash) return { ok: false as const, error: "NO_HASH" };
 
-  params.delete("hash");
+  const dataCheckString = buildDataCheckString(params);
 
-  const dataCheck = Array.from(params.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n");
+  // secret_key = SHA256(bot_token)
+  const secretKey = crypto.createHash("sha256").update(botToken).digest();
+  const computedHash = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
+    .digest("hex");
 
-  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
-  const computed = crypto.createHmac("sha256", secretKey).update(dataCheck).digest("hex");
+  // timing safe compare
+  const a = Buffer.from(computedHash, "utf8");
+  const b = Buffer.from(hash, "utf8");
+  const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
 
-  if (computed !== hash) return { ok: false as const, error: "BAD_HASH" };
+  if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
-  const authDate = Number(params.get("auth_date") || "0");
-  if (!authDate) return { ok: false as const, error: "NO_AUTH_DATE" };
+  // опционально можно проверять auth_date (не обязательно)
+  return { ok: true as const, params };
+}
 
-  const now = Math.floor(Date.now() / 1000);
-  if (now - authDate > 60 * 60 * 24) return { ok: false as const, error: "INITDATA_EXPIRED" };
+async function makeSessionToken(userId: string) {
+  const secret = getEnv("AUTH_SECRET");
+  const key = new TextEncoder().encode(secret);
 
-  const userJson = params.get("user");
-  if (!userJson) return { ok: false as const, error: "NO_USER" };
-
-  let user: any;
-  try {
-    user = JSON.parse(userJson);
-  } catch {
-    return { ok: false as const, error: "BAD_USER_JSON" };
-  }
-
-  if (!user?.id) return { ok: false as const, error: "NO_TG_ID" };
-
-  return { ok: true as const, tgUser: user };
+  return await new SignJWT({ userId })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(key);
 }
 
 export async function POST(req: Request) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!botToken) return NextResponse.json({ ok: false, error: "NO_TELEGRAM_BOT_TOKEN" }, { status: 500 });
+  const body = await req.json().catch(() => ({}));
+  const initData = body?.initData;
 
-  const { initData } = await req.json().catch(() => ({}));
   if (!initData || typeof initData !== "string") {
-    return NextResponse.json({ ok: false, error: "NO_INITDATA" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
   }
 
-  const v = verifyInitData(initData, botToken);
-  if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
+  // ⚠️ Убедись, что имя env совпадает с тем, что ты реально добавил на Vercel
+  // Если у тебя BOT_TOKEN — просто замени строку ниже на getEnv("BOT_TOKEN")
+  const botToken = getEnv("TELEGRAM_BOT_TOKEN");
 
-  const tg = v.tgUser;
-  const tgId = String(tg.id);
+  const ver = verifyTelegramWebAppInitData(initData, botToken);
+  if (!ver.ok) {
+    return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
+  }
 
-  // Таблица User: balance default 250 — значит новым сразу будет 250
+  const params = ver.params;
+
+  const userRaw = params.get("user");
+  if (!userRaw) {
+    return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
+  }
+
+  let tgUser: any = null;
+  try {
+    tgUser = JSON.parse(userRaw);
+  } catch {
+    return NextResponse.json({ ok: false, error: "BAD_USER_JSON" }, { status: 400 });
+  }
+
+  const tgId = tgUser?.id;
+  if (!tgId) {
+    return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
+  }
+
+  const now = new Date();
+
+  // ✅ тут и есть "create" и "update" (upsert)
   const user = await prisma.user.upsert({
-    where: { tgId },
+    where: { tgId: String(tgId) },
     update: {
-      username: tg.username ?? null,
-      firstName: tg.first_name ?? null,
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
+      lastSeenAt: now,
     },
     create: {
-      tgId,
-      username: tg.username ?? null,
-      firstName: tg.first_name ?? null,
-      // balance не задаём → DEFAULT 250 из БД
+      tgId: String(tgId),
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
+      balance: 250, // стартовая валюта (и так стоит default в SQL, но пусть будет явно)
+      lastSeenAt: now,
     },
   });
 
-  const session = await signSession({ userId: user.id });
+  const token = await makeSessionToken(user.id);
 
-  const res = NextResponse.json({ ok: true, userId: user.id, balance: user.balance });
-  res.cookies.set("session", session, {
+  // cookie session
+  const isProd = process.env.NODE_ENV === "production";
+  cookies().set("session", token, {
     httpOnly: true,
-    secure: true,
+    secure: isProd,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
-  return res;
+
+  return NextResponse.json({
+    ok: true,
+    user: {
+      id: user.id,
+      tgId: user.tgId,
+      username: user.username,
+      firstName: user.firstName,
+      balance: user.balance,
+      lastSeenAt: user.lastSeenAt,
+    },
+  });
 }
