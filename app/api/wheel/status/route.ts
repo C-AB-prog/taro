@@ -21,6 +21,15 @@ function mskDayStartUtc(d = new Date()) {
   return new Date(startUtc);
 }
 
+function nextMskMidnightInSeconds() {
+  const nowMs = Date.now();
+  const mskNow = nowMs + MSK_OFFSET_MS;
+  const nextMidMsk = (Math.floor(mskNow / DAY_MS) + 1) * DAY_MS;
+  const nextMidUtc = nextMidMsk - MSK_OFFSET_MS;
+  const diffMs = Math.max(0, nextMidUtc - nowMs);
+  return Math.ceil(diffMs / 1000);
+}
+
 function looksTemplate(meaning: string, advice: string) {
   const m = (meaning || "").toLowerCase();
   const a = (advice || "").toLowerCase();
@@ -36,59 +45,70 @@ function looksTemplate(meaning: string, advice: string) {
   return bad.some((x) => m.includes(x) || a.includes(x));
 }
 
-async function hydrateCardTexts(slug: string, titleRu: string, meaningRu: string, adviceRu: string) {
-  let m = meaningRu || "";
-  let a = adviceRu || "";
-
-  if (!m || !a || looksTemplate(m, a)) {
-    try {
-      const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
-      m = gen.meaningRu;
-      a = gen.adviceRu;
-
-      await prisma.card.update({
-        where: { slug },
-        data: { titleRu, meaningRu: m, adviceRu: a },
-      });
-    } catch {}
-  }
-
-  return { meaningRu: m, adviceRu: a };
+function unauthorized() {
+  const res = NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  res.cookies.set("session", "", { path: "/", maxAge: 0 });
+  return res;
 }
 
 export async function GET() {
   const token = cookies().get("session")?.value;
-  if (!token) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!token) return unauthorized();
 
   let session: { userId: string };
   try {
     session = await verifySession(token);
   } catch {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    return unauthorized();
   }
 
   const dateKey = mskDayStartUtc();
+  const nextInSeconds = nextMskMidnightInSeconds();
 
   const existing = await prisma.wheelSpin.findUnique({
     where: { userId_date: { userId: session.userId, date: dateKey } },
     include: { card: true },
   });
 
-  if (!existing) return NextResponse.json({ already: false });
+  if (!existing) {
+    return NextResponse.json(
+      { ok: true, already: false, nextInSeconds, card: null },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   const slug = existing.card.slug;
   const titleRu = ruTitleFromSlug(slug);
 
-  const hydrated = await hydrateCardTexts(slug, titleRu, existing.card.meaningRu || "", existing.card.adviceRu || "");
+  let meaningRu = existing.card.meaningRu || "";
+  let adviceRu = existing.card.adviceRu || "";
 
-  return NextResponse.json({
-    already: true,
-    card: {
-      slug,
-      titleRu,
-      meaningRu: hydrated.meaningRu,
-      adviceRu: hydrated.adviceRu,
-      image: resolveCardImage(slug),
+  if (!meaningRu || !adviceRu || looksTemplate(meaningRu, adviceRu)) {
+    try {
+      const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
+      meaningRu = gen.meaningRu;
+      adviceRu = gen.adviceRu;
+
+      await prisma.card.update({
+        where: { slug },
+        data: { titleRu, meaningRu, adviceRu },
+      });
+    } catch {}
+  }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      already: true,
+      nextInSeconds,
+      card: {
+        slug,
+        titleRu,
+        meaningRu,
+        adviceRu,
+        image: resolveCardImage(slug),
+      },
     },
-  });
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
