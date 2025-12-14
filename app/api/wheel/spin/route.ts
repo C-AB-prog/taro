@@ -34,7 +34,6 @@ function looksTemplate(meaning: string, advice: string) {
   const m = (meaning || "").toLowerCase();
   const a = (advice || "").toLowerCase();
   if (m.length < 60 || a.length < 20) return true;
-
   const bad = ["важный мотив", "скрытый смысл происходящего", "береги себя", "действуй мягко", "правильный момент"];
   return bad.some((x) => m.includes(x) || a.includes(x));
 }
