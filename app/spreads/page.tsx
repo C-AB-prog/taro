@@ -37,8 +37,7 @@ type SpreadView = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function getInitDataWithWait(timeoutMs = 4500): Promise<string> {
+async function getInitDataWithWait(timeoutMs = 2000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const tg = (globalThis as any)?.Telegram?.WebApp;
@@ -47,38 +46,6 @@ async function getInitDataWithWait(timeoutMs = 4500): Promise<string> {
     await sleep(80);
   }
   return "";
-}
-
-async function apiFetch(input: RequestInfo, init: RequestInit = {}) {
-  const initData = await getInitDataWithWait();
-  const headers = new Headers(init.headers || {});
-  if (initData) headers.set("x-telegram-init-data", initData);
-
-  return fetch(input, {
-    ...init,
-    headers,
-    credentials: "include",
-    cache: "no-store",
-  });
-}
-
-async function ensureSession(): Promise<boolean> {
-  try {
-    const initData = await getInitDataWithWait();
-    if (!initData) return false;
-
-    const r = await fetch("/api/auth/telegram", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ initData }),
-    });
-
-    const d = await r.json().catch(() => ({}));
-    return !!(r.ok && d?.ok);
-  } catch {
-    return false;
-  }
 }
 
 function splitInterpretation(text: string) {
@@ -138,7 +105,6 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
   const openedCount = useMemo(() => revealed.filter(Boolean).length, [revealed]);
   const allOpen = openedCount === n;
-
   const { main, advice } = useMemo(() => splitInterpretation(view.interpretation), [view.interpretation]);
 
   const cardFrameStyle: React.CSSProperties = {
@@ -159,14 +125,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
   return (
     <div>
-      <div
-        className="card"
-        style={{
-          padding: 14,
-          border: "1px solid rgba(176,142,66,.22)",
-          background: "rgba(255,255,255,.72)",
-        }}
-      >
+      <div className="card" style={{ padding: 14, border: "1px solid rgba(176,142,66,.22)", background: "rgba(255,255,255,.72)" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
           <div className="small" style={{ opacity: 0.92 }}>
             Открой все карты, чтобы увидеть трактовку.
@@ -179,14 +138,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
       <div style={{ height: 12 }} />
 
-      <div
-        className="deckGrid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gap: 10,
-        }}
-      >
+      <div className="deckGrid" style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 10 }}>
         {view.cards.map((c, i) => {
           const isOpen = revealed[i];
           const titleRu = ruTitleFromSlug(c.slug);
@@ -218,7 +170,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
                 {pos}
               </div>
 
-              <div style={cardFrameStyle}>
+              <div style={{ ...cardFrameStyle, perspective: 900 }}>
                 <div
                   style={{
                     width: "100%",
@@ -234,14 +186,7 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
                     <div className="flipShine" />
                   </div>
 
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      backfaceVisibility: "hidden",
-                      transform: "rotateY(180deg)",
-                    }}
-                  >
+                  <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
                     <img src={c.image} alt={titleRu} loading="lazy" decoding="async" style={imgStyle} />
                   </div>
                 </div>
@@ -316,15 +261,6 @@ export default function SpreadsPage() {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  async function buyOnce(spreadKey: SpreadKey, signal: AbortSignal) {
-    return apiFetch("/api/spreads/buy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal,
-      body: JSON.stringify({ spreadKey }),
-    });
-  }
-
   async function buy(spreadKey: SpreadKey) {
     if (loadingKey) return;
 
@@ -336,15 +272,20 @@ export default function SpreadsPage() {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
+      const initData = await getInitDataWithWait(2500);
       const t = setTimeout(() => ctrl.abort(), 60000);
 
-      let r = await buyOnce(spreadKey, ctrl.signal);
-
-      // если нет cookie у пользователя — создаём и повторяем 1 раз
-      if (r.status === 401) {
-        await ensureSession();
-        r = await buyOnce(spreadKey, ctrl.signal);
-      }
+      const r = await fetch("/api/spreads/buy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(initData ? { "x-telegram-init-data": initData } : {}),
+        },
+        credentials: "include",
+        cache: "no-store",
+        signal: ctrl.signal,
+        body: JSON.stringify({ spreadKey }),
+      });
 
       clearTimeout(t);
 
@@ -393,14 +334,7 @@ export default function SpreadsPage() {
     <AppShell>
       <RitualHeader label="Расклады" />
 
-      <div
-        className="card"
-        style={{
-          padding: 12,
-          border: "1px solid rgba(176,142,66,.18)",
-          background: "rgba(255,255,255,.72)",
-        }}
-      >
+      <div className="card" style={{ padding: 12, border: "1px solid rgba(176,142,66,.18)", background: "rgba(255,255,255,.72)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {filterBtns.map((b) => {
             const active = cat === b.k;
