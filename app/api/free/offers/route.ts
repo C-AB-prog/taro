@@ -6,19 +6,16 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function ensureTables() {
-  // чтобы gen_random_uuid() работал на любой базе
+async function ensureOffersTables() {
   try {
     await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
   } catch {}
 
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdvertiserChannel" (
+    CREATE TABLE IF NOT EXISTS "AdOffer" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "url" TEXT NOT NULL UNIQUE,
-      "username" TEXT,
       "title" TEXT NOT NULL,
-      "photoFileId" TEXT,
+      "url" TEXT NOT NULL UNIQUE,
       "reward" INTEGER NOT NULL DEFAULT 100,
       "active" BOOLEAN NOT NULL DEFAULT true,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -26,66 +23,41 @@ async function ensureTables() {
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdvertiserClaim" (
+    CREATE TABLE IF NOT EXISTS "AdClaim" (
       "userId" TEXT NOT NULL,
-      "channelId" TEXT NOT NULL,
+      "offerId" TEXT NOT NULL,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY ("userId","channelId")
+      PRIMARY KEY ("userId","offerId")
     );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdvertiserChannel_active_idx"
-    ON "AdvertiserChannel" ("active");
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdvertiserClaim_userId_idx"
-    ON "AdvertiserClaim" ("userId");
   `);
 }
 
 export async function GET() {
-  const token = cookies().get("session")?.value;
-  if (!token) return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  await ensureOffersTables();
 
-  let session: { userId: string };
-  try {
-    session = await verifySession(token);
-  } catch {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  // если есть сессия — подсветим claimed
+  let userId = "__none__";
+  const token = cookies().get("session")?.value;
+  if (token) {
+    try {
+      const s = await verifySession(token);
+      userId = s.userId;
+    } catch {}
   }
 
-  await ensureTables();
-
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      url: string;
-      title: string;
-      photoFileId: string | null;
-      reward: number;
-      claimed: boolean;
-    }>
+  const offers = await prisma.$queryRaw<
+    Array<{ id: string; title: string; url: string; reward: number; claimed: boolean }>
   >`
     SELECT
-      c."id",
-      c."url",
-      c."title",
-      c."photoFileId",
-      c."reward",
-      (cl."userId" IS NOT NULL) AS "claimed"
-    FROM "AdvertiserChannel" c
-    LEFT JOIN "AdvertiserClaim" cl
-      ON cl."userId" = ${session.userId}
-     AND cl."channelId" = c."id"
-    WHERE c."active" = true
-    ORDER BY c."createdAt" DESC
+      o."id", o."title", o."url", o."reward",
+      (c."userId" IS NOT NULL) AS claimed
+    FROM "AdOffer" o
+    LEFT JOIN "AdClaim" c
+      ON c."offerId" = o."id" AND c."userId" = ${userId}
+    WHERE o."active" = true
+    ORDER BY o."createdAt" DESC
     LIMIT 50
   `;
 
-  return NextResponse.json(
-    { ok: true, offers: rows },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  return NextResponse.json({ ok: true, offers }, { headers: { "Cache-Control": "no-store" } });
 }
