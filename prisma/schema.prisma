@@ -19,12 +19,13 @@ enum TxProvider {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  tgId      String   @unique
-  username  String?
-  firstName String?
-  balance   Int      @default(250)
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  tgId       String   @unique
+  username   String?
+  firstName  String?
+  balance    Int      @default(250)
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
 
   wheelSpins      WheelSpin[]
   spreadPurchases SpreadPurchase[]
