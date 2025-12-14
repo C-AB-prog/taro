@@ -2,100 +2,108 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { spinWheel, resolveCardImage } from "@/lib/tarot";
-import { generateCardReadingRu } from "@/lib/tarotReadings";
 import { prisma } from "@/lib/prisma";
+import { generateCardReadingRu } from "@/lib/tarotReadings";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function unauthorized() {
-  const res = NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  res.cookies.set("session", "", { path: "/", maxAge: 0 });
-  return res;
+const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function nextMskMidnightInMinutes() {
+  const nowMs = Date.now();
+  const mskNow = nowMs + MSK_OFFSET_MS;
+  const nextMidMsk = (Math.floor(mskNow / DAY_MS) + 1) * DAY_MS;
+  const nextMidUtc = nextMidMsk - MSK_OFFSET_MS;
+  const diffMs = Math.max(0, nextMidUtc - nowMs);
+  return Math.ceil(diffMs / 60000);
 }
 
-function needsGen(s: unknown) {
-  const t = String(s ?? "").trim();
-  if (!t) return true;
-  const bad =
-    t.includes("Сделай один небольшой шаг") ||
-    t.includes("Сделай паузу, выдохни") ||
-    t.includes("знак дня: многое проясняется") ||
-    t.includes("тонкий знак: сейчас важно") ||
-    t.includes("Выбери один практичный шаг");
-  if (bad) return true;
-  if (t.length < 60) return true;
-  return false;
+function looksTemplate(meaning: string, advice: string) {
+  const m = (meaning || "").toLowerCase();
+  const a = (advice || "").toLowerCase();
+
+  if (m.length < 60 || a.length < 20) return true;
+
+  // маркеры “шаблонности” (если вдруг остались старые тексты)
+  const bad = [
+    "важный мотив",
+    "скрытый смысл происходящего",
+    "береги себя",
+    "действуй мягко",
+    "правильный момент",
+  ];
+  return bad.some((x) => m.includes(x) || a.includes(x));
 }
 
-export async function POST(req: Request) {
-  const url = new URL(req.url);
-  const force = url.searchParams.get("force") === "1";
-
+export async function POST() {
   const token = cookies().get("session")?.value;
-  if (!token) return unauthorized();
+  if (!token) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  let session: any;
+  let session: { userId: string };
   try {
     session = await verifySession(token);
   } catch {
-    return unauthorized();
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  let result: any;
-  try {
-    result = await spinWheel(session.userId);
-  } catch {
-    // если по какой-то причине юзера нет/ошибка БД — пусть будет 401 (чтобы перезалогиниться)
-    return unauthorized();
-  }
+  const result = await spinWheel(session.userId);
+  const mins = nextMskMidnightInMinutes();
 
-  const card: any = result.card;
-  const titleRu = ruTitleFromSlug(card.slug) || String(card.titleRu ?? "");
+  // Card из spinWheel может быть с пустыми/старыми текстами → гидрируем
+  const slug = result.card.slug;
+  const titleRu = ruTitleFromSlug(slug);
 
-  let meaningRu = card.meaningRu;
-  let adviceRu = card.adviceRu;
-  let aiSource: "ai" | "fallback" | "stored" = "stored";
+  let meaningRu = result.card.meaningRu || "";
+  let adviceRu = result.card.adviceRu || "";
+  let aiSource: "db" | "ai" = "db";
+  let model: string | null = null;
+  let forced = false;
 
-  if (force || needsGen(meaningRu) || needsGen(adviceRu)) {
-    const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
-    meaningRu = gen.meaningRu;
-    adviceRu = gen.adviceRu;
-    aiSource = gen._source;
+  const needAi = looksTemplate(meaningRu, adviceRu) || !meaningRu || !adviceRu;
 
-    // best-effort сохранить в WheelSpin, если есть id спина
+  if (needAi) {
     try {
-      const spinId = result?.spin?.id ?? result?.spinId ?? null;
-      if (spinId) {
-        await prisma.wheelSpin.update({
-          where: { id: spinId },
-          data: { /* тут нет полей meaning/advice в таблице WheelSpin, они в Card */
-          },
-        }).catch(() => {});
-      }
-      // Тексты у тебя хранятся в Card, поэтому лучше обновить Card:
-      if (card?.id) {
-        await prisma.card.update({
-          where: { id: card.id },
-          data: { titleRu, meaningRu, adviceRu },
-        });
-      }
-    } catch {}
+      forced = true;
+      const gen = await generateCardReadingRu({
+        titleRu,
+        kind: "wheel",
+      });
+      meaningRu = gen.meaningRu;
+      adviceRu = gen.adviceRu;
+      model = (gen as any)?.model ?? null;
+      aiSource = "ai";
+
+      // сохраняем в БД, чтобы дальше было быстрее
+      await prisma.card.update({
+        where: { slug },
+        data: {
+          titleRu,
+          meaningRu,
+          adviceRu,
+        },
+      });
+    } catch {
+      // если ИИ упал — просто отдаём то, что есть
+      aiSource = "db";
+      forced = false;
+    }
   }
 
-  return NextResponse.json(
-    {
-      already: result.already,
-      card: {
-        slug: card.slug,
-        titleRu,
-        meaningRu,
-        adviceRu,
-        image: resolveCardImage(card.slug),
-      },
-      aiSource,
+  return NextResponse.json({
+    already: result.already,
+    nextInMinutes: mins,
+    card: {
+      slug,
+      titleRu,
+      meaningRu,
+      adviceRu,
+      image: resolveCardImage(slug),
     },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+    aiSource,
+    model,
+    forced,
+  });
 }
