@@ -20,7 +20,7 @@ export function Modal({
 
   useEffect(() => setMounted(true), []);
 
-  // lock background scroll
+  // lock background scroll (iOS friendly)
   useEffect(() => {
     if (!open) return;
 
@@ -74,14 +74,16 @@ export function Modal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          transition={{ duration: 0.16 }}
+          onMouseDown={onClose}
+          onTouchStart={onClose}
           style={{
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "rgba(0,0,0,.34)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
+            background: "rgba(0,0,0,.30)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
             display: "grid",
             alignItems: "end",
             justifyItems: "center",
@@ -89,20 +91,21 @@ export function Modal({
           }}
         >
           <motion.div
-            initial={{ y: 24, opacity: 0, scale: 0.995 }}
+            initial={{ y: 26, opacity: 0, scale: 0.99 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 24, opacity: 0, scale: 0.995 }}
-            transition={{ duration: 0.2 }}
-            onClick={(e) => e.stopPropagation()}
+            exit={{ y: 26, opacity: 0, scale: 0.99 }}
+            transition={{ type: "spring", stiffness: 360, damping: 30 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             style={{
               width: "min(640px, 100%)",
               maxHeight: "86vh",
               overflow: "hidden",
               borderRadius: 26,
-              border: "1px solid rgba(176,142,66,.25)",
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.90))",
+              border: "1px solid rgba(176,142,66,.22)",
+              background: "linear-gradient(180deg, rgba(255,255,255,.97), rgba(255,255,255,.90))",
               boxShadow: "0 28px 90px rgba(0,0,0,.18)",
+              willChange: "transform",
             }}
           >
             {/* header */}
@@ -111,8 +114,7 @@ export function Modal({
                 position: "sticky",
                 top: 0,
                 zIndex: 2,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.86))",
+                background: "linear-gradient(180deg, rgba(255,255,255,.97), rgba(255,255,255,.88))",
                 backdropFilter: "blur(10px)",
                 WebkitBackdropFilter: "blur(10px)",
                 padding: "12px 12px 10px 12px",
@@ -132,7 +134,7 @@ export function Modal({
               />
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ fontWeight: 900, fontSize: 16, color: "var(--text)" }}>{title}</div>
+                <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>{title}</div>
 
                 <button
                   type="button"
@@ -155,7 +157,7 @@ export function Modal({
                   height: 1,
                   marginTop: 10,
                   background:
-                    "linear-gradient(to right, rgba(176,142,66,0), rgba(176,142,66,.50), rgba(176,142,66,0))",
+                    "linear-gradient(to right, rgba(176,142,66,0), rgba(176,142,66,.46), rgba(176,142,66,0))",
                 }}
               />
             </div>
@@ -169,6 +171,8 @@ export function Modal({
                 WebkitOverflowScrolling: "touch",
                 overscrollBehavior: "contain",
               }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
             >
               {children}
               <div style={{ height: 10 }} />
