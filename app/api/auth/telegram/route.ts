@@ -33,10 +33,10 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  // timing safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
+
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
   return { ok: true as const, params };
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
     }
 
-    const botToken = getEnv("TELEGRAM_BOT_TOKEN"); // обязательно добавь в Vercel env
+    const botToken = getEnv("TELEGRAM_BOT_TOKEN");
     const ver = verifyTelegramWebAppInitData(initData, botToken);
     if (!ver.ok) {
       return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
@@ -87,7 +87,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
     }
 
-    // ✅ upsert только по полям Prisma-схемы (без lastSeenAt, чтобы не было TS ошибки)
     const user = await prisma.user.upsert({
       where: { tgId: String(tgId) },
       update: {
@@ -102,12 +101,10 @@ export async function POST(req: Request) {
       },
     });
 
-    // ✅ lastSeenAt обновляем raw SQL (если колонка есть — ок, если нет — просто молча)
+    // lastSeenAt обновляем raw (если колонки нет — просто пропустим)
     try {
       await prisma.$executeRaw`
-        UPDATE "User"
-        SET "lastSeenAt" = now()
-        WHERE "id" = ${user.id}
+        UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}
       `;
     } catch {}
 
@@ -127,11 +124,14 @@ export async function POST(req: Request) {
       { headers: { "Cache-Control": "no-store" } }
     );
 
-    // ✅ Telegram Desktop: сессия часто ломается без SameSite=None; Secure
+    const proto = req.headers.get("x-forwarded-proto") || "";
+    const isHttps = proto === "https" || process.env.NODE_ENV === "production";
+
+    // ✅ Telegram Desktop: чаще надежнее Lax
     res.cookies.set("session", token, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isHttps,
+      sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     });
