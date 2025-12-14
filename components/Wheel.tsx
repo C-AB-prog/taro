@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/Modal";
 
-type WheelCard = {
+type Card = {
   slug: string;
   titleRu: string;
   meaningRu: string;
@@ -11,34 +11,21 @@ type WheelCard = {
   image: string;
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function getInitDataWithWait(timeoutMs = 2000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const tg = (globalThis as any)?.Telegram?.WebApp;
-    const initData = tg?.initData;
-    if (typeof initData === "string" && initData.length > 0) return initData;
-    await sleep(80);
-  }
-  return "";
-}
-
 function pad2(n: number) {
   return String(Math.max(0, n)).padStart(2, "0");
 }
-function fmtHms(msLeft: number) {
-  const s = Math.max(0, Math.floor(msLeft / 1000));
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
+function fmtHMS(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
-  return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+  return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`;
 }
 
 export function Wheel() {
   const [loading, setLoading] = useState(true);
   const [already, setAlready] = useState(false);
-  const [nextInMinutes, setNextInMinutes] = useState<number>(0);
-  const [card, setCard] = useState<WheelCard | null>(null);
+  const [card, setCard] = useState<Card | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
@@ -46,108 +33,106 @@ export function Wheel() {
   const [spinning, setSpinning] = useState(false);
   const [deg, setDeg] = useState(0);
 
-  const [msLeft, setMsLeft] = useState(0);
-  const tickRef = useRef<any>(null);
+  const [leftSec, setLeftSec] = useState(0);
+  const leftSecRef = useRef(0);
 
-  const msInitial = useMemo(() => nextInMinutes * 60_000, [nextInMinutes]);
+  const canSpin = !loading && !spinning && !already;
 
-  useEffect(() => {
-    setMsLeft(msInitial);
-  }, [msInitial]);
+  const countdown = useMemo(() => fmtHMS(leftSec), [leftSec]);
 
-  useEffect(() => {
-    if (tickRef.current) clearInterval(tickRef.current);
-    if (!already) return;
-
-    tickRef.current = setInterval(() => {
-      setMsLeft((prev) => Math.max(0, prev - 1000));
-    }, 1000);
-
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [already]);
-
-  async function loadState() {
-    setLoading(true);
+  async function loadStatus() {
     setErr(null);
+    setLoading(true);
 
-    try {
-      const initData = await getInitDataWithWait(2500);
-      const r = await fetch("/api/wheel/state", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-        headers: initData ? { "x-telegram-init-data": initData } : undefined,
-      });
+    // 2 попытки (иногда сессия ставится чуть позже)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch("/api/wheel/status", { cache: "no-store", credentials: "include" }).catch(() => null);
+      if (!r) {
+        await new Promise((x) => setTimeout(x, 250));
+        continue;
+      }
+
+      if (r.status === 401) {
+        await new Promise((x) => setTimeout(x, 250));
+        continue;
+      }
 
       const d = await r.json().catch(() => ({}));
-
-      if (!r.ok) {
-        if (r.status === 401) setErr("Открой мини-приложение через Telegram.");
-        else setErr("Не удалось загрузить колесо. Попробуй ещё раз.");
+      if (d?.ok) {
+        setAlready(!!d.already);
+        setCard(d.card ?? null);
+        const sec = Number(d.nextInSeconds || 0);
+        setLeftSec(sec);
+        leftSecRef.current = sec;
         setLoading(false);
         return;
       }
 
-      setAlready(!!d?.already);
-      setNextInMinutes(Number(d?.nextInMinutes) || 0);
-      setCard(d?.card ?? null);
-
-      setLoading(false);
-    } catch {
-      setErr("Ошибка сети. Попробуй ещё раз.");
-      setLoading(false);
+      await new Promise((x) => setTimeout(x, 250));
     }
+
+    setLoading(false);
+    setErr("Не удалось загрузить колесо. Открой мини-приложение через Telegram и попробуй снова.");
   }
 
   useEffect(() => {
-    loadState();
+    loadStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!already) return;
+    const t = setInterval(() => {
+      leftSecRef.current = Math.max(0, leftSecRef.current - 1);
+      setLeftSec(leftSecRef.current);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [already]);
+
   async function spin() {
-    if (spinning || loading) return;
+    if (!canSpin) return;
 
     setErr(null);
-
-    // запускаем анимацию
     setSpinning(true);
-    setDeg((prev) => prev + 1440 + Math.floor(Math.random() * 360));
+
+    const extra = 6 * 360 + Math.floor(Math.random() * 360);
+    setDeg((prev) => prev + extra);
 
     try {
-      const initData = await getInitDataWithWait(2500);
       const r = await fetch("/api/wheel/spin", {
         method: "POST",
-        cache: "no-store",
         credentials: "include",
-        headers: initData ? { "x-telegram-init-data": initData } : undefined,
+        cache: "no-store",
       });
 
       const d = await r.json().catch(() => ({}));
-
       if (!r.ok) {
-        if (r.status === 401) setErr("Открой мини-приложение через Telegram.");
-        else setErr("Не удалось прокрутить. Попробуй ещё раз.");
+        setErr("Не удалось прокрутить. Попробуй ещё раз.");
         setSpinning(false);
         return;
       }
 
-      const nextMin = Number(d?.nextInMinutes) || 0;
-
-      // дождёмся конца анимации (чтобы было приятно)
+      // дожидаемся завершения анимации, потом показываем
       setTimeout(() => {
-        setAlready(!!d?.already || true);
-        setNextInMinutes(nextMin);
-        setCard(d?.card ?? null);
+        setAlready(true);
+        // если backend не шлёт seconds — берём minutes
+        const sec =
+          typeof d?.nextInSeconds === "number"
+            ? d.nextInSeconds
+            : typeof d?.nextInMinutes === "number"
+            ? Math.max(0, Math.ceil(d.nextInMinutes * 60))
+            : leftSecRef.current;
+
+        setLeftSec(sec);
+        leftSecRef.current = sec;
+
+        setCard(d.card ?? null);
+        setOpen(true);
         setSpinning(false);
 
-        // сразу показываем кнопку + модалку с картой
-        if (d?.card) {
-          setOpen(true);
-          (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-        }
-      }, 900);
+        // обновим архив/баланс где нужно
+        window.dispatchEvent(new Event("balance:refresh"));
+      }, 1150);
     } catch {
       setErr("Ошибка сети. Попробуй ещё раз.");
       setSpinning(false);
@@ -156,50 +141,45 @@ export function Wheel() {
 
   return (
     <div className="card">
-      <div className="title" style={{ fontSize: 16 }}>Колесо фортуны</div>
+      <div className="title">Колесо фортуны</div>
       <div className="small" style={{ marginTop: 4 }}>
-        Один раз в сутки — и карта откроет подсказку.
+        Можно крутить 1 раз в сутки.
       </div>
 
       <div style={{ height: 10 }} />
 
       <div className="wheelMinimal">
         <div className="wheelPointerDown" />
-        <div className="wheelRing">
+        <div className="wheelRing" aria-hidden="true">
           <div
             className="wheelSpin"
             style={{
               transform: `rotate(${deg}deg)`,
-              transition: spinning ? "transform 900ms cubic-bezier(.2,.9,.2,1)" : "transform 0ms",
-              willChange: "transform",
+              transition: spinning ? "transform 1150ms cubic-bezier(.2,.8,.2,1)" : "transform 0ms",
             }}
           >
             <div className="wheelFace" />
+            <div className="wheelCenter" />
+            <div className="wheelDot" />
           </div>
-          <div className="wheelCenter" />
-          <div className="wheelDot" />
         </div>
       </div>
 
       <div style={{ height: 12 }} />
 
-      {err ? (
+      {loading ? (
+        <div className="small">Загружаю…</div>
+      ) : err ? (
         <div className="small">
           <b>Ошибка:</b> {err}
         </div>
-      ) : null}
-
-      <div style={{ height: err ? 10 : 0 }} />
-
-      {loading ? (
-        <button className="btn btnPrimary" style={{ width: "100%", borderRadius: 999 }} disabled>
-          Загружаю…
-        </button>
       ) : already ? (
         <>
-          <div className="small" style={{ marginBottom: 10 }}>
-            Ты уже кру(ти)л(а) сегодня. Снова можно через <b>{fmtHms(msLeft)}</b>
+          <div className="small" style={{ opacity: 0.9 }}>
+            Ты уже крутил(а) сегодня. Снова можно через <b>{countdown}</b>
           </div>
+
+          <div style={{ height: 10 }} />
 
           <button
             className="btn btnPrimary"
@@ -213,16 +193,21 @@ export function Wheel() {
           <div style={{ height: 8 }} />
 
           <button className="btn btnGhost" style={{ width: "100%", borderRadius: 999 }} disabled>
-            Вернуться через {fmtHms(msLeft)}
+            Вернуться через {countdown}
           </button>
         </>
       ) : (
-        <button className="btn btnPrimary" style={{ width: "100%", borderRadius: 999 }} onClick={spin} disabled={spinning}>
+        <button
+          className="btn btnPrimary"
+          style={{ width: "100%", borderRadius: 999 }}
+          onClick={spin}
+          disabled={!canSpin}
+        >
           {spinning ? "Кручу…" : "Крутить колесо"}
         </button>
       )}
 
-      <Modal open={open} title={card ? card.titleRu : "Карта"} onClose={() => setOpen(false)}>
+      <Modal open={open} title="Карта колеса" onClose={() => setOpen(false)}>
         {!card ? (
           <p className="text">…</p>
         ) : (
@@ -230,11 +215,7 @@ export function Wheel() {
             <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
               <div className="title" style={{ fontSize: 16 }}>{card.titleRu}</div>
-              <div className="small" style={{ marginTop: 2 }}>Что означает</div>
-
-              <p className="text" style={{ marginTop: 8 }}>
-                {card.meaningRu}
-              </p>
+              <p className="text" style={{ marginTop: 8 }}>{card.meaningRu}</p>
 
               <div className="adviceBox" style={{ marginTop: 12 }}>
                 <div className="adviceTitle">Совет</div>
