@@ -27,7 +27,6 @@ async function ensurePaymentsTable() {
   `);
 }
 
-// ⚠️ оставляю твою логику, но делаю вставку безопаснее для кавычек в payload
 async function markProcessed(params: {
   telegramChargeId: string;
   userId: string;
@@ -38,7 +37,6 @@ async function markProcessed(params: {
 }) {
   await ensurePaymentsTable();
 
-  // вернёт 1 если вставили, 0 если уже был
   const rows = await prisma.$executeRawUnsafe(
     `
     INSERT INTO "StarsPayment" ("telegramChargeId","userId","packId","stars","coins","payload")
@@ -71,18 +69,12 @@ async function sendStats(chatId: number) {
   const total = await prisma.user.count();
 
   const today = startOfTodayUtc();
-  const newToday = await prisma.user.count({
-    where: { createdAt: { gte: today } },
-  });
+  const newToday = await prisma.user.count({ where: { createdAt: { gte: today } } });
 
-  const activeToday = await prisma.user.count({
-    where: { lastSeenAt: { gte: today } },
-  });
+  const activeToday = await prisma.user.count({ where: { lastSeenAt: { gte: today } } });
 
   const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const active30d = await prisma.user.count({
-    where: { lastSeenAt: { gte: d30 } },
-  });
+  const active30d = await prisma.user.count({ where: { lastSeenAt: { gte: d30 } } });
 
   const text =
     `📊 *Daily Tarot — статистика*\n\n` +
@@ -98,36 +90,46 @@ async function sendStats(chatId: number) {
   });
 }
 
+function normalizeCmd(s: string) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+/, "")
+    .split(/\s+/)[0];
+}
+
+function isStatsCommand(cmd: string) {
+  return cmd === "stats" || cmd === "stat" || cmd === "стат" || cmd === "статистика";
+}
+
 export async function POST(req: Request) {
-  // проверка secret_token от Telegram setWebhook
+  // secret_token от Telegram setWebhook
   const gotSecret = req.headers.get("x-telegram-bot-api-secret-token") || "";
-  if (SECRET && gotSecret !== SECRET) {
-    return NextResponse.json({ ok: true });
-  }
+  if (SECRET && gotSecret !== SECRET) return NextResponse.json({ ok: true });
 
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
 
-  // ---- 0) обычные сообщения (команды) ----
-  const msg = update.message;
-  const text = msg?.text ? String(msg.text) : "";
-  const fromId = msg?.from?.id;
-  const chatId = msg?.chat?.id;
+  // 0) callback_query (если “нажал кнопку”)
+  const cq = update.callback_query;
+  if (cq) {
+    const fromId = cq.from?.id;
+    const chatId = cq.message?.chat?.id;
+    const data = normalizeCmd(cq.data || "");
 
-  // обновляем lastSeenAt по tgId если пользователь существует (это будет “активность в боте”)
-  if (fromId) {
-    try {
+    // убираем “часики” на кнопке
+    if (cq.id) {
+      await tgCall("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
+    }
+
+    if (fromId) {
       await prisma.user.updateMany({
         where: { tgId: String(fromId) },
         data: { lastSeenAt: new Date() },
-      });
-    } catch {}
-  }
+      }).catch(() => {});
+    }
 
-  if (text && chatId) {
-    const cmd = text.trim().split(/\s+/)[0];
-
-    if (cmd === "/stats" || cmd === "/stats@YourBotName") {
+    if (chatId && isStatsCommand(data)) {
       if (!isAdmin(fromId)) {
         await tgCall("sendMessage", {
           chat_id: chatId,
@@ -141,7 +143,37 @@ export async function POST(req: Request) {
     }
   }
 
-  // ---- 1) pre_checkout_query — ответить быстро ----
+  // 1) обычные сообщения (текст)
+  const msg = update.message;
+  const text = msg?.text ? String(msg.text) : "";
+  const fromId = msg?.from?.id;
+  const chatId = msg?.chat?.id;
+
+  if (fromId) {
+    await prisma.user.updateMany({
+      where: { tgId: String(fromId) },
+      data: { lastSeenAt: new Date() },
+    }).catch(() => {});
+  }
+
+  if (text && chatId) {
+    const cmd = normalizeCmd(text);
+
+    if (isStatsCommand(cmd)) {
+      if (!isAdmin(fromId)) {
+        await tgCall("sendMessage", {
+          chat_id: chatId,
+          text: "⛔️ Команда доступна только администратору.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await sendStats(chatId);
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  // 2) pre_checkout_query — ответить быстро
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     const payload = String(q.invoice_payload || "");
@@ -168,7 +200,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // ---- 2) successful_payment — начисляем валюту ----
+  // 3) successful_payment — начисляем валюту
   const sp = msg?.successful_payment;
   if (sp) {
     const payload = String(sp.invoice_payload || "");
@@ -199,7 +231,6 @@ export async function POST(req: Request) {
         select: { balance: true },
       });
 
-      // ✅ чтобы не было ощущения “вечно начисляем” — отправим подтверждение
       if (chatId) {
         await tgCall("sendMessage", {
           chat_id: chatId,
