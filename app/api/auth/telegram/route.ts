@@ -29,12 +29,11 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
+  // secret_key = SHA256(bot_token)
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
-  const computedHash = crypto
-    .createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
+  // timing safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -55,85 +54,93 @@ async function makeSessionToken(userId: string) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  const initData = body?.initData;
-
-  if (!initData || typeof initData !== "string") {
-    return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
-  }
-
-  const botToken = getEnv("TELEGRAM_BOT_TOKEN");
-  const ver = verifyTelegramWebAppInitData(initData, botToken);
-  if (!ver.ok) {
-    return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
-  }
-
-  const userRaw = ver.params.get("user");
-  if (!userRaw) {
-    return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
-  }
-
-  let tgUser: any = null;
   try {
-    tgUser = JSON.parse(userRaw);
-  } catch {
-    return NextResponse.json({ ok: false, error: "BAD_USER_JSON" }, { status: 400 });
-  }
+    const body = await req.json().catch(() => ({}));
+    const initData = body?.initData;
 
-  const tgId = tgUser?.id;
-  if (!tgId) {
-    return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
-  }
+    if (!initData || typeof initData !== "string") {
+      return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
+    }
 
-  // user upsert (без lastSeenAt в Prisma, чтобы не ломать сборку)
-  const user = await prisma.user.upsert({
-    where: { tgId: String(tgId) },
-    update: {
-      username: tgUser?.username ?? null,
-      firstName: tgUser?.first_name ?? null,
-    },
-    create: {
-      tgId: String(tgId),
-      username: tgUser?.username ?? null,
-      firstName: tgUser?.first_name ?? null,
-      balance: 250,
-    },
-  });
+    const botToken = getEnv("TELEGRAM_BOT_TOKEN"); // обязательно добавь в Vercel env
+    const ver = verifyTelegramWebAppInitData(initData, botToken);
+    if (!ver.ok) {
+      return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
+    }
 
-  // если колонка lastSeenAt есть — обновим raw SQL (без Prisma-типа)
-  try {
-    await prisma.$executeRaw`
-      UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}
-    `;
-  } catch {}
+    const params = ver.params;
 
-  const token = await makeSessionToken(user.id);
+    const userRaw = params.get("user");
+    if (!userRaw) {
+      return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
+    }
 
-  const isProd = process.env.NODE_ENV === "production";
+    let tgUser: any = null;
+    try {
+      tgUser = JSON.parse(userRaw);
+    } catch {
+      return NextResponse.json({ ok: false, error: "BAD_USER_JSON" }, { status: 400 });
+    }
 
-  const res = NextResponse.json(
-    {
-      ok: true,
-      user: {
-        id: user.id,
-        tgId: user.tgId,
-        username: user.username,
-        firstName: user.firstName,
-        balance: user.balance,
+    const tgId = tgUser?.id;
+    if (!tgId) {
+      return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
+    }
+
+    // ✅ upsert только по полям Prisma-схемы (без lastSeenAt, чтобы не было TS ошибки)
+    const user = await prisma.user.upsert({
+      where: { tgId: String(tgId) },
+      update: {
+        username: tgUser?.username ?? null,
+        firstName: tgUser?.first_name ?? null,
       },
-    },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+      create: {
+        tgId: String(tgId),
+        username: tgUser?.username ?? null,
+        firstName: tgUser?.first_name ?? null,
+        balance: 250,
+      },
+    });
 
-  // ✅ ключевая правка для Telegram Desktop:
-  // в проде SameSite=None; Secure — иначе cookie может не работать
-  res.cookies.set("session", token, {
-    httpOnly: true,
-    secure: isProd, // в проде true
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+    // ✅ lastSeenAt обновляем raw SQL (если колонка есть — ок, если нет — просто молча)
+    try {
+      await prisma.$executeRaw`
+        UPDATE "User"
+        SET "lastSeenAt" = now()
+        WHERE "id" = ${user.id}
+      `;
+    } catch {}
 
-  return res;
+    const token = await makeSessionToken(user.id);
+
+    const res = NextResponse.json(
+      {
+        ok: true,
+        user: {
+          id: user.id,
+          tgId: user.tgId,
+          username: user.username,
+          firstName: user.firstName,
+          balance: user.balance,
+        },
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+
+    // ✅ Telegram Desktop: сессия часто ломается без SameSite=None; Secure
+    res.cookies.set("session", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
+    return res;
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: "AUTH_FAILED", message: e?.message ?? String(e) },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 }
