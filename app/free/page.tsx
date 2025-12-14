@@ -4,112 +4,45 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RitualHeader } from "@/components/RitualHeader";
 
-type Offer = {
-  id: string;
-  title: string;
-  url: string;
-  reward: number;
-};
-
-async function fetchMeId(): Promise<string | null> {
-  try {
-    const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
-    if (!r.ok) return null;
-    const d = await r.json().catch(() => ({}));
-    const id = d?.user?.id ?? d?.id ?? null;
-    return typeof id === "string" ? id : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchOffers(): Promise<Offer[]> {
-  try {
-    const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
-    const d = await r.json().catch(() => ({}));
-    return Array.isArray(d?.offers) ? d.offers : [];
-  } catch {
-    return [];
-  }
-}
+type Me = { ok: true; user: { id: string; balance: number } } | { ok: false };
 
 export default function FreePage() {
-  const [meId, setMeId] = useState<string | null>(null);
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const bot = (process.env.NEXT_PUBLIC_BOT_USERNAME || "").trim();
 
   useEffect(() => {
     (async () => {
-      setMeId(await fetchMeId());
-      setOffers(await fetchOffers());
+      const r = await fetch("/api/me", { cache: "no-store", credentials: "include" }).catch(() => null);
+      const d = r ? await r.json().catch(() => null) : null;
+      setMe(d);
     })();
   }, []);
 
-  const referral = useMemo(() => {
-    if (!meId) return { code: "", link: "" };
-    const code = `ref_${meId}`;
+  const link = useMemo(() => {
+    if (!bot) return "";
+    const uid = (me as any)?.user?.id;
+    if (!uid) return "";
+    return `https://t.me/${bot}?startapp=ref_${uid}`;
+  }, [bot, me]);
 
-    const bot = process.env.NEXT_PUBLIC_BOT_USERNAME || "";
-    const shortName = process.env.NEXT_PUBLIC_MINIAPP_SHORTNAME || "";
+  async function copy() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  }
 
-    // https, без "@"
-    const link =
-      bot && shortName
-        ? `https://t.me/${bot}/${shortName}?startapp=${encodeURIComponent(code)}`
-        : bot
-        ? `https://t.me/${bot}?startapp=${encodeURIComponent(code)}`
-        : "";
-
-    return { code, link };
-  }, [meId]);
-
-  function openTgLink(url: string) {
+  function share() {
+    if (!link) return;
     const tg = (globalThis as any)?.Telegram?.WebApp;
+    const text = "Зайди в «Карта Дня | Daily Tarot» — тебе будет интересно ✨";
+    const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
     if (tg?.openTelegramLink) tg.openTelegramLink(url);
     else window.open(url, "_blank");
-  }
-
-  async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setMsg("Скопировано ✨");
-      (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-      setTimeout(() => setMsg(null), 1200);
-    } catch {
-      setMsg("Не удалось скопировать");
-      setTimeout(() => setMsg(null), 1200);
-    }
-  }
-
-  function share(link: string) {
-    const text =
-      "✨ Забери 500 валюты за приглашение друга в «Карта Дня | Daily Tarot» — открой и попробуй!";
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
-    openTgLink(shareUrl);
-  }
-
-  async function claimOffer(offerId: string) {
-    setMsg(null);
-    try {
-      const r = await fetch("/api/free/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        cache: "no-store",
-        body: JSON.stringify({ offerId }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok && d?.ok && d?.granted) {
-        window.dispatchEvent(new Event("balance:refresh"));
-        setMsg(`Готово! +${d.reward} валюты ✨`);
-      } else {
-        setMsg(d?.error === "ALREADY" ? "Уже получено ✅" : "Не получилось, попробуй ещё раз");
-      }
-      setTimeout(() => setMsg(null), 1400);
-    } catch {
-      setMsg("Ошибка сети");
-      setTimeout(() => setMsg(null), 1400);
-    }
   }
 
   return (
@@ -117,80 +50,50 @@ export default function FreePage() {
       <RitualHeader label="Бесплатно" />
 
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
+        <div className="title">Пригласи друга</div>
         <div className="small" style={{ marginTop: 6 }}>
           За 1 нового друга: <b>+500 валюты</b>
         </div>
 
-        <div style={{ height: 12 }} />
+        <div style={{ height: 10 }} />
 
-        {!referral.link ? (
-          <div className="small">
-            Чтобы ссылка работала, добавь в Vercel env:
-            <br />
-            <b>NEXT_PUBLIC_BOT_USERNAME</b> (без @) и <b>NEXT_PUBLIC_MINIAPP_SHORTNAME</b>
-          </div>
+        {!bot ? (
+          <div className="small"><b>Нужно:</b> добавить env <code>NEXT_PUBLIC_BOT_USERNAME</code>.</div>
+        ) : !link ? (
+          <div className="small">Готовлю ссылку…</div>
         ) : (
           <>
-            <div className="small" style={{ wordBreak: "break-all" }}>
-              {referral.link}
+            <div className="card" style={{ padding: 12, background: "rgba(255,255,255,.70)" }}>
+              <div className="small" style={{ wordBreak: "break-all" }}>{link}</div>
             </div>
 
             <div style={{ height: 10 }} />
 
-            <div className="segRow" style={{ gap: 8 }}>
-              <button className="btn btnPrimary" style={{ borderRadius: 999 }} onClick={() => copy(referral.link)}>
-                Скопировать ссылку
-              </button>
-              <button className="btn btnGhost" style={{ borderRadius: 999 }} onClick={() => share(referral.link)}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <button className="btn btnPrimary" style={{ borderRadius: 999 }} onClick={share}>
                 Поделиться
+              </button>
+              <button className="btn btnGhost" style={{ borderRadius: 999 }} onClick={copy}>
+                {copied ? "Скопировано ✓" : "Копировать"}
               </button>
             </div>
           </>
         )}
-
-        {msg ? <div className="small" style={{ marginTop: 10 }}><b>{msg}</b></div> : null}
       </div>
 
       <div style={{ height: 12 }} />
 
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
+        <div className="title">Каналы рекламодателей</div>
         <div className="small" style={{ marginTop: 6 }}>
-          Подпишись и забери бонус. (Пока без проверки подписки.)
+          Подпишись и забери бонус.
         </div>
-      </div>
 
-      <div style={{ height: 12 }} />
+        <div style={{ height: 10 }} />
 
-      <div style={{ display: "grid", gap: 10 }}>
-        {offers.length === 0 ? (
-          <div className="card">
-            <div className="small">Пока нет доступных каналов. Загляни чуть позже ✨</div>
-          </div>
-        ) : (
-          offers.map((o) => (
-            <div key={o.id} className="card" style={{ padding: 14 }}>
-              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {o.title}
-                  </div>
-                  <div className="small" style={{ marginTop: 4 }}>Подпишись • +{o.reward} валюты</div>
-                </div>
-
-                <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
-                  <button className="btn btnGhost" style={{ borderRadius: 999 }} onClick={() => openTgLink(o.url)}>
-                    Открыть
-                  </button>
-                  <button className="btn btnPrimary" style={{ borderRadius: 999 }} onClick={() => claimOffer(o.id)}>
-                    Получить
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
+        <div className="card" style={{ padding: 12, background: "rgba(255,255,255,.70)" }}>
+          <div className="small">Пока нет доступных каналов. Загляни чуть позже ✨</div>
+        </div>
       </div>
     </AppShell>
   );
