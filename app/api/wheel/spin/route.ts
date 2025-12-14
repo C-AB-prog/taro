@@ -4,7 +4,7 @@ import { resolveCardImage } from "@/lib/tarot";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
 import { generateCardReadingRu } from "@/lib/tarotReadings";
 import { CARD_SLUGS } from "@/lib/deck";
-import { getUserIdFromRequest } from "@/lib/reqUser";
+import { requireUserId } from "@/lib/requireUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +34,7 @@ function looksTemplate(meaning: string, advice: string) {
   const m = (meaning || "").toLowerCase();
   const a = (advice || "").toLowerCase();
   if (m.length < 60 || a.length < 20) return true;
+
   const bad = ["важный мотив", "скрытый смысл происходящего", "береги себя", "действуй мягко", "правильный момент"];
   return bad.some((x) => m.includes(x) || a.includes(x));
 }
@@ -44,8 +45,12 @@ function pickRandomSlug() {
 }
 
 export async function POST(req: Request) {
-  const userId = await getUserIdFromRequest(req);
-  if (!userId) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  let userId = "";
+  try {
+    userId = await requireUserId(req);
+  } catch {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const dateKey = mskDayStartUtc();
   const nextInMinutes = nextMskMidnightInMinutes();
