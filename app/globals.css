@@ -315,6 +315,38 @@ img{ max-width: 100%; display:block; }
   100%{ background-position: -200% 0; }
 }
 
+/* ===== timer chips (00 00 00) ===== */
+.timerChips{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.timerChip{
+  min-width: 44px;
+  text-align:center;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(202,162,76,.28);
+  background: rgba(245,232,196,.55);
+  box-shadow: 0 10px 18px rgba(0,0,0,.06);
+  font-weight: 950;
+  letter-spacing: .6px;
+  color: rgba(23,18,12,.92);
+}
+.timerSep{
+  font-weight: 950;
+  color: rgba(23,18,12,.55);
+  margin: 0 -2px;
+}
+.timerHint{
+  text-align:center;
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(23,18,12,.58);
+}
+
 /* ===== bottom nav ===== */
 .nav{
   position: fixed;
@@ -383,59 +415,14 @@ img{ max-width: 100%; display:block; }
   color: rgba(202,162,76,.95);
 }
 
-/* ===== modal (под твою Modal.tsx) ===== */
+/* ===== modal (lock overscroll) ===== */
 .modalOpen{ overscroll-behavior: none; }
-
-.modalOverlay,
-.modalBackdrop{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.22);
-  backdrop-filter: blur(6px);
-  z-index: 50;
-}
-
-.modalSheet{
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 51;
-  padding: 12px 14px calc(14px + var(--safe-b));
-}
-
-.modalCard,
-.modal{
-  max-width: 520px;
-  margin: 0 auto;
-  border-radius: 22px;
-  background: rgba(255,255,255,.92);
-  border: 1px solid rgba(20,16,10,.10);
-  box-shadow: 0 22px 60px rgba(0,0,0,.18);
-  overflow: hidden;
-}
-
-.modalHeader{
-  display:flex;
-  justify-content: space-between;
-  align-items:center;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(20,16,10,.08);
-}
-
-.modalTitle{
-  font-weight: 950;
-  font-size: 14px;
-  color: rgba(23,18,12,.92);
-}
-
-.modalBody{ padding: 14px; }
 
 /* ===== Minimal Wheel ===== */
 .wheelMinimal{
   display:flex;
   justify-content:center;
-  padding: 20px 0 2px;   /* стрелка над колесом */
+  padding: 20px 0 2px;
   position: relative;
 }
 
@@ -446,7 +433,7 @@ img{ max-width: 100%; display:block; }
   border-right: 9px solid transparent;
   border-top: 16px solid rgba(202,162,76,.95);
   position:absolute;
-  top: 2px;              /* стрелка сверху */
+  top: 2px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -468,6 +455,7 @@ img{ max-width: 100%; display:block; }
   position:absolute;
   inset: 8px;
   border-radius: 50%;
+  will-change: transform;
 }
 
 .wheelFace{
