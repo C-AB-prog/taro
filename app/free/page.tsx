@@ -4,69 +4,97 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RitualHeader } from "@/components/RitualHeader";
 
-type Offer = { id: string; title: string; url: string; reward: number };
+type Offer = {
+  id: string;
+  title: string;
+  url: string;
+  reward: number;
+  claimed?: boolean;
+};
 
-function normalizeTgUrl(url: string) {
-  const u = String(url || "").trim();
-  if (!u) return "";
-  if (u.startsWith("http://") || u.startsWith("https://")) return u;
-  if (u.startsWith("@")) return `https://t.me/${u.slice(1)}`;
-  return `https://t.me/${u}`;
+function getBotUsername() {
+  return (process.env.NEXT_PUBLIC_BOT_USERNAME || "").replace(/^@/, "").trim();
+}
+
+function buildReferralBotLink(userId: string) {
+  const bot = getBotUsername();
+  if (!bot || !userId) return "";
+  return `https://t.me/${bot}?start=ref_${encodeURIComponent(userId)}`;
 }
 
 function openTgLink(url: string) {
   const tg = (globalThis as any)?.Telegram?.WebApp;
-  const link = normalizeTgUrl(url);
-  if (!link) return;
-  if (tg?.openTelegramLink) tg.openTelegramLink(link);
-  else window.open(link, "_blank");
+  try {
+    if (tg?.openTelegramLink) return tg.openTelegramLink(url);
+    if (tg?.openLink) return tg.openLink(url);
+  } catch {}
+  window.open(url, "_blank");
 }
 
-function shareText(text: string, url: string) {
-  const tg = (globalThis as any)?.Telegram?.WebApp;
-  const shareUrl =
-    "https://t.me/share/url?url=" +
-    encodeURIComponent(url) +
-    "&text=" +
-    encodeURIComponent(text);
-
-  if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
-  else window.open(shareUrl, "_blank");
-}
-
-async function fetchOffers(): Promise<Offer[]> {
-  const r = await fetch("/api/free", { cache: "no-store", credentials: "include" });
-  const d = await r.json().catch(() => ({}));
-  return Array.isArray(d?.offers) ? d.offers : [];
+function shareLink(url: string) {
+  const text = "✨ Забирай бонус и смотри «Карту дня» в Daily Tarot!";
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  openTgLink(shareUrl);
 }
 
 export default function FreePage() {
+  const [userId, setUserId] = useState<string>("");
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const referralLink = useMemo(() => {
-    // Если у тебя уже работает start_param ref_... — просто открываем миниапп через share ссылку на бота/miniapp.
-    // Самый универсальный вариант: делаем share текста, а URL — это бот (у тебя он есть).
-    // Если позже добавишь deep-link до миниаппа, подставишь его сюда.
-    const bot = "https://t.me/tarotday1_bot"; // можешь заменить на env/константу
-    return bot;
-  }, []);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const refLink = useMemo(() => buildReferralBotLink(userId), [userId]);
+
+  async function load() {
+    setLoading(true);
+    setErr(null);
+    try {
+      // 1) userId (для реф-ссылки)
+      const me = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+      const meJson = await me.json().catch(() => ({}));
+      const id = String(meJson?.user?.id || "");
+      if (id) setUserId(id);
+
+      // 2) офферы
+      const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.ok) {
+        setErr("Не удалось загрузить предложения. Попробуй позже.");
+        setOffers([]);
+      } else {
+        setOffers(Array.isArray(d.offers) ? d.offers : []);
+      }
+    } catch {
+      setErr("Ошибка сети. Попробуй позже.");
+      setOffers([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const list = await fetchOffers();
-        setOffers(list);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, []);
 
-  async function claim(offerId: string) {
-    setMsg(null);
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast("Ссылка скопирована ✅");
+      setTimeout(() => setToast(null), 1200);
+    } catch {
+      setToast("Не получилось скопировать. Нажми «Поделиться».");
+      setTimeout(() => setToast(null), 1600);
+    }
+  }
+
+  async function claimOffer(offerId: string) {
+    if (claimingId) return;
+    setClaimingId(offerId);
+    setToast(null);
+
     try {
       const r = await fetch("/api/free/claim", {
         method: "POST",
@@ -75,21 +103,28 @@ export default function FreePage() {
         cache: "no-store",
         body: JSON.stringify({ offerId }),
       });
-      const d = await r.json().catch(() => ({}));
 
-      if (!r.ok) {
-        setMsg(r.status === 401 ? "Нет сессии. Открой мини-приложение через Telegram." : "Не получилось. Попробуй ещё раз.");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.ok) {
+        setToast(d?.error === "ALREADY"
+          ? "Ты уже забирал бонус за этот канал."
+          : "Не получилось получить бонус. Попробуй ещё раз.");
+        setTimeout(() => setToast(null), 1600);
         return;
       }
 
-      if (d?.granted) {
-        setMsg(`Готово! +${d.reward} валюты ✨`);
-        window.dispatchEvent(new Event("balance:refresh"));
-      } else {
-        setMsg("Награда уже получена за этот канал.");
-      }
+      setToast(`Готово! +${d.reward} валюты ✨`);
+      setTimeout(() => setToast(null), 1400);
+
+      // обновим баланс в шапке
+      window.dispatchEvent(new Event("balance:refresh"));
+      // обновим список (claimed)
+      await load();
     } catch {
-      setMsg("Ошибка сети. Попробуй ещё раз.");
+      setToast("Ошибка сети. Попробуй ещё раз.");
+      setTimeout(() => setToast(null), 1600);
+    } finally {
+      setClaimingId(null);
     }
   }
 
@@ -97,72 +132,113 @@ export default function FreePage() {
     <AppShell>
       <RitualHeader label="Бесплатно" />
 
+      {/* Пригласить друга */}
       <div className="card">
         <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
         <div className="small" style={{ marginTop: 6 }}>
-          Поделись ссылкой — если друг впервые зайдёт в приложение, тебе начислим награду.
+          За каждого нового друга (который зайдёт в приложение впервые) ты получишь <b>+500</b> валюты.
         </div>
 
         <div style={{ height: 12 }} />
+
         <button
           className="btn btnPrimary"
           style={{ width: "100%", borderRadius: 999 }}
-          onClick={() => shareText("✨ Залетай в «Карта Дня | Daily Tarot» — карта дня, колесо и расклады!", referralLink)}
+          onClick={() => {
+            if (!refLink) {
+              setToast("Не удалось создать ссылку. Открой мини-приложение через Telegram и попробуй снова.");
+              setTimeout(() => setToast(null), 1600);
+              return;
+            }
+            shareLink(refLink);
+          }}
         >
-          Поделиться ссылкой
+          Поделиться ссылкой (+500)
         </button>
+
+        <div style={{ height: 8 }} />
+
+        <button
+          className="btn btnGhost"
+          style={{ width: "100%", borderRadius: 999 }}
+          disabled={!refLink}
+          onClick={() => refLink && copy(refLink)}
+        >
+          Скопировать ссылку
+        </button>
+
+        {toast ? <div className="small" style={{ marginTop: 10 }}><b>{toast}</b></div> : null}
       </div>
 
       <div style={{ height: 12 }} />
 
+      {/* Офферы */}
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Каналы</div>
+        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
         <div className="small" style={{ marginTop: 6 }}>
-          Открой канал и затем нажми «Получить награду».
+          Подпишись на канал и забери бонус.
         </div>
       </div>
 
       <div style={{ height: 12 }} />
-
-      {msg ? (
-        <div className="card">
-          <div className="small">{msg}</div>
-        </div>
-      ) : null}
-
-      <div style={{ height: msg ? 12 : 0 }} />
 
       {loading ? (
-        <div className="card"><div className="small">Загружаю…</div></div>
+        <div className="card">
+          <div className="small">Загружаю…</div>
+        </div>
+      ) : err ? (
+        <div className="card">
+          <div className="small"><b>Ошибка:</b> {err}</div>
+        </div>
       ) : offers.length === 0 ? (
-        <div className="card"><div className="small">Пока нет предложений.</div></div>
+        <div className="card">
+          <div className="small">Пока нет активных предложений.</div>
+        </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          {offers.map((o) => (
-            <div key={o.id} className="card" style={{ padding: 14 }}>
-              <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {o.title}
+          {offers.map((o) => {
+            const claimed = !!o.claimed;
+            return (
+              <div key={o.id} className="card" style={{ padding: 14 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {o.title}
+                    </div>
+                    <div className="small" style={{ marginTop: 4, opacity: 0.85, wordBreak: "break-word" }}>
+                      {o.url}
+                    </div>
+                    <div className="small" style={{ marginTop: 8 }}>
+                      Бонус: <b>+{o.reward}</b> валюты
+                    </div>
                   </div>
-                  <div className="small" style={{ marginTop: 6 }}>
-                    Награда: <b>{o.reward}</b> валюты
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <button
+                      className="btn btnGhost"
+                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}
+                      onClick={() => openTgLink(o.url)}
+                    >
+                      Открыть
+                    </button>
+
+                    <button
+                      className="btn btnPrimary"
+                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}
+                      disabled={claimed || claimingId === o.id}
+                      onClick={() => claimOffer(o.id)}
+                    >
+                      {claimed ? "Получено" : claimingId === o.id ? "Проверяю…" : `Забрать +${o.reward}`}
+                    </button>
                   </div>
                 </div>
-
-                <button className="btn btnGhost" style={{ borderRadius: 999, whiteSpace: "nowrap" }} onClick={() => openTgLink(o.url)}>
-                  Открыть
-                </button>
               </div>
-
-              <div style={{ height: 10 }} />
-              <button className="btn btnPrimary" style={{ width: "100%", borderRadius: 999 }} onClick={() => claim(o.id)}>
-                Получить награду
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      <div style={{ height: 6 }} />
     </AppShell>
   );
 }
