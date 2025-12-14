@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Modal } from "@/components/Modal";
 
@@ -12,12 +12,18 @@ type WheelCard = {
   adviceRu: string;
 };
 
-function minutesUntilNextDay() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(24, 0, 0, 0);
-  const mins = Math.ceil((next.getTime() - now.getTime()) / 60000);
-  return Math.max(0, mins);
+type SpinResp = {
+  already: boolean;
+  nextInMinutes?: number;
+  card: WheelCard;
+};
+
+function fmtCountdown(mins: number) {
+  const m = Math.max(0, mins);
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  const pad = (x: number) => String(x).padStart(2, "0");
+  return hh > 0 ? `${hh}:${pad(mm)} ч` : `${mm} мин`;
 }
 
 async function ensureSessionClient() {
@@ -38,7 +44,7 @@ async function ensureSessionClient() {
   }
 }
 
-async function apiSpin(): Promise<{ already: boolean; card: WheelCard }> {
+async function apiSpin(): Promise<SpinResp> {
   const r = await fetch("/api/wheel/spin", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -51,22 +57,37 @@ async function apiSpin(): Promise<{ already: boolean; card: WheelCard }> {
     (e as any).status = r.status;
     throw e;
   }
-  return { already: !!d?.already, card: d?.card as WheelCard };
+  return d as SpinResp;
 }
 
 export function Wheel() {
   const size = useMemo(() => "min(320px, 84vw)", []);
+  const diskBg = useMemo(
+    () =>
+      "repeating-conic-gradient(from -18deg, rgba(176,142,66,.22) 0deg 12deg, rgba(26,22,16,.035) 12deg 24deg)",
+    []
+  );
 
   const [rot, setRot] = useState(0);
   const [spinning, setSpinning] = useState(false);
 
-  const pendingRef = useRef<{ already: boolean; card: WheelCard } | null>(null);
+  const pendingRef = useRef<SpinResp | null>(null);
 
   const [card, setCard] = useState<WheelCard | null>(null);
   const [open, setOpen] = useState(false);
 
-  const [info, setInfo] = useState<string | null>(null);
+  const [cooldownMins, setCooldownMins] = useState<number | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // обновляем отображение таймера раз в минуту (если есть)
+  useEffect(() => {
+    if (cooldownMins == null) return;
+    const id = setInterval(() => {
+      setCooldownMins((m) => (m == null ? null : Math.max(0, m - 1)));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [cooldownMins]);
 
   function haptic(type: "light" | "success" | "error") {
     const h = (globalThis as any)?.Telegram?.WebApp?.HapticFeedback;
@@ -81,7 +102,7 @@ export function Wheel() {
     if (spinning) return;
 
     setErr(null);
-    setInfo(null);
+    setStatus(null);
     haptic("light");
 
     try {
@@ -92,29 +113,27 @@ export function Wheel() {
         throw e;
       });
 
-      // уже крутили сегодня — не крутим анимацию, просто показываем
+      setCooldownMins(typeof res.nextInMinutes === "number" ? res.nextInMinutes : null);
+
+      // already → без анимации
       if (res.already) {
         setCard(res.card);
         setOpen(true);
-        setInfo(`Сегодня уже крутили. Вернись через ${minutesUntilNextDay()} мин.`);
+        setStatus(res.nextInMinutes ? `Сегодня уже крутили. Вернись через ${fmtCountdown(res.nextInMinutes)}.` : "Сегодня уже крутили.");
         return;
       }
 
-      // иначе — запускаем анимацию и откроем результат после остановки
+      // запускаем анимацию и покажем после остановки
       pendingRef.current = res;
       setSpinning(true);
-      setInfo("Крутим…");
+      setStatus("Кручу колесо…");
 
-      const extra = 1440 + Math.floor(Math.random() * 360); // 4+ оборота
+      const extra = 1440 + Math.floor(Math.random() * 360);
       setRot((v) => v + extra);
     } catch (e: any) {
       const status = e?.status;
-      if (status === 401 || e?.message === "UNAUTHORIZED") {
-        setErr("Нет сессии. Открой мини-приложение через Telegram и попробуй ещё раз.");
-      } else {
-        setErr("Не удалось прокрутить. Попробуй ещё раз.");
-      }
-      setInfo(null);
+      if (status === 401 || e?.message === "UNAUTHORIZED") setErr("Нет сессии. Открой мини-приложение через Telegram.");
+      else setErr("Не удалось прокрутить. Попробуй ещё раз.");
       haptic("error");
     }
   }
@@ -125,35 +144,30 @@ export function Wheel() {
     haptic("light");
   }
 
-  // минималистичный “диск” с делениями (чёрно-золото, но светлая тема)
-  const diskBg = useMemo(
-    () =>
-      "repeating-conic-gradient(from -18deg, rgba(176,142,66,.26) 0deg 12deg, rgba(26,22,16,.04) 12deg 24deg)",
-    []
-  );
+  const disabled = spinning || (cooldownMins != null && cooldownMins > 0 && card != null);
 
   return (
     <div className="card">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
         <div>
           <div className="title">Колесо фортуны</div>
-          <div className="small">Крути 1 раз в сутки</div>
+          <div className="small">
+            {cooldownMins != null && cooldownMins > 0
+              ? `Вернуться через ${fmtCountdown(cooldownMins)}`
+              : "Можно крутить 1 раз в сутки"}
+          </div>
         </div>
 
         {card ? (
-          <button className="btn btnGhost" onClick={openResult} style={{ padding: "10px 12px" }}>
-            Какая карта выпала?
+          <button className="btn btnGhost" onClick={openResult} style={{ padding: "10px 12px", borderRadius: 999 }}>
+            Карта выпала
           </button>
-        ) : (
-          <div className="small" style={{ opacity: 0.75 }}>
-            —
-          </div>
-        )}
+        ) : null}
       </div>
 
       <div style={{ height: 12 }} />
 
-      {/* стрелка НАД колесом (вниз) */}
+      {/* стрелка над колесом */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         <div style={{ marginBottom: 10, color: "rgba(26,22,16,.85)" }} aria-hidden="true">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
@@ -164,8 +178,10 @@ export function Wheel() {
 
         <motion.div
           role="button"
-          aria-label="Колесо фортуны"
-          onClick={onSpin}
+          aria-label="Колесо"
+          onClick={() => {
+            if (!disabled) onSpin();
+          }}
           style={{
             width: size,
             height: size,
@@ -174,8 +190,8 @@ export function Wheel() {
             background: diskBg,
             border: "2px solid rgba(176,142,66,.70)",
             boxShadow: "0 16px 44px rgba(0,0,0,.08)",
+            cursor: disabled ? "default" : "pointer",
             touchAction: "manipulation",
-            cursor: spinning ? "default" : "pointer",
           }}
           animate={{ rotate: rot }}
           transition={{
@@ -192,52 +208,47 @@ export function Wheel() {
             if (res?.card) {
               setCard(res.card);
               setOpen(true);
-              setInfo(null);
+              setStatus(null);
               haptic("success");
             }
           }}
         >
-          {/* внешний “обод” */}
+          {/* обод */}
           <div
             style={{
               position: "absolute",
               inset: 10,
               borderRadius: 999,
               border: "1px solid rgba(26,22,16,.10)",
-              background: "rgba(255,255,255,.22)",
+              background: "rgba(255,255,255,.20)",
             }}
           />
-          {/* центр */}
+          {/* центр (без “тап”) */}
           <div
             style={{
               position: "absolute",
               inset: "18%",
               borderRadius: 999,
-              background: "rgba(255,255,255,.86)",
+              background: "rgba(255,255,255,.88)",
               border: "1px solid rgba(20,16,10,.12)",
               display: "grid",
               placeItems: "center",
               userSelect: "none",
             }}
           >
-            <div style={{ textAlign: "center", padding: 10 }}>
-              <div className="small" style={{ fontWeight: 900 }}>
-                {spinning ? "…" : "Тап"}
-              </div>
-              <div className="small" style={{ opacity: 0.8, whiteSpace: "pre-line" }}>
-                {spinning ? "кручу" : "чтобы\nкрутить"}
-              </div>
+            <div className="small" style={{ fontWeight: 900, opacity: 0.9 }}>
+              ✨
             </div>
           </div>
         </motion.div>
 
         <div style={{ height: 12 }} />
 
-        <button className="btn btnPrimary" style={{ width: "100%" }} onClick={onSpin} disabled={spinning}>
-          {spinning ? "Крутим…" : "Крутить колесо"}
+        <button className="btn btnPrimary" style={{ width: "100%" }} onClick={onSpin} disabled={disabled}>
+          {spinning ? "Кручу…" : cooldownMins != null && cooldownMins > 0 && card ? `Вернись через ${fmtCountdown(cooldownMins)}` : "Крутить колесо"}
         </button>
 
-        {info ? <div className="small" style={{ marginTop: 10 }}>{info}</div> : null}
+        {status ? <div className="small" style={{ marginTop: 10 }}>{status}</div> : null}
         {err ? (
           <div className="small" style={{ marginTop: 10 }}>
             <b>Ошибка:</b> {err}
@@ -256,26 +267,21 @@ export function Wheel() {
           <div className="row">
             <img className="img" src={card.image} alt={card.titleRu} loading="lazy" decoding="async" />
             <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>
-                {card.titleRu}
-              </div>
+              <div className="title" style={{ fontSize: 16 }}>{card.titleRu}</div>
 
-              <div className="small" style={{ marginTop: 2 }}>
-                Что означает
-              </div>
-
-              <p className="text" style={{ marginTop: 8 }}>
-                {card.meaningRu}
-              </p>
+              <div className="small" style={{ marginTop: 2 }}>Что означает</div>
+              <p className="text" style={{ marginTop: 8 }}>{card.meaningRu}</p>
 
               <div className="adviceBox" style={{ marginTop: 12 }}>
                 <div className="adviceTitle">Совет</div>
                 <div className="adviceText">{card.adviceRu}</div>
               </div>
 
-              <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
-                Следующая попытка через {minutesUntilNextDay()} мин.
-              </div>
+              {cooldownMins != null && cooldownMins > 0 ? (
+                <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Вернуться через {fmtCountdown(cooldownMins)}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
