@@ -36,6 +36,51 @@ type SpreadView = {
   interpretation: string;
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function getInitDataWithWait(timeoutMs = 4500): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    const initData = tg?.initData;
+    if (typeof initData === "string" && initData.length > 0) return initData;
+    await sleep(80);
+  }
+  return "";
+}
+
+async function apiFetch(input: RequestInfo, init: RequestInit = {}) {
+  const initData = await getInitDataWithWait();
+  const headers = new Headers(init.headers || {});
+  if (initData) headers.set("x-telegram-init-data", initData);
+
+  return fetch(input, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
+}
+
+async function ensureSession(): Promise<boolean> {
+  try {
+    const initData = await getInitDataWithWait();
+    if (!initData) return false;
+
+    const r = await fetch("/api/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ initData }),
+    });
+
+    const d = await r.json().catch(() => ({}));
+    return !!(r.ok && d?.ok);
+  } catch {
+    return false;
+  }
+}
+
 function splitInterpretation(text: string) {
   const t = String(text || "").trim();
   if (!t) return { main: "", advice: "" };
@@ -87,7 +132,6 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 
   const [revealed, setRevealed] = useState<boolean[]>(() => Array(n).fill(false));
 
-  // новый расклад: все закрыты
   useEffect(() => {
     setRevealed(Array(n).fill(false));
   }, [resetToken, n]);
@@ -174,7 +218,6 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
                 {pos}
               </div>
 
-              {/* flip */}
               <div style={cardFrameStyle}>
                 <div
                   style={{
@@ -186,19 +229,11 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
                     transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
                   }}
                 >
-                  {/* front */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      backfaceVisibility: "hidden",
-                    }}
-                  >
+                  <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden" }}>
                     <img src="/cards/card-back.jpg" alt="Рубашка" loading="lazy" decoding="async" style={imgStyle} />
                     <div className="flipShine" />
                   </div>
 
-                  {/* back */}
                   <div
                     style={{
                       position: "absolute",
@@ -259,69 +294,18 @@ function SpreadReveal({ view, resetToken }: { view: SpreadView; resetToken: stri
 export default function SpreadsPage() {
   const spreads = useMemo<SpreadMeta[]>(
     () => [
-      {
-        key: "three_cards",
-        title: "Три карты",
-        cardsCount: 3,
-        price: 125,
-        cat: "situation",
-        about: "Прошлое • Настоящее • Будущее — чтобы увидеть динамику ситуации и куда всё ведёт.",
-      },
-      {
-        key: "celtic_cross",
-        title: "Кельтский крест",
-        cardsCount: 10,
-        price: 1500,
-        cat: "situation",
-        about: "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог.",
-      },
-      {
-        key: "vokzal_dlya_dvoih",
-        title: "Вокзал для двоих",
-        cardsCount: 2,
-        price: 250,
-        cat: "love",
-        about: "Мысли гадающего и партнёра — что происходит между вами сейчас.",
-      },
-      {
-        key: "money_tree",
-        title: "Денежное дерево",
-        cardsCount: 5,
-        price: 500,
-        cat: "money",
-        about: "Финансы: корни прошлого → настоящее → помощники → помехи → итог.",
-      },
-      {
-        key: "money_on_barrel",
-        title: "Деньги на бочку",
-        cardsCount: 5,
-        price: 600,
-        cat: "money",
-        about: "Как ты относишься к деньгам и расходам — где утекает и что поменять.",
-      },
-      {
-        key: "doctor_aibolit",
-        title: "Доктор Айболит",
-        cardsCount: 9,
-        price: 900,
-        cat: "health",
-        about: "Комплексный взгляд на здоровье: влияния сверху и снизу, баланс состояния.",
-      },
-      {
-        key: "my_health",
-        title: "Моё здоровье",
-        cardsCount: 6,
-        price: 450,
-        cat: "health",
-        about: "Самодиагностика: что с ресурсом, что мешает восстановлению, что поможет.",
-      },
+      { key: "three_cards", title: "Три карты", cardsCount: 3, price: 125, cat: "situation", about: "Прошлое • Настоящее • Будущее — чтобы увидеть динамику ситуации и куда всё ведёт." },
+      { key: "celtic_cross", title: "Кельтский крест", cardsCount: 10, price: 1500, cat: "situation", about: "Глубокий универсальный расклад: причины, скрытые влияния, развитие и вероятный итог." },
+      { key: "vokzal_dlya_dvoih", title: "Вокзал для двоих", cardsCount: 2, price: 250, cat: "love", about: "Мысли гадающего и партнёра — что происходит между вами сейчас." },
+      { key: "money_tree", title: "Денежное дерево", cardsCount: 5, price: 500, cat: "money", about: "Финансы: корни прошлого → настоящее → помощники → помехи → итог." },
+      { key: "money_on_barrel", title: "Деньги на бочку", cardsCount: 5, price: 600, cat: "money", about: "Как ты относишься к деньгам и расходам — где утекает и что поменять." },
+      { key: "doctor_aibolit", title: "Доктор Айболит", cardsCount: 9, price: 900, cat: "health", about: "Комплексный взгляд на здоровье: влияния сверху и снизу, баланс состояния." },
+      { key: "my_health", title: "Моё здоровье", cardsCount: 6, price: 450, cat: "health", about: "Самодиагностика: что с ресурсом, что мешает восстановлению, что поможет." },
     ],
     []
   );
 
-  // фильтр: как в колоде, но без “Все”
   const [cat, setCat] = useState<Category>("situation");
-
   const filtered = useMemo(() => spreads.filter((s) => s.cat === cat), [spreads, cat]);
 
   const [loadingKey, setLoadingKey] = useState<SpreadKey | null>(null);
@@ -331,6 +315,15 @@ export default function SpreadsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+
+  async function buyOnce(spreadKey: SpreadKey, signal: AbortSignal) {
+    return apiFetch("/api/spreads/buy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({ spreadKey }),
+    });
+  }
 
   async function buy(spreadKey: SpreadKey) {
     if (loadingKey) return;
@@ -345,14 +338,13 @@ export default function SpreadsPage() {
 
       const t = setTimeout(() => ctrl.abort(), 60000);
 
-      const r = await fetch("/api/spreads/buy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        cache: "no-store",
-        signal: ctrl.signal,
-        body: JSON.stringify({ spreadKey }),
-      });
+      let r = await buyOnce(spreadKey, ctrl.signal);
+
+      // если нет cookie у пользователя — создаём и повторяем 1 раз
+      if (r.status === 401) {
+        await ensureSession();
+        r = await buyOnce(spreadKey, ctrl.signal);
+      }
 
       clearTimeout(t);
 
@@ -401,7 +393,6 @@ export default function SpreadsPage() {
     <AppShell>
       <RitualHeader label="Расклады" />
 
-      {/* фильтр как в колоде (без “Все”) */}
       <div
         className="card"
         style={{
@@ -410,13 +401,7 @@ export default function SpreadsPage() {
           background: "rgba(255,255,255,.72)",
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 8,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {filterBtns.map((b) => {
             const active = cat === b.k;
             return (
@@ -425,11 +410,7 @@ export default function SpreadsPage() {
                 className={`btn ${active ? "btnPrimary" : "btnGhost"}`}
                 onClick={() => setCat(b.k)}
                 type="button"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 999,
-                }}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 999 }}
               >
                 {b.label}
               </button>
