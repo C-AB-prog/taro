@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
-const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // https://taro-hazel.vercel.app
+const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, "");
 const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .split(",")
   .map((s) => s.trim())
@@ -34,6 +34,42 @@ function normalizeTgUrl(input: string) {
   if (s.startsWith("t.me/")) return `https://${s}`;
   if (s.startsWith("@")) return `https://t.me/${s.slice(1)}`;
   return s;
+}
+
+/* ================== Referral pending ================== */
+
+async function ensureReferralTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReferralPending" (
+      "inviteeTgId" TEXT PRIMARY KEY,
+      "referrerUserId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReferralGrant" (
+      "inviteeUserId" TEXT PRIMARY KEY,
+      "referrerUserId" TEXT NOT NULL,
+      "inviteeTgId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+}
+
+async function saveReferralPending(inviteeTgId: string, referrerUserId: string) {
+  await ensureReferralTables();
+
+  // первый реферер выигрывает (не перезатираем)
+  await prisma.$executeRaw`
+    INSERT INTO "ReferralPending" ("inviteeTgId","referrerUserId")
+    VALUES (${inviteeTgId}, ${referrerUserId})
+    ON CONFLICT ("inviteeTgId") DO NOTHING
+  `;
 }
 
 /* ================== Stars payments ================== */
@@ -79,7 +115,7 @@ async function markProcessed(params: {
   return Number(rows) > 0;
 }
 
-/* ================== Ad offers ================== */
+/* ================== Offers (AdOffer) ================== */
 
 async function ensureOffersTables() {
   try {
@@ -106,39 +142,9 @@ async function ensureOffersTables() {
     );
   `);
 
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");`);
-}
-
-/* ================== Referral pending (через /start ref_...) ================== */
-
-async function ensureReferralTables() {
-  try {
-    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
-  } catch {}
-
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ReferralPending" (
-      "tgId" TEXT PRIMARY KEY,
-      "referrerUserId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
+    CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
   `);
-}
-
-async function rememberReferralPending(tgId: string, referrerUserId: string) {
-  await ensureReferralTables();
-
-  // referrer должен существовать, иначе не сохраняем
-  const refExists = await prisma.user.findUnique({ where: { id: referrerUserId }, select: { id: true } });
-  if (!refExists) return;
-
-  await prisma.$executeRaw`
-    INSERT INTO "ReferralPending" ("tgId","referrerUserId")
-    VALUES (${tgId}, ${referrerUserId})
-    ON CONFLICT ("tgId") DO UPDATE
-    SET "referrerUserId" = EXCLUDED."referrerUserId",
-        "createdAt" = now()
-  `;
 }
 
 /* ================== Stats ================== */
@@ -183,15 +189,13 @@ async function sendWelcome(chatId: number) {
     `✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n` +
     `• Карта дня — общий знак для всех\n` +
     `• Колесо фортуны — 1 раз в сутки\n` +
-    `• Расклады — с трактовкой\n\n` +
-    `Открывай приложение кнопкой ниже 👇`;
+    `• Расклады — с поэтичной трактовкой\n\n` +
+    `Нажми кнопку ниже 👇`;
 
-  const kb =
-    APP_URL
-      ? { inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }]] }
-      : undefined;
+  const kb = APP_URL
+    ? { inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }]] }
+    : undefined;
 
-  // фото: положи в public/logo.png
   if (APP_URL) {
     try {
       await tgCall("sendPhoto", {
@@ -216,7 +220,7 @@ export async function POST(req: Request) {
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
 
-  // 1) pre_checkout_query (Stars)
+  // 1) pre_checkout_query
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     const payload = String(q.invoice_payload || "");
@@ -243,7 +247,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // 2) successful_payment (Stars)
+  // 2) successful_payment
   const msg = update.message || update.edited_message;
   const sp = msg?.successful_payment;
 
@@ -253,7 +257,6 @@ export async function POST(req: Request) {
     if (!parsed) return NextResponse.json({ ok: true });
 
     const pack = SHOP_PACKS[parsed.packId];
-
     if (sp.currency !== "XTR") return NextResponse.json({ ok: true });
     if (Number(sp.total_amount) !== pack.stars) return NextResponse.json({ ok: true });
 
@@ -294,13 +297,13 @@ export async function POST(req: Request) {
     const { cmd, args } = normCmd(text);
 
     if (cmd === "/start") {
-      // ✅ ловим /start ref_<userId> и сохраняем ожидание
+      // ✅ ловим /start ref_<userId>
       const a = String(args || "").trim();
       if (fromId && a.startsWith("ref_")) {
         const referrerUserId = a.slice(4).trim();
         if (referrerUserId) {
           try {
-            await rememberReferralPending(String(fromId), referrerUserId);
+            await saveReferralPending(String(fromId), referrerUserId);
           } catch {}
         }
       }
@@ -325,7 +328,6 @@ export async function POST(req: Request) {
           `Активных сегодня: ${s.todayActive}\n` +
           `Активных за 30 дней: ${s.m30}`,
       });
-
       return NextResponse.json({ ok: true });
     }
 
@@ -335,7 +337,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      // формат: /addad Название | https://t.me/channel | 100
       const raw = String(args || "");
       const parts = raw.split("|").map((s) => s.trim()).filter(Boolean);
 
@@ -347,6 +348,7 @@ export async function POST(req: Request) {
         await tgCall("sendMessage", { chat_id: chatId, text: `Формат:\n/addad Название | https://t.me/channel | 100` });
         return NextResponse.json({ ok: true });
       }
+
       if (!Number.isFinite(reward) || reward <= 0 || reward > 100000) {
         await tgCall("sendMessage", { chat_id: chatId, text: "Неверная награда (reward)." });
         return NextResponse.json({ ok: true });
@@ -363,11 +365,7 @@ export async function POST(req: Request) {
             "active" = true
       `;
 
-      await tgCall("sendMessage", {
-        chat_id: chatId,
-        text: `✅ Добавлено/обновлено:\n${title}\n${url}\nБонус: +${reward}`,
-      });
-
+      await tgCall("sendMessage", { chat_id: chatId, text: `✅ Добавлено/обновлено:\n${title}\n${url}\nБонус: +${reward}` });
       return NextResponse.json({ ok: true });
     }
 
@@ -379,41 +377,25 @@ export async function POST(req: Request) {
 
       const target = String(args || "").trim();
       if (!target) {
-        await tgCall("sendMessage", {
-          chat_id: chatId,
-          text: `Формат:\n/delad https://t.me/channel\nили\n/delad <offerId>`,
-        });
+        await tgCall("sendMessage", { chat_id: chatId, text: `Формат:\n/delad https://t.me/channel\nили\n/delad <offerId>` });
         return NextResponse.json({ ok: true });
       }
 
       await ensureOffersTables();
 
-      const looksUrl =
-        target.startsWith("http://") ||
-        target.startsWith("https://") ||
-        target.startsWith("@") ||
-        target.includes("t.me/");
-
+      const looksUrl = target.startsWith("http://") || target.startsWith("https://") || target.startsWith("@") || target.includes("t.me/");
       let updated = 0;
 
       if (looksUrl) {
         const url = normalizeTgUrl(target);
-        const rows = await prisma.$executeRaw`
-          UPDATE "AdOffer" SET "active" = false WHERE "url" = ${url}
-        `;
+        const rows = await prisma.$executeRaw`UPDATE "AdOffer" SET "active" = false WHERE "url" = ${url}`;
         updated = Number(rows) || 0;
       } else {
-        const rows = await prisma.$executeRaw`
-          UPDATE "AdOffer" SET "active" = false WHERE "id" = ${target}
-        `;
+        const rows = await prisma.$executeRaw`UPDATE "AdOffer" SET "active" = false WHERE "id" = ${target}`;
         updated = Number(rows) || 0;
       }
 
-      await tgCall("sendMessage", {
-        chat_id: chatId,
-        text: updated > 0 ? "✅ Удалено (выключено)." : "Не нашёл такой оффер.",
-      });
-
+      await tgCall("sendMessage", { chat_id: chatId, text: updated > 0 ? "✅ Удалено (выключено)." : "Не нашёл такой оффер." });
       return NextResponse.json({ ok: true });
     }
 
