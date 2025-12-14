@@ -9,6 +9,7 @@ type Offer = {
   title: string;
   url: string;
   reward: number;
+  photoFileId?: string | null;
   claimed?: boolean;
 };
 
@@ -51,6 +52,7 @@ export default function FreePage() {
   async function load() {
     setLoading(true);
     setErr(null);
+
     try {
       // 1) userId (для реф-ссылки)
       const me = await fetch("/api/me", { cache: "no-store", credentials: "include" });
@@ -58,9 +60,10 @@ export default function FreePage() {
       const id = String(meJson?.user?.id || "");
       if (id) setUserId(id);
 
-      // 2) офферы
+      // 2) offers
       const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
       const d = await r.json().catch(() => ({}));
+
       if (!r.ok || !d?.ok) {
         setErr("Не удалось загрузить предложения. Попробуй позже.");
         setOffers([]);
@@ -92,6 +95,7 @@ export default function FreePage() {
 
   async function claimOffer(offerId: string) {
     if (claimingId) return;
+
     setClaimingId(offerId);
     setToast(null);
 
@@ -105,10 +109,15 @@ export default function FreePage() {
       });
 
       const d = await r.json().catch(() => ({}));
+
       if (!r.ok || !d?.ok) {
-        setToast(d?.error === "ALREADY"
-          ? "Ты уже забирал бонус за этот канал."
-          : "Не получилось получить бонус. Попробуй ещё раз.");
+        setToast(
+          d?.error === "ALREADY"
+            ? "Ты уже забирал бонус за этот канал."
+            : d?.error === "UNAUTHORIZED"
+            ? "Нет сессии. Открой мини-приложение через Telegram."
+            : "Не получилось получить бонус. Попробуй ещё раз."
+        );
         setTimeout(() => setToast(null), 1600);
         return;
       }
@@ -134,7 +143,9 @@ export default function FreePage() {
 
       {/* Пригласить друга */}
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
+        <div className="title" style={{ fontSize: 16 }}>
+          Пригласи друга
+        </div>
         <div className="small" style={{ marginTop: 6 }}>
           За каждого нового друга (который зайдёт в приложение впервые) ты получишь <b>+500</b> валюты.
         </div>
@@ -146,8 +157,8 @@ export default function FreePage() {
           style={{ width: "100%", borderRadius: 999 }}
           onClick={() => {
             if (!refLink) {
-              setToast("Не удалось создать ссылку. Открой мини-приложение через Telegram и попробуй снова.");
-              setTimeout(() => setToast(null), 1600);
+              setToast("Не удалось создать ссылку. Проверь NEXT_PUBLIC_BOT_USERNAME и открой мини-приложение через Telegram.");
+              setTimeout(() => setToast(null), 1800);
               return;
             }
             shareLink(refLink);
@@ -167,14 +178,20 @@ export default function FreePage() {
           Скопировать ссылку
         </button>
 
-        {toast ? <div className="small" style={{ marginTop: 10 }}><b>{toast}</b></div> : null}
+        {toast ? (
+          <div className="small" style={{ marginTop: 10 }}>
+            <b>{toast}</b>
+          </div>
+        ) : null}
       </div>
 
       <div style={{ height: 12 }} />
 
       {/* Офферы */}
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
+        <div className="title" style={{ fontSize: 16 }}>
+          Каналы рекламодателей
+        </div>
         <div className="small" style={{ marginTop: 6 }}>
           Подпишись на канал и забери бонус.
         </div>
@@ -188,7 +205,9 @@ export default function FreePage() {
         </div>
       ) : err ? (
         <div className="card">
-          <div className="small"><b>Ошибка:</b> {err}</div>
+          <div className="small">
+            <b>Ошибка:</b> {err}
+          </div>
         </div>
       ) : offers.length === 0 ? (
         <div className="card">
@@ -198,16 +217,27 @@ export default function FreePage() {
         <div style={{ display: "grid", gap: 12 }}>
           {offers.map((o) => {
             const claimed = !!o.claimed;
+
             return (
               <div key={o.id} className="card" style={{ padding: 14 }}>
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div
+                      className="title"
+                      style={{
+                        fontSize: 16,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {o.title}
                     </div>
+
                     <div className="small" style={{ marginTop: 4, opacity: 0.85, wordBreak: "break-word" }}>
                       {o.url}
                     </div>
+
                     <div className="small" style={{ marginTop: 8 }}>
                       Бонус: <b>+{o.reward}</b> валюты
                     </div>
