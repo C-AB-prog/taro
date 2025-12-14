@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
-const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // например https://taro-hazel.vercel.app
+const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // https://taro-hazel.vercel.app
 const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .split(",")
   .map((s) => s.trim())
@@ -22,7 +22,7 @@ function normCmd(text: string) {
   const t = String(text || "").trim();
   if (!t.startsWith("/")) return { cmd: "", args: "" };
   const first = t.split(/\s+/)[0] || "";
-  const cmd = first.split("@")[0].toLowerCase(); // /stat@bot -> /stat
+  const cmd = first.split("@")[0].toLowerCase();
   const args = t.slice(first.length).trim();
   return { cmd, args };
 }
@@ -34,14 +34,6 @@ function normalizeTgUrl(input: string) {
   if (s.startsWith("t.me/")) return `https://${s}`;
   if (s.startsWith("@")) return `https://t.me/${s.slice(1)}`;
   return s;
-}
-
-function buildAppUrl(extraQuery?: Record<string, string>) {
-  if (!APP_URL) return "";
-  if (!extraQuery || Object.keys(extraQuery).length === 0) return APP_URL;
-
-  const q = new URLSearchParams(extraQuery);
-  return APP_URL.includes("?") ? `${APP_URL}&${q.toString()}` : `${APP_URL}?${q.toString()}`;
 }
 
 /* ================== Stars payments ================== */
@@ -114,9 +106,39 @@ async function ensureOffersTables() {
     );
   `);
 
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");`);
+}
+
+/* ================== Referral pending (через /start ref_...) ================== */
+
+async function ensureReferralTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
+    CREATE TABLE IF NOT EXISTS "ReferralPending" (
+      "tgId" TEXT PRIMARY KEY,
+      "referrerUserId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
+}
+
+async function rememberReferralPending(tgId: string, referrerUserId: string) {
+  await ensureReferralTables();
+
+  // referrer должен существовать, иначе не сохраняем
+  const refExists = await prisma.user.findUnique({ where: { id: referrerUserId }, select: { id: true } });
+  if (!refExists) return;
+
+  await prisma.$executeRaw`
+    INSERT INTO "ReferralPending" ("tgId","referrerUserId")
+    VALUES (${tgId}, ${referrerUserId})
+    ON CONFLICT ("tgId") DO UPDATE
+    SET "referrerUserId" = EXCLUDED."referrerUserId",
+        "createdAt" = now()
+  `;
 }
 
 /* ================== Stats ================== */
@@ -156,24 +178,21 @@ async function getStats() {
 
 /* ================== Welcome ================== */
 
-async function sendWelcome(chatId: number, ref?: string) {
+async function sendWelcome(chatId: number) {
   const text =
     `✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n` +
     `• Карта дня — общий знак для всех\n` +
     `• Колесо фортуны — 1 раз в сутки\n` +
-    `• Расклады — с поэтичной трактовкой\n\n` +
-    `Нажми кнопку ниже 👇`;
+    `• Расклады — с трактовкой\n\n` +
+    `Открывай приложение кнопкой ниже 👇`;
 
-  const url = ref ? buildAppUrl({ ref }) : buildAppUrl();
+  const kb =
+    APP_URL
+      ? { inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }]] }
+      : undefined;
 
-  const kb = url
-    ? {
-        inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url } }]],
-      }
-    : undefined;
-
-  // если есть /public/logo.png — отправим фото, иначе текст
-  if (url) {
+  // фото: положи в public/logo.png
+  if (APP_URL) {
     try {
       await tgCall("sendPhoto", {
         chat_id: chatId,
@@ -185,11 +204,7 @@ async function sendWelcome(chatId: number, ref?: string) {
     } catch {}
   }
 
-  await tgCall("sendMessage", {
-    chat_id: chatId,
-    text,
-    reply_markup: kb,
-  });
+  await tgCall("sendMessage", { chat_id: chatId, text, reply_markup: kb });
 }
 
 /* ================== Webhook ================== */
@@ -276,14 +291,21 @@ export async function POST(req: Request) {
   if (msg?.chat?.id && text.startsWith("/")) {
     const chatId = Number(msg.chat.id);
     const fromId = msg?.from?.id ? Number(msg.from.id) : null;
-
     const { cmd, args } = normCmd(text);
 
     if (cmd === "/start") {
-      // /start ref_xxx
+      // ✅ ловим /start ref_<userId> и сохраняем ожидание
       const a = String(args || "").trim();
-      const ref = a.startsWith("ref_") ? a.slice(4).trim() : "";
-      await sendWelcome(chatId, ref || undefined);
+      if (fromId && a.startsWith("ref_")) {
+        const referrerUserId = a.slice(4).trim();
+        if (referrerUserId) {
+          try {
+            await rememberReferralPending(String(fromId), referrerUserId);
+          } catch {}
+        }
+      }
+
+      await sendWelcome(chatId);
       return NextResponse.json({ ok: true });
     }
 
@@ -322,13 +344,9 @@ export async function POST(req: Request) {
       const reward = Number(parts[2] || 100);
 
       if (!title || !url) {
-        await tgCall("sendMessage", {
-          chat_id: chatId,
-          text: `Формат:\n/addad Название | https://t.me/channel | 100`,
-        });
+        await tgCall("sendMessage", { chat_id: chatId, text: `Формат:\n/addad Название | https://t.me/channel | 100` });
         return NextResponse.json({ ok: true });
       }
-
       if (!Number.isFinite(reward) || reward <= 0 || reward > 100000) {
         await tgCall("sendMessage", { chat_id: chatId, text: "Неверная награда (reward)." });
         return NextResponse.json({ ok: true });
@@ -381,16 +399,12 @@ export async function POST(req: Request) {
       if (looksUrl) {
         const url = normalizeTgUrl(target);
         const rows = await prisma.$executeRaw`
-          UPDATE "AdOffer"
-          SET "active" = false
-          WHERE "url" = ${url}
+          UPDATE "AdOffer" SET "active" = false WHERE "url" = ${url}
         `;
         updated = Number(rows) || 0;
       } else {
         const rows = await prisma.$executeRaw`
-          UPDATE "AdOffer"
-          SET "active" = false
-          WHERE "id" = ${target}
+          UPDATE "AdOffer" SET "active" = false WHERE "id" = ${target}
         `;
         updated = Number(rows) || 0;
       }
@@ -403,10 +417,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    await tgCall("sendMessage", {
-      chat_id: chatId,
-      text: "Не понял команду. Доступно: /start /stat /addad /delad",
-    });
+    await tgCall("sendMessage", { chat_id: chatId, text: "Не понял команду. Доступно: /start /stat /addad /delad" });
     return NextResponse.json({ ok: true });
   }
 
