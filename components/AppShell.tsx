@@ -90,7 +90,7 @@ function getInitDataFallbackFromUrl(): string {
   return "";
 }
 
-async function getInitDataWithWait(timeoutMs = 8000): Promise<string> {
+async function getInitDataWithWait(timeoutMs = 12000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const tg = (globalThis as any)?.Telegram?.WebApp;
@@ -100,7 +100,7 @@ async function getInitDataWithWait(timeoutMs = 8000): Promise<string> {
     const fromUrl = getInitDataFallbackFromUrl();
     if (fromUrl) return fromUrl;
 
-    await sleep(120);
+    await sleep(150);
   }
   return "";
 }
@@ -207,7 +207,6 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      // ✅ Telegram Desktop: initData может прийти с задержкой
       await ensureSession();
       await claimReferralIfAny();
       await refreshBalance();
