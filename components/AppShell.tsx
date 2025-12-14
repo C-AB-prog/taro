@@ -76,7 +76,7 @@ const PACK_COINS: Record<PackId, number> = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function getInitDataWithWait(timeoutMs = 2000): Promise<string> {
+async function getInitDataWithWait(timeoutMs = 4500): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const tg = (globalThis as any)?.Telegram?.WebApp;
@@ -85,6 +85,19 @@ async function getInitDataWithWait(timeoutMs = 2000): Promise<string> {
     await sleep(80);
   }
   return "";
+}
+
+async function apiFetch(input: RequestInfo, init: RequestInit = {}) {
+  const initData = await getInitDataWithWait();
+  const headers = new Headers(init.headers || {});
+  if (initData) headers.set("x-telegram-init-data", initData);
+
+  return fetch(input, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
 }
 
 async function ensureSession(): Promise<boolean> {
@@ -108,7 +121,7 @@ async function ensureSession(): Promise<boolean> {
 
 async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: false; status: number }> {
   try {
-    const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+    const r = await apiFetch("/api/me");
     if (!r.ok) return { ok: false, status: r.status };
 
     const d = await r.json().catch(() => ({}));
@@ -130,11 +143,9 @@ async function claimReferralIfAny() {
   if (!referrerId) return;
 
   try {
-    await fetch("/api/referral/claim", {
+    await apiFetch("/api/referral/claim", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      cache: "no-store",
       body: JSON.stringify({ referrerId }),
     }).catch(() => null);
   } catch {}
@@ -162,12 +173,14 @@ export function AppShell({ children }: Props) {
   const [shopErr, setShopErr] = useState<string | null>(null);
 
   async function refreshBalance() {
+    // попробуем сразу /api/me (теперь он умеет header-initData)
     const r1 = await fetchMeBalance();
     if (r1.ok) {
       setBalance(r1.balance);
       return;
     }
 
+    // если всё-таки 401 — попробуем создать cookie-сессию и повторить
     if (r1.status === 401) {
       await ensureSession();
       const r2 = await fetchMeBalance();
@@ -188,9 +201,12 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      await ensureSession();       // <- важное
-      await claimReferralIfAny();  // <- рефералка
-      await refreshBalance();      // <- баланс
+      // 1) пробуем создать cookie (если получится — супер)
+      await ensureSession();
+      // 2) рефералка
+      await claimReferralIfAny();
+      // 3) баланс
+      await refreshBalance();
     };
 
     run();
@@ -227,10 +243,9 @@ export function AppShell({ children }: Props) {
 
     try {
       const makeInvoice = async () =>
-        fetch("/api/shop/invoice", {
+        apiFetch("/api/shop/invoice", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({ packId }),
         });
 
@@ -272,7 +287,7 @@ export function AppShell({ children }: Props) {
               setShopOpen(false);
             }, 900);
           } else {
-            // чтобы не бесило “начислим”, когда уже начислено
+            // чтобы не бесило “сейчас начислим”, когда уже начислено
             setShopMsg("Оплата принята ✨ Баланс может обновиться с небольшой задержкой.");
             setTimeout(() => setShopMsg(null), 1400);
           }
@@ -343,7 +358,12 @@ export function AppShell({ children }: Props) {
               const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (
-                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`} aria-current={active ? "page" : undefined}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`navItem ${active ? "navItemActive" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
@@ -372,7 +392,12 @@ export function AppShell({ children }: Props) {
 
         {PACKS.map((p) => (
           <div key={p.id} style={{ marginBottom: 10 }}>
-            <button className="btn btnPrimary" style={{ width: "100%" }} disabled={!!buying} onClick={() => buyPack(p.id)}>
+            <button
+              className="btn btnPrimary"
+              style={{ width: "100%" }}
+              disabled={!!buying}
+              onClick={() => buyPack(p.id)}
+            >
               {buying === p.id ? "Ожидаю оплату…" : p.label}
             </button>
             <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
