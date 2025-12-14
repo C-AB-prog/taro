@@ -51,8 +51,7 @@ function normalizeCmd(s: string) {
     .replace(/^\/+/, "")
     .split(/\s+/)[0];
 
-  // чтобы /stats@my_bot тоже работал
-  return first.split("@")[0];
+  return first.split("@")[0]; // чтобы /stats@botname тоже работал
 }
 
 function isStatsCommand(cmd: string) {
@@ -60,13 +59,8 @@ function isStatsCommand(cmd: string) {
 }
 
 function appBaseUrl() {
-  // 1) лучший вариант — задать APP_URL в env
   if (process.env.APP_URL) return process.env.APP_URL;
-
-  // 2) на Vercel обычно есть VERCEL_URL (без https)
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-
-  // 3) запасной (на всякий)
   return "https://taro-hazel.vercel.app";
 }
 
@@ -112,30 +106,27 @@ async function markProcessed(params: {
     params.payload
   );
 
-  return Number(rows) > 0; // 1 если вставили, 0 если уже был
+  return Number(rows) > 0;
 }
 
 export async function POST(req: Request) {
-  // проверка secret_token от Telegram setWebhook
   const gotSecret = req.headers.get("x-telegram-bot-api-secret-token") || "";
   if (SECRET && gotSecret !== SECRET) return NextResponse.json({ ok: true });
 
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
 
-  // --- callback_query (если “нажал кнопку” в боте) ---
+  // callback_query (кнопки)
   const cq = update.callback_query;
   if (cq) {
     const fromId = cq.from?.id;
     const chatId = cq.message?.chat?.id;
     const data = normalizeCmd(cq.data || "");
 
-    // убрать “часики” на кнопке
     if (cq.id) {
       await tgCall("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
     }
 
-    // фиксируем активность (если юзер уже есть в БД)
     if (fromId) {
       await prisma.user
         .updateMany({ where: { tgId: String(fromId) }, data: { lastSeenAt: new Date() } })
@@ -152,13 +143,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // --- обычное сообщение ---
+  // обычные сообщения
   const msg = update.message;
   const text = msg?.text ? String(msg.text) : "";
   const fromId = msg?.from?.id;
   const chatId = msg?.chat?.id;
 
-  // фиксируем активность (если юзер уже есть в БД)
   if (fromId) {
     await prisma.user
       .updateMany({ where: { tgId: String(fromId) }, data: { lastSeenAt: new Date() } })
@@ -168,9 +158,10 @@ export async function POST(req: Request) {
   if (text && chatId) {
     const cmd = normalizeCmd(text);
 
-    // ✅ /start — приветствие + фото + кнопка открыть mini app
+    // /start — приветствие + фото + кнопка
     if (cmd === "start") {
       const base = appBaseUrl();
+
       const caption =
         "✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n" +
         "Здесь всё просто и приятно:\n" +
@@ -185,14 +176,16 @@ export async function POST(req: Request) {
         photo: `${base}/logo.png`,
         caption,
         reply_markup: {
-          inline_keyboard: [[{ text: "Открыть приложение", web_app: { url: base } }]],
+          inline_keyboard: [
+            [{ text: "Посмотреть карту дня", web_app: { url: base } }],
+          ],
         },
       });
 
       return NextResponse.json({ ok: true });
     }
 
-    // ✅ /stats
+    // /stats — только админ
     if (isStatsCommand(cmd)) {
       if (!isAdmin(fromId)) {
         await tgCall("sendMessage", { chat_id: chatId, text: "⛔️ Команда доступна только администратору." });
@@ -203,7 +196,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // --- pre_checkout_query (Stars) ---
+  // pre_checkout_query (Stars)
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     const payload = String(q.invoice_payload || "");
@@ -230,7 +223,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // --- successful_payment (Stars) ---
+  // successful_payment (Stars)
   const sp = msg?.successful_payment;
   if (sp) {
     const payload = String(sp.invoice_payload || "");
@@ -261,7 +254,6 @@ export async function POST(req: Request) {
         select: { balance: true },
       });
 
-      // чтобы пользователь видел, что начислилось
       if (chatId) {
         await tgCall("sendMessage", {
           chat_id: chatId,
