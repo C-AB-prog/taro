@@ -47,8 +47,33 @@ function looksTemplate(meaning: string, advice: string) {
 }
 
 function pickRandomSlug() {
-  const i = Math.floor(Math.random() * CARD_SLUGS.length);
-  return CARD_SLUGS[i];
+  // ✅ безопасно исключаем card-back, даже если он вдруг появится
+  const pool = (CARD_SLUGS as unknown as string[]).filter((s) => !String(s).includes("card-back"));
+  const arr = pool.length ? pool : (CARD_SLUGS as unknown as string[]);
+  const i = Math.floor(Math.random() * arr.length);
+  return arr[i];
+}
+
+async function hydrateCardTexts(slug: string, titleRu: string, meaningRu: string, adviceRu: string) {
+  let m = meaningRu || "";
+  let a = adviceRu || "";
+
+  if (!m || !a || looksTemplate(m, a)) {
+    try {
+      const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
+      m = gen.meaningRu;
+      a = gen.adviceRu;
+
+      await prisma.card.update({
+        where: { slug },
+        data: { titleRu, meaningRu: m, adviceRu: a },
+      });
+    } catch {
+      // если ИИ временно не ответил — просто оставим как есть
+    }
+  }
+
+  return { meaningRu: m, adviceRu: a };
 }
 
 export async function POST() {
@@ -65,7 +90,7 @@ export async function POST() {
   const dateKey = mskDayStartUtc();
   const nextInMinutes = nextMskMidnightInMinutes();
 
-  // 1) если уже крутили сегодня — просто возвращаем сохранённую карту
+  // 1) если уже крутили сегодня — возвращаем сохранённую карту
   const existing = await prisma.wheelSpin.findUnique({
     where: { userId_date: { userId: session.userId, date: dateKey } },
     include: { card: true },
@@ -75,22 +100,7 @@ export async function POST() {
     const slug = existing.card.slug;
     const titleRu = ruTitleFromSlug(slug);
 
-    let meaningRu = existing.card.meaningRu || "";
-    let adviceRu = existing.card.adviceRu || "";
-
-    // гидрируем, если тексты пустые/шаблонные
-    if (!meaningRu || !adviceRu || looksTemplate(meaningRu, adviceRu)) {
-      try {
-        const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
-        meaningRu = gen.meaningRu;
-        adviceRu = gen.adviceRu;
-
-        await prisma.card.update({
-          where: { slug },
-          data: { titleRu, meaningRu, adviceRu },
-        });
-      } catch {}
-    }
+    const hydrated = await hydrateCardTexts(slug, titleRu, existing.card.meaningRu || "", existing.card.adviceRu || "");
 
     return NextResponse.json({
       already: true,
@@ -98,21 +108,20 @@ export async function POST() {
       card: {
         slug,
         titleRu,
-        meaningRu,
-        adviceRu,
+        meaningRu: hydrated.meaningRu,
+        adviceRu: hydrated.adviceRu,
         image: resolveCardImage(slug),
       },
     });
   }
 
-  // 2) если не крутили — выбираем карту, создаём/обновляем Card, сохраняем WheelSpin
+  // 2) если не крутили — выбираем карту и сохраняем
   const slug = pickRandomSlug();
   const titleRu = ruTitleFromSlug(slug);
 
-  // ensure Card row
   const card = await prisma.card.upsert({
     where: { slug },
-    update: {},
+    update: { titleRu }, // ✅ на всякий случай обновим заголовок
     create: {
       slug,
       titleRu,
@@ -121,22 +130,7 @@ export async function POST() {
     },
   });
 
-  let meaningRu = card.meaningRu || "";
-  let adviceRu = card.adviceRu || "";
-
-  // генерируем тексты, если пусто/шаблонно
-  if (!meaningRu || !adviceRu || looksTemplate(meaningRu, adviceRu)) {
-    try {
-      const gen = await generateCardReadingRu({ titleRu, kind: "wheel" });
-      meaningRu = gen.meaningRu;
-      adviceRu = gen.adviceRu;
-
-      await prisma.card.update({
-        where: { slug },
-        data: { titleRu, meaningRu, adviceRu },
-      });
-    } catch {}
-  }
+  const hydrated = await hydrateCardTexts(slug, titleRu, card.meaningRu || "", card.adviceRu || "");
 
   // записываем спин (с защитой от гонки)
   try {
@@ -147,9 +141,8 @@ export async function POST() {
         cardId: card.id,
       },
     });
-  } catch (e: any) {
+  } catch {
     // если два запроса одновременно — уникальность могла сработать
-    // тогда читаем существующий и отдаём его
     const again = await prisma.wheelSpin.findUnique({
       where: { userId_date: { userId: session.userId, date: dateKey } },
       include: { card: true },
@@ -157,14 +150,17 @@ export async function POST() {
 
     if (again) {
       const s2 = again.card.slug;
+      const t2 = ruTitleFromSlug(s2);
+      const hydrated2 = await hydrateCardTexts(s2, t2, again.card.meaningRu || "", again.card.adviceRu || "");
+
       return NextResponse.json({
         already: true,
         nextInMinutes,
         card: {
           slug: s2,
-          titleRu: ruTitleFromSlug(s2),
-          meaningRu: again.card.meaningRu,
-          adviceRu: again.card.adviceRu,
+          titleRu: t2,
+          meaningRu: hydrated2.meaningRu,
+          adviceRu: hydrated2.adviceRu,
           image: resolveCardImage(s2),
         },
       });
@@ -179,8 +175,8 @@ export async function POST() {
     card: {
       slug,
       titleRu,
-      meaningRu,
-      adviceRu,
+      meaningRu: hydrated.meaningRu,
+      adviceRu: hydrated.adviceRu,
       image: resolveCardImage(slug),
     },
   });
