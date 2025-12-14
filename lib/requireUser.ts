@@ -42,15 +42,16 @@ export async function requireUserId(req: Request): Promise<string> {
   if (token) {
     try {
       const s = await verifySession(token);
-      // lastSeenAt — если есть колонка, обновим (raw, чтобы Prisma-типы не ломались)
+
       try {
         await prisma.$executeRaw`
           UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${s.userId}
         `;
       } catch {}
+
       return s.userId;
     } catch {
-      // идём дальше
+      // fallback ниже
     }
   }
 
@@ -72,7 +73,6 @@ export async function requireUserId(req: Request): Promise<string> {
       tgId,
       username: v.user?.username ?? null,
       firstName: v.user?.first_name ?? null,
-      // balance возьмётся дефолтом 250 из БД/Prisma
     },
     select: { id: true },
   });
