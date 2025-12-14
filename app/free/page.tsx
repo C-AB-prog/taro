@@ -9,7 +9,6 @@ type Offer = {
   title: string;
   url: string;
   reward: number;
-  photoFileId?: string | null;
   claimed?: boolean;
 };
 
@@ -42,6 +41,7 @@ export default function FreePage() {
   const [userId, setUserId] = useState<string>("");
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [needTg, setNeedTg] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const [claimingId, setClaimingId] = useState<string | null>(null);
@@ -52,18 +52,22 @@ export default function FreePage() {
   async function load() {
     setLoading(true);
     setErr(null);
+    setNeedTg(false);
 
     try {
       // 1) userId (для реф-ссылки)
       const me = await fetch("/api/me", { cache: "no-store", credentials: "include" });
-      const meJson = await me.json().catch(() => ({}));
-      const id = String(meJson?.user?.id || "");
-      if (id) setUserId(id);
+      if (me.status === 401) {
+        setNeedTg(true);
+      } else {
+        const meJson = await me.json().catch(() => ({}));
+        const id = String(meJson?.user?.id || "");
+        if (id) setUserId(id);
+      }
 
-      // 2) offers
+      // 2) офферы
       const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
       const d = await r.json().catch(() => ({}));
-
       if (!r.ok || !d?.ok) {
         setErr("Не удалось загрузить предложения. Попробуй позже.");
         setOffers([]);
@@ -88,14 +92,19 @@ export default function FreePage() {
       setToast("Ссылка скопирована ✅");
       setTimeout(() => setToast(null), 1200);
     } catch {
-      setToast("Не получилось скопировать. Нажми «Поделиться».");
+      // универсальный fallback
+      const ok = window.prompt("Скопируй ссылку:", text);
+      if (ok !== null) {
+        setToast("Скопируй и отправь другу ✅");
+      } else {
+        setToast("Не получилось скопировать. Нажми «Поделиться».");
+      }
       setTimeout(() => setToast(null), 1600);
     }
   }
 
   async function claimOffer(offerId: string) {
     if (claimingId) return;
-
     setClaimingId(offerId);
     setToast(null);
 
@@ -109,15 +118,8 @@ export default function FreePage() {
       });
 
       const d = await r.json().catch(() => ({}));
-
       if (!r.ok || !d?.ok) {
-        setToast(
-          d?.error === "ALREADY"
-            ? "Ты уже забирал бонус за этот канал."
-            : d?.error === "UNAUTHORIZED"
-            ? "Нет сессии. Открой мини-приложение через Telegram."
-            : "Не получилось получить бонус. Попробуй ещё раз."
-        );
+        setToast(d?.error === "ALREADY" ? "Ты уже забирал бонус за этот канал." : "Не получилось получить бонус. Попробуй ещё раз.");
         setTimeout(() => setToast(null), 1600);
         return;
       }
@@ -125,9 +127,7 @@ export default function FreePage() {
       setToast(`Готово! +${d.reward} валюты ✨`);
       setTimeout(() => setToast(null), 1400);
 
-      // обновим баланс в шапке
       window.dispatchEvent(new Event("balance:refresh"));
-      // обновим список (claimed)
       await load();
     } catch {
       setToast("Ошибка сети. Попробуй ещё раз.");
@@ -143,12 +143,19 @@ export default function FreePage() {
 
       {/* Пригласить друга */}
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>
-          Пригласи друга
-        </div>
+        <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
         <div className="small" style={{ marginTop: 6 }}>
           За каждого нового друга (который зайдёт в приложение впервые) ты получишь <b>+500</b> валюты.
         </div>
+
+        {needTg ? (
+          <>
+            <div style={{ height: 10 }} />
+            <div className="small">
+              Чтобы работали приглашения и начисления — открой мини-приложение через Telegram (кнопкой в боте).
+            </div>
+          </>
+        ) : null}
 
         <div style={{ height: 12 }} />
 
@@ -157,12 +164,13 @@ export default function FreePage() {
           style={{ width: "100%", borderRadius: 999 }}
           onClick={() => {
             if (!refLink) {
-              setToast("Не удалось создать ссылку. Проверь NEXT_PUBLIC_BOT_USERNAME и открой мини-приложение через Telegram.");
-              setTimeout(() => setToast(null), 1800);
+              setToast("Не удалось создать ссылку. Открой мини-приложение через Telegram и попробуй снова.");
+              setTimeout(() => setToast(null), 1600);
               return;
             }
             shareLink(refLink);
           }}
+          disabled={!refLink}
         >
           Поделиться ссылкой (+500)
         </button>
@@ -178,20 +186,14 @@ export default function FreePage() {
           Скопировать ссылку
         </button>
 
-        {toast ? (
-          <div className="small" style={{ marginTop: 10 }}>
-            <b>{toast}</b>
-          </div>
-        ) : null}
+        {toast ? <div className="small" style={{ marginTop: 10 }}><b>{toast}</b></div> : null}
       </div>
 
       <div style={{ height: 12 }} />
 
       {/* Офферы */}
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>
-          Каналы рекламодателей
-        </div>
+        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
         <div className="small" style={{ marginTop: 6 }}>
           Подпишись на канал и забери бонус.
         </div>
@@ -200,44 +202,25 @@ export default function FreePage() {
       <div style={{ height: 12 }} />
 
       {loading ? (
-        <div className="card">
-          <div className="small">Загружаю…</div>
-        </div>
+        <div className="card"><div className="small">Загружаю…</div></div>
       ) : err ? (
-        <div className="card">
-          <div className="small">
-            <b>Ошибка:</b> {err}
-          </div>
-        </div>
+        <div className="card"><div className="small"><b>Ошибка:</b> {err}</div></div>
       ) : offers.length === 0 ? (
-        <div className="card">
-          <div className="small">Пока нет активных предложений.</div>
-        </div>
+        <div className="card"><div className="small">Пока нет активных предложений.</div></div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           {offers.map((o) => {
             const claimed = !!o.claimed;
-
             return (
               <div key={o.id} className="card" style={{ padding: 14 }}>
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div
-                      className="title"
-                      style={{
-                        fontSize: 16,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
+                    <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {o.title}
                     </div>
-
                     <div className="small" style={{ marginTop: 4, opacity: 0.85, wordBreak: "break-word" }}>
                       {o.url}
                     </div>
-
                     <div className="small" style={{ marginTop: 8 }}>
                       Бонус: <b>+{o.reward}</b> валюты
                     </div>
@@ -255,8 +238,9 @@ export default function FreePage() {
                     <button
                       className="btn btnPrimary"
                       style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}
-                      disabled={claimed || claimingId === o.id}
+                      disabled={needTg || claimed || claimingId === o.id}
                       onClick={() => claimOffer(o.id)}
+                      title={needTg ? "Открой через Telegram, чтобы забрать бонус" : ""}
                     >
                       {claimed ? "Получено" : claimingId === o.id ? "Проверяю…" : `Забрать +${o.reward}`}
                     </button>
