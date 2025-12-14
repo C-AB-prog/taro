@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 
 type Props = { children: React.ReactNode };
@@ -10,22 +10,42 @@ type Props = { children: React.ReactNode };
 function IconHome(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path
+        d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 function IconSpark(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path
+        d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 function IconGrid(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path
+        d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -78,8 +98,15 @@ async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: f
   try {
     const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
     if (!r.ok) return { ok: false, status: r.status };
+
     const d = await r.json().catch(() => ({}));
-    const b = d?.balance ?? d?.me?.balance;
+    const b =
+      d?.balance ??
+      d?.user?.balance ??
+      d?.me?.balance ??
+      d?.data?.balance ??
+      null;
+
     const nb = Number(b);
     if (Number.isFinite(nb)) return { ok: true, balance: nb };
     return { ok: false, status: 500 };
@@ -88,8 +115,31 @@ async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: f
   }
 }
 
+async function claimReferralIfAny() {
+  const tg = (globalThis as any)?.Telegram?.WebApp;
+  const sp = String(tg?.initDataUnsafe?.start_param || "");
+  if (!sp.startsWith("ref_")) return;
+
+  const referrerId = sp.slice(4).trim();
+  if (!referrerId) return;
+
+  try {
+    await fetch("/api/referral/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ referrerId }),
+    }).catch(() => null);
+
+    // баланс пригласившего обновится у него, но у нового юзера тоже можно обновить UI
+    window.dispatchEvent(new Event("balance:refresh"));
+  } catch {}
+}
+
 export function AppShell({ children }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
+
   const nav = useMemo(
     () => [
       { href: "/", label: "Главная", icon: IconHome },
@@ -108,14 +158,12 @@ export function AppShell({ children }: Props) {
   const [shopErr, setShopErr] = useState<string | null>(null);
 
   async function refreshBalance() {
-    // 1) пробуем /api/me
     const r1 = await fetchMeBalance();
     if (r1.ok) {
       setBalance(r1.balance);
       return;
     }
 
-    // 2) если 401 — пробуем переавторизоваться и повторить
     if (r1.status === 401) {
       await ensureSession();
       const r2 = await fetchMeBalance();
@@ -136,8 +184,8 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      // важное: сначала создаём сессию, потом баланс
       await ensureSession();
+      await claimReferralIfAny();
       await refreshBalance();
     };
 
@@ -161,7 +209,7 @@ export function AppShell({ children }: Props) {
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    async function pollBalance(timeoutMs = 12000) {
+    async function pollBalance(timeoutMs = 9000) {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         const r = await fetchMeBalance();
@@ -170,7 +218,7 @@ export function AppShell({ children }: Props) {
           if (before !== null && r.balance >= before + expected) return { ok: true as const, delta: r.balance - before };
           if (before === null) return { ok: true as const, delta: expected };
         }
-        await sleep(900);
+        await sleep(700);
       }
       return { ok: false as const };
     }
@@ -197,8 +245,8 @@ export function AppShell({ children }: Props) {
           data?.error === "UNAUTHORIZED"
             ? "Не получилось создать сессию. Открой мини-приложение именно через кнопку «Открыть» в боте."
             : data?.error
-            ? `Сервер: ${data.error}`
-            : "Не удалось создать счёт. Попробуй ещё раз."
+              ? `Сервер: ${data.error}`
+              : "Не удалось создать счёт. Попробуй ещё раз."
         );
         setBuying(null);
         return;
@@ -215,7 +263,7 @@ export function AppShell({ children }: Props) {
       tg.openInvoice(String(data.invoiceLink), async (status: string) => {
         if (status === "paid") {
           setShopErr(null);
-          setShopMsg("Оплата принята. Проверяю начисление…");
+          setShopMsg("Оплата принята. Обновляю баланс…");
 
           window.dispatchEvent(new Event("balance:refresh"));
 
@@ -226,10 +274,11 @@ export function AppShell({ children }: Props) {
             setTimeout(() => {
               setShopMsg(null);
               setShopOpen(false);
-            }, 1600);
+            }, 900);
           } else {
-            setShopMsg(null);
-            setShopErr("Платёж принят, но баланс обновляется дольше обычного. Подожди и открой магазин снова.");
+            // чтобы не висело “начислим” если уже начислили
+            setShopMsg("Оплата принята ✨ Баланс может обновиться с небольшой задержкой.");
+            setTimeout(() => setShopMsg(null), 1400);
           }
 
           setBuying(null);
@@ -298,7 +347,12 @@ export function AppShell({ children }: Props) {
               const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (
-                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`} aria-current={active ? "page" : undefined}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`navItem ${active ? "navItemActive" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
@@ -310,12 +364,29 @@ export function AppShell({ children }: Props) {
       </div>
 
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
+        <button
+          className="btn btnPrimary"
+          style={{ width: "100%", borderRadius: 999 }}
+          onClick={() => {
+            setShopOpen(false);
+            router.push("/free");
+          }}
+        >
+          Бесплатно
+        </button>
+
+        <div style={{ height: 12 }} />
         <div className="small">Пополнение внутренней валюты через Telegram Stars.</div>
         <div style={{ height: 12 }} />
 
         {PACKS.map((p) => (
           <div key={p.id} style={{ marginBottom: 10 }}>
-            <button className="btn btnPrimary" style={{ width: "100%" }} disabled={!!buying} onClick={() => buyPack(p.id)}>
+            <button
+              className="btn btnPrimary"
+              style={{ width: "100%" }}
+              disabled={!!buying}
+              onClick={() => buyPack(p.id)}
+            >
               {buying === p.id ? "Ожидаю оплату…" : p.label}
             </button>
             <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
