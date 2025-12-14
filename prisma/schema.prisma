@@ -98,3 +98,18 @@ model Transaction {
 
   user User @relation(fields: [userId], references: [id])
 }
+model AdvertiserChannel {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  title     String
+  isActive  Boolean  @default(true)
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model ReferralGrant {
+  id         String   @id @default(cuid())
+  referrerId String
+  newUserId  String   @unique
+  createdAt  DateTime @default(now())
+}
