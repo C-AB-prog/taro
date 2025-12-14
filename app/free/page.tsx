@@ -2,184 +2,196 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { RitualHeader } from "@/components/RitualHeader";
 
-const BOT_USERNAME = "tarotday1_bot"; // ← если у тебя другой бот — поменяй здесь (без @)
+type Offer = {
+  id: string;
+  title: string;
+  url: string;
+  reward: number;
+};
 
-type Ad = { title: string; url: string; username?: string | null };
-
-function extractUsernameFromTmeUrl(url: string): string | null {
+async function fetchMeId(): Promise<string | null> {
   try {
-    const u = new URL(url);
-    if (!/t\.me$/i.test(u.hostname) && !/telegram\.me$/i.test(u.hostname)) return null;
-    const p = u.pathname.replace(/^\/+/, "");
-    if (!p) return null;
-    // если invite link вида /+xxxx — не годится для аватарки
-    if (p.startsWith("+")) return null;
-    // /c/.. тоже не надо
-    if (p.startsWith("c/")) return null;
-    return p.split("/")[0] || null;
+    const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => ({}));
+    const id = d?.user?.id ?? d?.id ?? null;
+    return typeof id === "string" ? id : null;
   } catch {
     return null;
   }
 }
 
-function userpicByUsername(username: string) {
-  return `https://t.me/i/userpic/320/${encodeURIComponent(username)}.jpg`;
+async function fetchOffers(): Promise<Offer[]> {
+  try {
+    const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
+    const d = await r.json().catch(() => ({}));
+    return Array.isArray(d?.offers) ? d.offers : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function FreePage() {
-  const [myId, setMyId] = useState<string | null>(null);
-  const [ads, setAds] = useState<Ad[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [meId, setMeId] = useState<string | null>(null);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      try {
-        const me = await fetch("/api/me", { credentials: "include", cache: "no-store" })
-          .then((r) => r.json())
-          .catch(() => null);
-
-        const id = String(me?.user?.id || me?.me?.id || "");
-        if (id) setMyId(id);
-
-        const res = await fetch("/api/free/ads", { credentials: "include", cache: "no-store" })
-          .then((r) => r.json())
-          .catch(() => null);
-
-        if (res?.ok && Array.isArray(res.items)) setAds(res.items);
-      } finally {
-        setLoading(false);
-      }
+      setMeId(await fetchMeId());
+      setOffers(await fetchOffers());
     })();
   }, []);
 
-  const inviteLink = useMemo(() => {
-    if (!myId) return null;
-    return `https://t.me/${BOT_USERNAME}?startapp=ref_${myId}`;
-  }, [myId]);
+  const referral = useMemo(() => {
+    if (!meId) return { code: "", link: "" };
+    const code = `ref_${meId}`;
+
+    const bot = process.env.NEXT_PUBLIC_BOT_USERNAME || "";
+    const shortName = process.env.NEXT_PUBLIC_MINIAPP_SHORTNAME || "";
+
+    // https, без "@"
+    const link =
+      bot && shortName
+        ? `https://t.me/${bot}/${shortName}?startapp=${encodeURIComponent(code)}`
+        : bot
+        ? `https://t.me/${bot}?startapp=${encodeURIComponent(code)}`
+        : "";
+
+    return { code, link };
+  }, [meId]);
 
   function openTgLink(url: string) {
     const tg = (globalThis as any)?.Telegram?.WebApp;
+    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, "_blank");
+  }
+
+  async function copy(text: string) {
     try {
-      tg?.openTelegramLink?.(url);
+      await navigator.clipboard.writeText(text);
+      setMsg("Скопировано ✨");
+      (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+      setTimeout(() => setMsg(null), 1200);
     } catch {
-      window.open(url, "_blank");
+      setMsg("Не удалось скопировать");
+      setTimeout(() => setMsg(null), 1200);
     }
   }
 
-  function shareInvite() {
-    if (!inviteLink) return;
-
+  function share(link: string) {
     const text =
-      "✨ Забери «Карта Дня | Daily Tarot»\n" +
-      "Карта дня, колесо фортуны и расклады — мягко и мистически.\n\n" +
-      "Открывай по ссылке:";
+      "✨ Забери 500 валюты за приглашение друга в «Карта Дня | Daily Tarot» — открой и попробуй!";
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+    openTgLink(shareUrl);
+  }
 
-    openTgLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`);
+  async function claimOffer(offerId: string) {
+    setMsg(null);
+    try {
+      const r = await fetch("/api/free/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify({ offerId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d?.ok && d?.granted) {
+        window.dispatchEvent(new Event("balance:refresh"));
+        setMsg(`Готово! +${d.reward} валюты ✨`);
+      } else {
+        setMsg(d?.error === "ALREADY" ? "Уже получено ✅" : "Не получилось, попробуй ещё раз");
+      }
+      setTimeout(() => setMsg(null), 1400);
+    } catch {
+      setMsg("Ошибка сети");
+      setTimeout(() => setMsg(null), 1400);
+    }
   }
 
   return (
     <AppShell>
-      <h1 className="h1">Бесплатно</h1>
+      <RitualHeader label="Бесплатно" />
 
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Пригласить друга</div>
+        <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
         <div className="small" style={{ marginTop: 6 }}>
-          За каждого <b>нового</b> друга, который впервые зайдёт по твоей ссылке — тебе начислится <b>+500</b> валюты.
+          За 1 нового друга: <b>+500 валюты</b>
         </div>
 
         <div style={{ height: 12 }} />
 
-        <button className="btn btnPrimary" style={{ width: "100%", borderRadius: 999 }} onClick={shareInvite} disabled={!inviteLink}>
-          {inviteLink ? "Поделиться ссылкой" : "Загружаю…"}
-        </button>
-
-        {inviteLink ? (
-          <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
-            Твоя ссылка: <span style={{ wordBreak: "break-all" }}>{inviteLink}</span>
+        {!referral.link ? (
+          <div className="small">
+            Чтобы ссылка работала, добавь в Vercel env:
+            <br />
+            <b>NEXT_PUBLIC_BOT_USERNAME</b> (без @) и <b>NEXT_PUBLIC_MINIAPP_SHORTNAME</b>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <div className="small" style={{ wordBreak: "break-all" }}>
+              {referral.link}
+            </div>
+
+            <div style={{ height: 10 }} />
+
+            <div className="segRow" style={{ gap: 8 }}>
+              <button className="btn btnPrimary" style={{ borderRadius: 999 }} onClick={() => copy(referral.link)}>
+                Скопировать ссылку
+              </button>
+              <button className="btn btnGhost" style={{ borderRadius: 999 }} onClick={() => share(referral.link)}>
+                Поделиться
+              </button>
+            </div>
+          </>
+        )}
+
+        {msg ? <div className="small" style={{ marginTop: 10 }}><b>{msg}</b></div> : null}
       </div>
 
       <div style={{ height: 12 }} />
 
       <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Каналы партнёров</div>
-        <div className="small" style={{ marginTop: 6 }}>Подпишись — поддержи проект 💛</div>
+        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
+        <div className="small" style={{ marginTop: 6 }}>
+          Подпишись и забери бонус. (Пока без проверки подписки.)
+        </div>
       </div>
 
-      <div style={{ height: 10 }} />
+      <div style={{ height: 12 }} />
 
-      {loading ? (
-        <div className="card"><div className="small">Загрузка…</div></div>
-      ) : ads.length === 0 ? (
-        <div className="card"><div className="small">Пока нет партнёров.</div></div>
-      ) : (
-        <div style={{ display: "grid", gap: 10 }}>
-          {ads.map((a, idx) => {
-            const username = a.username || extractUsernameFromTmeUrl(a.url);
-            return (
-              <button
-                key={`${a.url}-${idx}`}
-                className="pressable"
-                type="button"
-                onClick={() => openTgLink(a.url)}
-                style={{
-                  textAlign: "left",
-                  border: "1px solid rgba(20,16,10,.10)",
-                  background: "rgba(255,255,255,.86)",
-                  borderRadius: 18,
-                  padding: 12,
-                  cursor: "pointer",
-                }}
-              >
-                <div className="row" style={{ alignItems: "center" }}>
-                  {username ? (
-                    <img
-                      src={userpicByUsername(username)}
-                      alt={a.title}
-                      width={52}
-                      height={52}
-                      style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 16,
-                        objectFit: "cover",
-                        border: "1px solid rgba(20,16,10,.10)",
-                        background: "rgba(255,255,255,.60)",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      aria-hidden="true"
-                      style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 16,
-                        border: "1px solid rgba(20,16,10,.10)",
-                        background: "rgba(245,232,196,.55)",
-                        display: "grid",
-                        placeItems: "center",
-                        fontWeight: 900,
-                        color: "rgba(23,18,12,.75)",
-                      }}
-                    >
-                      TG
-                    </div>
-                  )}
-
-                  <div className="col">
-                    <div className="title" style={{ fontSize: 15 }}>{a.title}</div>
-                    <div className="small" style={{ marginTop: 4 }}>Подпишись</div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {offers.length === 0 ? (
+          <div className="card">
+            <div className="small">Пока нет доступных каналов. Загляни чуть позже ✨</div>
+          </div>
+        ) : (
+          offers.map((o) => (
+            <div key={o.id} className="card" style={{ padding: 14 }}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {o.title}
                   </div>
+                  <div className="small" style={{ marginTop: 4 }}>Подпишись • +{o.reward} валюты</div>
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
-      <div style={{ height: 6 }} />
+                <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+                  <button className="btn btnGhost" style={{ borderRadius: 999 }} onClick={() => openTgLink(o.url)}>
+                    Открыть
+                  </button>
+                  <button className="btn btnPrimary" style={{ borderRadius: 999 }} onClick={() => claimOffer(o.id)}>
+                    Получить
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </AppShell>
   );
 }
