@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
-const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // https://taro-hazel.vercel.app
+const APP_URL = (process.env.APP_URL || "").replace(/\/+$/, ""); // например https://taro-hazel.vercel.app
 const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .split(",")
   .map((s) => s.trim())
@@ -36,10 +36,17 @@ function normalizeTgUrl(input: string) {
   return s;
 }
 
+function buildAppUrl(extraQuery?: Record<string, string>) {
+  if (!APP_URL) return "";
+  if (!extraQuery || Object.keys(extraQuery).length === 0) return APP_URL;
+
+  const q = new URLSearchParams(extraQuery);
+  return APP_URL.includes("?") ? `${APP_URL}&${q.toString()}` : `${APP_URL}?${q.toString()}`;
+}
+
 /* ================== Stars payments ================== */
 
 async function ensurePaymentsTable() {
-  // на всякий — если расширение уже есть, будет no-op
   try {
     await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
   } catch {}
@@ -77,7 +84,7 @@ async function markProcessed(params: {
     ON CONFLICT ("telegramChargeId") DO NOTHING;
   `;
 
-  return Number(rows) > 0; // 1 если вставили, 0 если уже было
+  return Number(rows) > 0;
 }
 
 /* ================== Ad offers ================== */
@@ -149,7 +156,7 @@ async function getStats() {
 
 /* ================== Welcome ================== */
 
-async function sendWelcome(chatId: number) {
+async function sendWelcome(chatId: number, ref?: string) {
   const text =
     `✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n` +
     `• Карта дня — общий знак для всех\n` +
@@ -157,17 +164,16 @@ async function sendWelcome(chatId: number) {
     `• Расклады — с поэтичной трактовкой\n\n` +
     `Нажми кнопку ниже 👇`;
 
-  const kb =
-    APP_URL
-      ? {
-          inline_keyboard: [
-            [{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }],
-          ],
-        }
-      : undefined;
+  const url = ref ? buildAppUrl({ ref }) : buildAppUrl();
+
+  const kb = url
+    ? {
+        inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url } }]],
+      }
+    : undefined;
 
   // если есть /public/logo.png — отправим фото, иначе текст
-  if (APP_URL) {
+  if (url) {
     try {
       await tgCall("sendPhoto", {
         chat_id: chatId,
@@ -189,11 +195,8 @@ async function sendWelcome(chatId: number) {
 /* ================== Webhook ================== */
 
 export async function POST(req: Request) {
-  // secret_token проверка
   const gotSecret = req.headers.get("x-telegram-bot-api-secret-token") || "";
-  if (SECRET && gotSecret !== SECRET) {
-    return NextResponse.json({ ok: true });
-  }
+  if (SECRET && gotSecret !== SECRET) return NextResponse.json({ ok: true });
 
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
@@ -257,7 +260,6 @@ export async function POST(req: Request) {
         data: { balance: { increment: pack.coins } },
       });
 
-      // опционально уведомим в чат
       try {
         await tgCall("sendMessage", {
           chat_id: msg.chat.id,
@@ -278,7 +280,10 @@ export async function POST(req: Request) {
     const { cmd, args } = normCmd(text);
 
     if (cmd === "/start") {
-      await sendWelcome(chatId);
+      // /start ref_xxx
+      const a = String(args || "").trim();
+      const ref = a.startsWith("ref_") ? a.slice(4).trim() : "";
+      await sendWelcome(chatId, ref || undefined);
       return NextResponse.json({ ok: true });
     }
 
@@ -398,8 +403,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // неизвестная команда
-    await tgCall("sendMessage", { chat_id: chatId, text: "Не понял команду. Доступно: /start /stat /addad /delad" });
+    await tgCall("sendMessage", {
+      chat_id: chatId,
+      text: "Не понял команду. Доступно: /start /stat /addad /delad",
+    });
     return NextResponse.json({ ok: true });
   }
 
