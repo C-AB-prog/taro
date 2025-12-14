@@ -2,211 +2,263 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
-import { SpreadReveal } from "@/components/SpreadReveal";
-import { ruTitleFromSlug } from "@/lib/ruTitles";
 
-type WheelCard = { slug?: string; titleRu?: string; meaningRu: string; adviceRu: string; image: string };
-type WheelItemAny = any;
-type SpreadItemAny = any;
+type SpreadItem = {
+  kind: "spread";
+  id: string;
+  ts: string;
+  title: string;
+  paidAmount: number;
+  positions: string[];
+  cards: { slug: string; titleRu: string; image: string }[];
+  interpretation: string;
+};
 
-type Item =
-  | { kind: "spread"; ts: string; s: SpreadItemAny }
-  | { kind: "wheel"; ts: string; w: WheelItemAny };
+type WheelItem = {
+  kind: "wheel";
+  id: string;
+  ts: string;
+  card: { slug: string; titleRu: string; meaningRu: string; adviceRu: string; image: string };
+};
 
-function fmtDate(ts: string) {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-}
-function fmtTime(ts: string) {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-}
-function pickTs(x: any) {
-  return String(x?.createdAt ?? x?.date ?? x?.ts ?? "");
-}
-function toWheelCard(w: any): WheelCard | null {
-  const c = w?.card ?? w;
-  const image = c?.image ?? w?.image;
-  const meaningRu = c?.meaningRu ?? w?.meaningRu;
-  const adviceRu = c?.adviceRu ?? w?.adviceRu;
-  const slug = c?.slug ?? w?.slug;
-  const titleRu = c?.titleRu ?? w?.titleRu;
-  if (!image || !meaningRu || !adviceRu) return null;
-  return { image: String(image), meaningRu: String(meaningRu), adviceRu: String(adviceRu), slug, titleRu };
-}
-function wheelTitle(c: WheelCard) {
-  return c.slug ? ruTitleFromSlug(c.slug) : (c.titleRu ?? "Карта");
+type Item = SpreadItem | WheelItem;
+type Tab = "spread" | "wheel";
+
+function splitInterpretation(text: string) {
+  const t = String(text || "").trim();
+  if (!t) return { main: "", advice: "" };
+  const idx = t.toLowerCase().lastIndexOf("совет:");
+  if (idx >= 0) {
+    const main = t.slice(0, idx).trim();
+    const advice = t.slice(idx).replace(/^совет:\s*/i, "").trim();
+    return { main, advice };
+  }
+  return { main: t, advice: "" };
 }
 
 export default function ArchivePage() {
+  const [tab, setTab] = useState<Tab>("spread"); // по умолчанию расклады
+  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  // ✅ только два фильтра
-  const [filter, setFilter] = useState<"spreads" | "wheel">("spreads");
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Item | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/archive", { cache: "no-store", credentials: "include" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.ok) {
+        setErr(r.status === 401 ? "Нет сессии. Открой мини-приложение через Telegram." : "Не удалось загрузить архив.");
+        setItems([]);
+        setLoading(false);
+        return;
+      }
+      setItems(Array.isArray(d.items) ? d.items : []);
+      setLoading(false);
+    } catch {
+      setErr("Ошибка сети.");
+      setItems([]);
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const r = await fetch("/api/archive", { cache: "no-store" });
-        const d = await r.json().catch(() => ({}));
-        setData(d);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, []);
 
-  const items: Item[] = useMemo(() => {
-    const spreads: SpreadItemAny[] = data?.spreads ?? data?.spreadPurchases ?? data?.purchases ?? [];
-    const wheel: WheelItemAny[] = data?.wheel ?? data?.wheelSpins ?? data?.wheelItems ?? [];
+  const filtered = useMemo(() => items.filter((x) => x.kind === tab), [items, tab]);
 
-    const res: Item[] = [];
-
-    for (const s of (Array.isArray(spreads) ? spreads : [])) res.push({ kind: "spread", ts: pickTs(s), s });
-    for (const w of (Array.isArray(wheel) ? wheel : [])) res.push({ kind: "wheel", ts: pickTs(w), w });
-
-    res.sort((a, b) => {
-      const ta = new Date(a.ts).getTime() || 0;
-      const tb = new Date(b.ts).getTime() || 0;
-      if (tb !== ta) return tb - ta;
-      if (a.kind === b.kind) return 0;
-      return a.kind === "spread" ? -1 : 1; // расклады выше
-    });
-
-    return filter === "spreads" ? res.filter((x) => x.kind === "spread") : res.filter((x) => x.kind === "wheel");
-  }, [data, filter]);
+  function openItem(it: Item) {
+    setPicked(it);
+    setOpen(true);
+  }
 
   return (
     <AppShell>
       <RitualHeader label="Архив" />
 
-      <div className="card">
-        <div className="segRow segRowEqual">
-          <button className={`segBtn ${filter === "spreads" ? "segBtnActive" : ""}`} onClick={() => setFilter("spreads")}>
+      <div className="card" style={{ padding: 12 }}>
+        <div className="segRowEqual">
+          <button className={`segBtn ${tab === "spread" ? "segBtnActive" : ""}`} onClick={() => setTab("spread")} type="button">
             Расклады
           </button>
-          <button className={`segBtn ${filter === "wheel" ? "segBtnActive" : ""}`} onClick={() => setFilter("wheel")}>
+          <button className={`segBtn ${tab === "wheel" ? "segBtnActive" : ""}`} onClick={() => setTab("wheel")} type="button">
             Колесо
           </button>
-        </div>
-
-        <div className="small" style={{ marginTop: 10 }}>
-          Записи неизменны. Тапни по записи, чтобы раскрыть.
         </div>
       </div>
 
       <div style={{ height: 12 }} />
 
       {loading ? (
-        <div className="card">
-          <div className="shimmer" style={{ height: 16, width: "55%" }} />
-          <div style={{ height: 10 }} />
-          <div className="shimmer" style={{ height: 12, width: "85%" }} />
-        </div>
-      ) : null}
+        <div className="card"><div className="small">Загружаю…</div></div>
+      ) : err ? (
+        <div className="card"><div className="small"><b>Ошибка:</b> {err}</div></div>
+      ) : filtered.length === 0 ? (
+        <div className="card"><div className="small">Пока пусто ✨</div></div>
+      ) : (
+        <div className="archiveList">
+          {filtered.map((it) => {
+            const dt = new Date(it.ts);
+            const dateRu = dt.toLocaleString("ru-RU", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
 
-      {!loading && items.length === 0 ? (
-        <div className="card">
-          <div className="title">Пока пусто</div>
-          <div className="small" style={{ marginTop: 6 }}>Сделай расклад или прокрути колесо — и записи появятся здесь.</div>
-        </div>
-      ) : null}
-
-      <div className="archiveList">
-        {items.map((it, idx) => {
-          const key = `${it.kind}-${it.ts}-${idx}`;
-          const isOpen = openKey === key;
-
-          if (it.kind === "spread") {
-            const s = it.s;
-            const title = String(s?.spreadTitle ?? s?.title ?? "Расклад");
-            const ts = pickTs(s);
-            const cards = (s?.cards ?? []) as { slug: string; image: string }[];
-            const positions = (s?.positions ?? []) as string[];
-            const interpretation = String(s?.interpretation ?? "");
-
-            return (
-              <div
-                key={key}
-                className="card archiveItem pressable"
-                onClick={() => setOpenKey(isOpen ? null : key)}
-                role="button"
-              >
-                <div className="archiveRow">
-                  <div className="thumbStack" aria-hidden="true">
-                    {cards?.[0]?.image ? <img className="thumb t1" src={cards[0].image} alt="" /> : null}
-                    {cards?.[1]?.image ? <img className="thumb t2" src={cards[1].image} alt="" /> : null}
-                    {cards?.[2]?.image ? <img className="thumb t3" src={cards[2].image} alt="" /> : null}
-                  </div>
-                  <div className="archiveMain">
-                    <div className="archiveTitle">{title}</div>
-                    <div className="archiveMeta">{fmtDate(ts)} {fmtTime(ts) ? `• ${fmtTime(ts)}` : ""}</div>
-                  </div>
-                </div>
-
-                {isOpen ? (
-                  // ✅ критично: чтобы клики по картам НЕ закрывали запись
-                  <div
-                    style={{ marginTop: 12, touchAction: "pan-y" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <SpreadReveal
-                      cards={cards}
-                      positions={positions?.length ? positions : cards.map((_, i) => `Карта ${i + 1}`)}
-                      interpretation={interpretation}
-                      resetToken={key}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            );
-          }
-
-          const w = it.w;
-          const ts = pickTs(w);
-          const c = toWheelCard(w);
-
-          return (
-            <div
-              key={key}
-              className="card archiveItem pressable"
-              onClick={() => setOpenKey(isOpen ? null : key)}
-              role="button"
-            >
-              <div className="archiveRow">
-                {c?.image ? <img className="thumb" src={c.image} alt="" /> : <div className="thumb" />}
-                <div className="archiveMain">
-                  <div className="archiveTitle">Колесо фортуны{c ? ` • ${wheelTitle(c)}` : ""}</div>
-                  <div className="archiveMeta">{fmtDate(ts)} {fmtTime(ts) ? `• ${fmtTime(ts)}` : ""}</div>
-                </div>
-              </div>
-
-              {isOpen && c ? (
-                <div style={{ marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
-                  <div className="row">
-                    <img className="img" src={c.image} alt={wheelTitle(c)} loading="lazy" decoding="async" />
-                    <div className="col">
-                      <div className="title" style={{ fontSize: 16 }}>{wheelTitle(c)}</div>
-                      <p className="text" style={{ marginTop: 6 }}>{c.meaningRu}</p>
-
-                      <div className="adviceBox" style={{ marginTop: 12 }}>
-                        <div className="adviceTitle">Совет</div>
-                        <div className="adviceText">{c.adviceRu}</div>
-                      </div>
+            if (it.kind === "spread") {
+              return (
+                <button key={it.id} className="card pressable archiveItem" onClick={() => openItem(it)} style={{ textAlign: "left" }}>
+                  <div className="archiveRow">
+                    <div className="thumbStack" aria-hidden="true">
+                      {it.cards.slice(0, 3).map((c, i) => (
+                        <img key={c.slug + i} className={`thumb ${i === 0 ? "t1" : i === 1 ? "t2" : "t3"}`} src={c.image} alt="" />
+                      ))}
+                    </div>
+                    <div className="archiveMain">
+                      <div className="archiveTitle">{it.title}</div>
+                      <div className="archiveMeta">{dateRu} • {it.paidAmount} валюты</div>
                     </div>
                   </div>
+                </button>
+              );
+            }
+
+            return (
+              <button key={it.id} className="card pressable archiveItem" onClick={() => openItem(it)} style={{ textAlign: "left" }}>
+                <div className="archiveRow">
+                  <img className="thumb" src={it.card.image} alt="" />
+                  <div className="archiveMain">
+                    <div className="archiveTitle">Колесо: {it.card.titleRu}</div>
+                    <div className="archiveMeta">{dateRu}</div>
+                  </div>
                 </div>
-              ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={open} title={picked?.kind === "spread" ? picked.title : "Колесо"} onClose={() => setOpen(false)}>
+        {!picked ? (
+          <p className="text">…</p>
+        ) : picked.kind === "wheel" ? (
+          <div className="row">
+            <img className="img" src={picked.card.image} alt={picked.card.titleRu} />
+            <div className="col">
+              <div className="title" style={{ fontSize: 16 }}>{picked.card.titleRu}</div>
+              <p className="text" style={{ marginTop: 8 }}>{picked.card.meaningRu}</p>
+              <div className="adviceBox" style={{ marginTop: 12 }}>
+                <div className="adviceTitle">Совет</div>
+                <div className="adviceText">{picked.card.adviceRu}</div>
+              </div>
             </div>
+          </div>
+        ) : (
+          <SpreadArchiveView it={picked} />
+        )}
+      </Modal>
+    </AppShell>
+  );
+}
+
+function SpreadArchiveView({ it }: { it: SpreadItem }) {
+  const [openMap, setOpenMap] = useState<boolean[]>(() => it.cards.map(() => false));
+
+  const opened = openMap.filter(Boolean).length;
+  const allOpen = opened === it.cards.length;
+
+  const { main, advice } = useMemo(() => splitInterpretation(it.interpretation), [it.interpretation]);
+
+  return (
+    <div>
+      <div className="card" style={{ padding: 12 }}>
+        <div className="small">Открой все карты, чтобы увидеть трактовку.</div>
+        <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
+          Открыто: <b>{opened}</b>/<b>{it.cards.length}</b>
+        </div>
+      </div>
+
+      <div style={{ height: 12 }} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        {it.cards.map((c, i) => {
+          const isOpen = openMap[i];
+          const pos = it.positions?.[i] ?? `Карта ${i + 1}`;
+
+          return (
+            <button
+              key={c.slug + i}
+              className="pressable"
+              onClick={() =>
+                setOpenMap((p) => {
+                  const n = p.slice();
+                  n[i] = !n[i];
+                  return n;
+                })
+              }
+              style={{
+                border: "1px solid rgba(20,16,10,.10)",
+                background: "rgba(255,255,255,.80)",
+                borderRadius: 18,
+                padding: 10,
+                textAlign: "left",
+              }}
+            >
+              <div className="small" style={{ fontWeight: 900, marginBottom: 8 }}>{pos}</div>
+
+              <div style={{ width: "100%", aspectRatio: "2 / 3", borderRadius: 16, overflow: "hidden", border: "1px solid rgba(20,16,10,.10)" }}>
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    position: "relative",
+                    transformStyle: "preserve-3d",
+                    transition: "transform 650ms cubic-bezier(.2,.7,.2,1)",
+                    transform: isOpen ? "rotateY(180deg)" : "rotateY(0deg)",
+                  }}
+                >
+                  <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden" }}>
+                    <img src="/cards/card-back.jpg" alt="Рубашка" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <div className="flipShine" />
+                  </div>
+                  <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
+                    <img src={c.image} alt={c.titleRu} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="small" style={{ marginTop: 8, fontWeight: 900 }}>
+                {isOpen ? c.titleRu : "…"}
+              </div>
+            </button>
           );
         })}
       </div>
-    </AppShell>
+
+      <div style={{ height: 12 }} />
+
+      {!allOpen ? (
+        <div className="card">
+          <div className="title" style={{ fontSize: 16 }}>Трактовка скрыта</div>
+          <div className="small" style={{ marginTop: 6 }}>Открой все карты — и текст появится.</div>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="title" style={{ fontSize: 16 }}>Трактовка</div>
+          <p className="text" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+            {main || it.interpretation}
+          </p>
+          {advice ? (
+            <div className="adviceBox" style={{ marginTop: 12 }}>
+              <div className="adviceTitle">Совет</div>
+              <div className="adviceText">{advice}</div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
