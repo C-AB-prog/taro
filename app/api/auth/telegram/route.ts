@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { SignJWT } from "jose";
+import { signSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,19 @@ function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
   return v;
+}
+
+function normalizeInitData(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  // иногда прилетает url-encoded
+  if (/%[0-9A-Fa-f]{2}/.test(s)) {
+    try {
+      const dec = decodeURIComponent(s);
+      if (dec.includes("hash=") && dec.includes("&")) return dec;
+    } catch {}
+  }
+  return s;
 }
 
 function buildDataCheckString(params: URLSearchParams) {
@@ -42,17 +55,6 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
   return { ok: true as const, params };
-}
-
-async function makeSessionToken(userId: string) {
-  const secret = getEnv("AUTH_SECRET");
-  const key = new TextEncoder().encode(secret);
-
-  return await new SignJWT({ userId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("30d")
-    .sign(key);
 }
 
 /* ================== Referral tables + grant ================== */
@@ -91,10 +93,12 @@ async function ensureReferralTables() {
 async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeUserId: string; isNewUser: boolean }) {
   await ensureReferralTables();
 
-  const pendingRows = await prisma.$queryRaw<
-    Array<{ referrerUserId: string }>
-  >`SELECT "referrerUserId" FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId} LIMIT 1`;
-
+  const pendingRows = await prisma.$queryRaw<Array<{ referrerUserId: string }>>`
+    SELECT "referrerUserId"
+    FROM "ReferralPending"
+    WHERE "inviteeTgId" = ${opts.inviteeTgId}
+    LIMIT 1
+  `;
   const pending = pendingRows[0];
   if (!pending) return { granted: false as const, reason: "NO_PENDING" };
 
@@ -119,7 +123,6 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
     VALUES (${opts.inviteeUserId}, ${pending.referrerUserId}, ${opts.inviteeTgId})
     ON CONFLICT ("inviteeUserId") DO NOTHING
   `;
-
   if (Number(inserted) <= 0) return { granted: false as const, reason: "ALREADY" };
 
   await prisma.user.update({
@@ -127,7 +130,7 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
     data: { balance: { increment: REF_REWARD } },
   });
 
-  // если у тебя есть prisma.transaction — можно логировать (не обязательно)
+  // лог транзакции (если модель есть — у тебя есть)
   try {
     await prisma.transaction.create({
       data: {
@@ -147,22 +150,21 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const initData = body?.initData;
 
-  if (!initData || typeof initData !== "string") {
-    return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
-  }
+  // берём initData либо из body, либо из заголовка (на Desktop иногда надёжнее заголовком)
+  const initData =
+    normalizeInitData(body?.initData) ||
+    normalizeInitData(req.headers.get("x-tg-init-data") || "") ||
+    normalizeInitData(req.headers.get("x-telegram-init-data") || "");
+
+  if (!initData) return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
 
   const botToken = getEnv("TELEGRAM_BOT_TOKEN");
   const ver = verifyTelegramWebAppInitData(initData, botToken);
-  if (!ver.ok) {
-    return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
-  }
+  if (!ver.ok) return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
 
   const userRaw = ver.params.get("user");
-  if (!userRaw) {
-    return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
-  }
+  if (!userRaw) return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
 
   let tgUser: any = null;
   try {
@@ -172,18 +174,12 @@ export async function POST(req: Request) {
   }
 
   const tgId = tgUser?.id;
-  if (!tgId) {
-    return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
-  }
+  if (!tgId) return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
 
-  // определяем “новый ли”
-  const existing = await prisma.user.findUnique({
-    where: { tgId: String(tgId) },
-    select: { id: true },
-  });
+  // новый ли пользователь
+  const existing = await prisma.user.findUnique({ where: { tgId: String(tgId) }, select: { id: true } });
   const isNewUser = !existing;
 
-  // upsert пользователя
   const user = await prisma.user.upsert({
     where: { tgId: String(tgId) },
     update: {
@@ -199,7 +195,6 @@ export async function POST(req: Request) {
     select: { id: true, tgId: true, username: true, firstName: true, balance: true },
   });
 
-  // lastSeenAt (если колонка есть) — тихо
   try {
     await prisma.$executeRaw`
       UPDATE "User"
@@ -208,7 +203,7 @@ export async function POST(req: Request) {
     `;
   } catch {}
 
-  // ✅ вот тут выдаём рефералку из Pending (если друг пришёл по /start ref_...)
+  // рефералка из Pending (приход по /start ref_<userId>)
   try {
     await tryGrantReferralFromPending({
       inviteeTgId: String(tgId),
@@ -217,12 +212,12 @@ export async function POST(req: Request) {
     });
   } catch {}
 
-  const token = await makeSessionToken(user.id);
+  const token = await signSession({ userId: user.id });
 
   const isProd = process.env.NODE_ENV === "production";
   const res = NextResponse.json({ ok: true, user }, { headers: { "Cache-Control": "no-store" } });
 
-  // важно для Desktop
+  // cookie для тех случаев, когда cookie сохраняются (плюс, удобно для SSR/повторов)
   res.cookies.set("session", token, {
     httpOnly: true,
     secure: isProd,
