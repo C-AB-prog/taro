@@ -22,7 +22,6 @@ function parseCookie(cookieHeader: string | null, key: string) {
 }
 
 function normalizeInitData(raw: string) {
-  // ВАЖНО: НЕ decodeURIComponent для всей строки
   return String(raw || "").trim();
 }
 
@@ -43,7 +42,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
-  const secretKey = crypto.createHash("sha256").update(botToken).digest();
+  // ✅ WebAppData key
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
   const a = Buffer.from(computedHash, "utf8");
@@ -55,7 +56,6 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 }
 
 export async function requireUserId(req: Request): Promise<string> {
-  // 1) cookie session
   const token = parseCookie(req.headers.get("cookie"), "session");
   if (token) {
     try {
@@ -64,7 +64,6 @@ export async function requireUserId(req: Request): Promise<string> {
     } catch {}
   }
 
-  // 2) Telegram initData headers
   const initData =
     normalizeInitData(req.headers.get("x-tg-init-data") || "") ||
     normalizeInitData(req.headers.get("x-telegram-init-data") || "");
