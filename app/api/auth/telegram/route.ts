@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { signSession } from "@/lib/auth";
+import { SignJWT } from "jose";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const REF_REWARD = 500;
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -29,9 +31,11 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
+  // secret_key = SHA256(bot_token)
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
+  // timing-safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -40,9 +44,110 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   return { ok: true as const, params };
 }
 
+async function makeSessionToken(userId: string) {
+  const secret = getEnv("AUTH_SECRET");
+  const key = new TextEncoder().encode(secret);
+
+  return await new SignJWT({ userId })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(key);
+}
+
+/* ================== Referral tables + grant ================== */
+
+async function ensureReferralTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReferralPending" (
+      "inviteeTgId" TEXT PRIMARY KEY,
+      "referrerUserId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReferralGrant" (
+      "inviteeUserId" TEXT PRIMARY KEY,
+      "referrerUserId" TEXT NOT NULL,
+      "inviteeTgId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReferralPending_referrer_idx" ON "ReferralPending" ("referrerUserId");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReferralGrant_referrer_idx" ON "ReferralGrant" ("referrerUserId");
+  `);
+}
+
+async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeUserId: string; isNewUser: boolean }) {
+  await ensureReferralTables();
+
+  const pendingRows = await prisma.$queryRaw<
+    Array<{ referrerUserId: string }>
+  >`SELECT "referrerUserId" FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId} LIMIT 1`;
+
+  const pending = pendingRows[0];
+  if (!pending) return { granted: false as const, reason: "NO_PENDING" };
+
+  // чистим pending в любом случае (чтобы не висело)
+  try {
+    await prisma.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId}`;
+  } catch {}
+
+  // бонус даём только за реально нового
+  if (!opts.isNewUser) return { granted: false as const, reason: "NOT_NEW" };
+
+  // сам себе — нельзя
+  if (pending.referrerUserId === opts.inviteeUserId) return { granted: false as const, reason: "SELF" };
+
+  // реферер должен существовать
+  const ref = await prisma.user.findUnique({ where: { id: pending.referrerUserId }, select: { id: true } });
+  if (!ref) return { granted: false as const, reason: "REFERRER_NOT_FOUND" };
+
+  // идемпотентность: один inviteeUserId может дать бонус только 1 раз
+  const inserted = await prisma.$executeRaw`
+    INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
+    VALUES (${opts.inviteeUserId}, ${pending.referrerUserId}, ${opts.inviteeTgId})
+    ON CONFLICT ("inviteeUserId") DO NOTHING
+  `;
+
+  if (Number(inserted) <= 0) return { granted: false as const, reason: "ALREADY" };
+
+  await prisma.user.update({
+    where: { id: pending.referrerUserId },
+    data: { balance: { increment: REF_REWARD } },
+  });
+
+  // если у тебя есть prisma.transaction — можно логировать (не обязательно)
+  try {
+    await prisma.transaction.create({
+      data: {
+        userId: pending.referrerUserId,
+        type: "grant",
+        amount: REF_REWARD,
+        provider: "system",
+        providerPayload: { kind: "referral", inviteeUserId: opts.inviteeUserId, inviteeTgId: opts.inviteeTgId },
+      } as any,
+    });
+  } catch {}
+
+  return { granted: true as const, referrerUserId: pending.referrerUserId };
+}
+
+/* ================== Route ================== */
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const initData = (body?.initData || req.headers.get("x-tg-init-data") || "") as string;
+  const initData = body?.initData;
 
   if (!initData || typeof initData !== "string") {
     return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
@@ -71,6 +176,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
   }
 
+  // определяем “новый ли”
+  const existing = await prisma.user.findUnique({
+    where: { tgId: String(tgId) },
+    select: { id: true },
+  });
+  const isNewUser = !existing;
+
+  // upsert пользователя
   const user = await prisma.user.upsert({
     where: { tgId: String(tgId) },
     update: {
@@ -86,6 +199,7 @@ export async function POST(req: Request) {
     select: { id: true, tgId: true, username: true, firstName: true, balance: true },
   });
 
+  // lastSeenAt (если колонка есть) — тихо
   try {
     await prisma.$executeRaw`
       UPDATE "User"
@@ -94,11 +208,21 @@ export async function POST(req: Request) {
     `;
   } catch {}
 
-  const token = await signSession({ userId: user.id });
+  // ✅ вот тут выдаём рефералку из Pending (если друг пришёл по /start ref_...)
+  try {
+    await tryGrantReferralFromPending({
+      inviteeTgId: String(tgId),
+      inviteeUserId: user.id,
+      isNewUser,
+    });
+  } catch {}
+
+  const token = await makeSessionToken(user.id);
 
   const isProd = process.env.NODE_ENV === "production";
   const res = NextResponse.json({ ok: true, user }, { headers: { "Cache-Control": "no-store" } });
 
+  // важно для Desktop
   res.cookies.set("session", token, {
     httpOnly: true,
     secure: isProd,
