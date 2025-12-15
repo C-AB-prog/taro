@@ -5,6 +5,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function ensureOffersTables() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  } catch {}
+
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "AdOffer" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
