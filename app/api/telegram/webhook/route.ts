@@ -145,70 +145,53 @@ async function ensureOffersTables() {
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "AdClaim_userId_idx" ON "AdClaim" ("userId");
+  `);
 }
 
-/* ================== Stats ================== */
-
-async function ensureUserStatsCols() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "User"
-      ADD COLUMN IF NOT EXISTS "lastSeenAt" timestamptz NOT NULL DEFAULT now();
-    `);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_lastSeenAt_idx" ON "User" ("lastSeenAt");`);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_createdAt_idx" ON "User" ("createdAt");`);
-  } catch {}
-}
-
-async function getStats() {
-  await ensureUserStatsCols();
-
-  const total = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS c FROM "User";`);
-  const todayNew = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "createdAt" >= date_trunc('day', now());`
-  );
-  const todayActive = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= date_trunc('day', now());`
-  );
-  const m30 = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*)::int AS c FROM "User" WHERE "lastSeenAt" >= now() - interval '30 days';`
-  );
-
-  return {
-    total: Number(total?.[0]?.c || 0),
-    todayNew: Number(todayNew?.[0]?.c || 0),
-    todayActive: Number(todayActive?.[0]?.c || 0),
-    m30: Number(m30?.[0]?.c || 0),
-  };
-}
-
-/* ================== Welcome ================== */
+/* ================== UI messages ================== */
 
 async function sendWelcome(chatId: number) {
   const text =
-    `✨ Добро пожаловать в «Карта Дня | Daily Tarot»\n\n` +
-    `• Карта дня — общий знак для всех\n` +
-    `• Колесо фортуны — 1 раз в сутки\n` +
-    `• Расклады — с поэтичной трактовкой\n\n` +
-    `Нажми кнопку ниже 👇`;
-
+    "✨ Добро пожаловать в Daily Tarot!\n\n" +
+    "Нажми кнопку ниже, чтобы открыть мини-приложение и посмотреть «Карту дня».";
   const kb = APP_URL
     ? { inline_keyboard: [[{ text: "Посмотреть карту дня", web_app: { url: APP_URL } }]] }
     : undefined;
 
-  if (APP_URL) {
-    try {
-      await tgCall("sendPhoto", {
-        chat_id: chatId,
-        photo: `${APP_URL}/logo.png`,
-        caption: text,
-        reply_markup: kb,
-      });
-      return;
-    } catch {}
-  }
+  // photo красиво, но если не получится — просто сообщение
+  try {
+    await tgCall("sendPhoto", {
+      chat_id: chatId,
+      photo: `${APP_URL}/logo.png`,
+      caption: text,
+      reply_markup: kb,
+    });
+    return;
+  } catch {}
 
   await tgCall("sendMessage", { chat_id: chatId, text, reply_markup: kb });
+}
+
+async function getStats() {
+  const total = await prisma.user.count();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayNew = await prisma.user.count({ where: { createdAt: { gte: today } } });
+
+  // lastSeenAt может быть, может нет — поэтому try/catch
+  let todayActive = 0;
+  let m30 = 0;
+  try {
+    const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    todayActive = await prisma.user.count({ where: { lastSeenAt: { gte: today } } as any });
+    m30 = await prisma.user.count({ where: { lastSeenAt: { gte: d30 } } as any });
+  } catch {}
+
+  return { total, todayNew, todayActive, m30 };
 }
 
 /* ================== Webhook ================== */
@@ -235,28 +218,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const pack = SHOP_PACKS[parsed.packId];
-    const ok = q.currency === "XTR" && Number(q.total_amount) === pack.stars;
+    const pack = SHOP_PACKS.find((p) => p.id === parsed.packId);
+    if (!pack) {
+      await tgCall("answerPreCheckoutQuery", {
+        pre_checkout_query_id: q.id,
+        ok: false,
+        error_message: "Такого пакета больше нет.",
+      });
+      return NextResponse.json({ ok: true });
+    }
 
-    await tgCall("answerPreCheckoutQuery", {
-      pre_checkout_query_id: q.id,
-      ok,
-      ...(ok ? {} : { error_message: "Сумма платежа не совпала. Попробуй ещё раз." }),
-    });
-
+    await tgCall("answerPreCheckoutQuery", { pre_checkout_query_id: q.id, ok: true });
     return NextResponse.json({ ok: true });
   }
 
-  // 2) successful_payment
-  const msg = update.message || update.edited_message;
-  const sp = msg?.successful_payment;
+  const msg = update.message;
 
-  if (sp) {
+  // 2) successful_payment
+  if (msg?.successful_payment) {
+    const sp = msg.successful_payment;
+
     const payload = String(sp.invoice_payload || "");
     const parsed = parsePayload(payload);
     if (!parsed) return NextResponse.json({ ok: true });
 
-    const pack = SHOP_PACKS[parsed.packId];
+    const pack = SHOP_PACKS.find((p) => p.id === parsed.packId);
+    if (!pack) return NextResponse.json({ ok: true });
+
     if (sp.currency !== "XTR") return NextResponse.json({ ok: true });
     if (Number(sp.total_amount) !== pack.stars) return NextResponse.json({ ok: true });
 
@@ -297,7 +285,7 @@ export async function POST(req: Request) {
     const { cmd, args } = normCmd(text);
 
     if (cmd === "/start") {
-      // ✅ ловим /start ref_<userId>
+      // ловим /start ref_<userId>
       const a = String(args || "").trim();
       if (fromId && a.startsWith("ref_")) {
         const referrerUserId = a.slice(4).trim();
@@ -337,69 +325,38 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
+      await ensureOffersTables();
+
+      // формат: /addad Название | @username или https://t.me/... | 100
       const raw = String(args || "");
       const parts = raw.split("|").map((s) => s.trim()).filter(Boolean);
-
       const title = parts[0] || "";
       const url = normalizeTgUrl(parts[1] || "");
-      const reward = Number(parts[2] || 100);
+      const reward = Math.max(1, Number(parts[2] || "100") || 100);
 
       if (!title || !url) {
-        await tgCall("sendMessage", { chat_id: chatId, text: `Формат:\n/addad Название | https://t.me/channel | 100` });
+        await tgCall("sendMessage", {
+          chat_id: chatId,
+          text: "Формат:\n/addad Название | @username/https://t.me/... | 100",
+        });
         return NextResponse.json({ ok: true });
       }
 
-      if (!Number.isFinite(reward) || reward <= 0 || reward > 100000) {
-        await tgCall("sendMessage", { chat_id: chatId, text: "Неверная награда (reward)." });
-        return NextResponse.json({ ok: true });
-      }
+      try {
+        await prisma.$executeRaw`
+          INSERT INTO "AdOffer" ("title","url","reward","active")
+          VALUES (${title}, ${url}, ${reward}, true)
+          ON CONFLICT ("url") DO UPDATE
+            SET "title" = EXCLUDED."title",
+                "reward" = EXCLUDED."reward",
+                "active" = true
+        `;
+      } catch {}
 
-      await ensureOffersTables();
-
-      await prisma.$executeRaw`
-        INSERT INTO "AdOffer" ("title","url","reward","active")
-        VALUES (${title}, ${url}, ${reward}, true)
-        ON CONFLICT ("url") DO UPDATE
-        SET "title" = EXCLUDED."title",
-            "reward" = EXCLUDED."reward",
-            "active" = true
-      `;
-
-      await tgCall("sendMessage", { chat_id: chatId, text: `✅ Добавлено/обновлено:\n${title}\n${url}\nБонус: +${reward}` });
+      await tgCall("sendMessage", { chat_id: chatId, text: `✅ Добавлено: ${title}\n${url}\nБонус: +${reward}` });
       return NextResponse.json({ ok: true });
     }
 
-    if (cmd === "/delad") {
-      if (!isAdmin(fromId)) {
-        await tgCall("sendMessage", { chat_id: chatId, text: "Команда доступна только админу." });
-        return NextResponse.json({ ok: true });
-      }
-
-      const target = String(args || "").trim();
-      if (!target) {
-        await tgCall("sendMessage", { chat_id: chatId, text: `Формат:\n/delad https://t.me/channel\nили\n/delad <offerId>` });
-        return NextResponse.json({ ok: true });
-      }
-
-      await ensureOffersTables();
-
-      const looksUrl = target.startsWith("http://") || target.startsWith("https://") || target.startsWith("@") || target.includes("t.me/");
-      let updated = 0;
-
-      if (looksUrl) {
-        const url = normalizeTgUrl(target);
-        const rows = await prisma.$executeRaw`UPDATE "AdOffer" SET "active" = false WHERE "url" = ${url}`;
-        updated = Number(rows) || 0;
-      } else {
-        const rows = await prisma.$executeRaw`UPDATE "AdOffer" SET "active" = false WHERE "id" = ${target}`;
-        updated = Number(rows) || 0;
-      }
-
-      await tgCall("sendMessage", { chat_id: chatId, text: updated > 0 ? "✅ Удалено (выключено)." : "Не нашёл такой оффер." });
-      return NextResponse.json({ ok: true });
-    }
-
-    await tgCall("sendMessage", { chat_id: chatId, text: "Не понял команду. Доступно: /start /stat /addad /delad" });
     return NextResponse.json({ ok: true });
   }
 
