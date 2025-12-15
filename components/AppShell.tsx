@@ -76,24 +76,25 @@ async function waitForInitData(timeoutMs = 12000): Promise<string> {
   return "";
 }
 
-function installApiFetch(initData: string) {
-  if (!initData) return;
-
+/**
+ * ВАЖНО: оборачиваем fetch ОДИН РАЗ и на КАЖДЫЙ запрос /api/*
+ * подставляем актуальный initData (даже если при первом рендере оно ещё пустое).
+ * Это убирает 401 на Desktop/телефонах из-за гонок useEffect.
+ */
+function installApiFetchDynamic() {
   const g: any = globalThis as any;
   if (g.__tgFetchWrapped) return;
 
-  const origFetch = g.fetch.bind(globalThis);
-  g.__tgOrigFetch = origFetch;
+  const origFetch = g.fetch?.bind(globalThis);
+  if (!origFetch) return;
 
   g.fetch = (input: any, init?: any) => {
     try {
-      // определяем url
       let urlStr = "";
       if (typeof input === "string") urlStr = input;
       else if (input instanceof URL) urlStr = input.toString();
       else if (input && typeof input.url === "string") urlStr = input.url;
 
-      // Только наши API
       const isApi =
         typeof urlStr === "string" &&
         (urlStr.startsWith("/api/") ||
@@ -108,23 +109,27 @@ function installApiFetch(initData: string) {
 
       if (!isApi) return origFetch(input, init);
 
-      // Request объект
+      const initData = getTgInitDataSync();
+      const setHeaders = (h: Headers) => {
+        if (initData) {
+          if (!h.has("x-tg-init-data")) h.set("x-tg-init-data", initData);
+          if (!h.has("x-telegram-init-data")) h.set("x-telegram-init-data", initData);
+        }
+      };
+
       if (typeof Request !== "undefined" && input instanceof Request) {
         const h = new Headers(input.headers);
-        if (!h.has("x-tg-init-data")) h.set("x-tg-init-data", initData);
-
+        setHeaders(h);
         const req2 = new Request(input, {
           headers: h,
           credentials: input.credentials || "include",
           cache: "no-store",
         });
-
         return origFetch(req2);
       }
 
-      // строка/URL + init
       const headers = new Headers(init?.headers || {});
-      if (!headers.has("x-tg-init-data")) headers.set("x-tg-init-data", initData);
+      setHeaders(headers);
 
       return origFetch(input, {
         ...init,
@@ -138,6 +143,11 @@ function installApiFetch(initData: string) {
   };
 
   g.__tgFetchWrapped = true;
+}
+
+// ставим обёртку сразу при загрузке модуля (убирает гонки)
+if (typeof window !== "undefined") {
+  installApiFetchDynamic();
 }
 
 async function ensureSession(initData: string): Promise<boolean> {
@@ -171,7 +181,8 @@ async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: f
   }
 }
 
-async function claimReferralIfAny() {
+async function claimReferralIfAnyStartParam() {
+  // Доп. вариант: если когда-то будешь открывать miniapp через startapp
   const tg = (globalThis as any)?.Telegram?.WebApp;
   const sp = String(tg?.initDataUnsafe?.start_param || "");
   if (!sp.startsWith("ref_")) return;
@@ -210,23 +221,23 @@ export function AppShell({ children }: Props) {
   const [shopMsg, setShopMsg] = useState<string | null>(null);
   const [shopErr, setShopErr] = useState<string | null>(null);
 
-  // пробуем сразу (если Telegram уже дал initData)
-  useMemo(() => {
-    const initData = getTgInitDataSync();
-    if (initData) installApiFetch(initData);
-    return null;
-  }, []);
-
   async function refreshBalance() {
+    // если initData ещё не успело появиться — подождём чуть-чуть и только потом покажем "—"
+    const initData = await waitForInitData(4000);
+    if (initData) {
+      // создаём cookie-сессию (если получится) — но даже без неё /api/me будет жить на headers
+      await ensureSession(initData);
+    }
+
     const r1 = await fetchMeBalance();
     if (r1.ok) {
       setBalance(r1.balance);
       return;
     }
 
-    // если 401 — попробуем ещё раз (инициализация может занять время)
+    // если 401 — ещё один короткий ретрай (Desktop иногда отдаёт initData чуть позже)
     if (r1.status === 401) {
-      await sleep(250);
+      await sleep(350);
       const r2 = await fetchMeBalance();
       if (r2.ok) {
         setBalance(r2.balance);
@@ -245,14 +256,10 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      const initData = await waitForInitData();
-      if (initData) {
-        installApiFetch(initData);
-        // cookie-сессия как бонус (если cookie не сохраняется — всё равно будем жить на x-tg-init-data)
-        await ensureSession(initData);
-      }
+      // initData ждём, но UI не блокируем
+      await waitForInitData(12000);
 
-      await claimReferralIfAny();
+      await claimReferralIfAnyStartParam();
       await refreshBalance();
     };
 
@@ -399,7 +406,12 @@ export function AppShell({ children }: Props) {
               const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (
-                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`} aria-current={active ? "page" : undefined}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`navItem ${active ? "navItemActive" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
                   <div className="navDot" />
