@@ -38,22 +38,6 @@ function IconClock(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-type PackId = "pack_99" | "pack_199" | "pack_399" | "pack_799";
-
-const PACKS: Array<{ id: PackId; label: string; hint: string }> = [
-  { id: "pack_99", label: "99 Stars → 150 валюты", hint: "Быстро пополнить запас" },
-  { id: "pack_199", label: "199 Stars → 350 валюты", hint: "Самый популярный" },
-  { id: "pack_399", label: "399 Stars → 800 валюты", hint: "Выгодно для раскладов" },
-  { id: "pack_799", label: "799 Stars → 1800 валюты", hint: "Максимум выгоды" },
-];
-
-const PACK_COINS: Record<PackId, number> = {
-  pack_99: 150,
-  pack_199: 350,
-  pack_399: 800,
-  pack_799: 1800,
-};
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function getTgInitDataSync(): string {
@@ -71,16 +55,11 @@ async function waitForInitData(timeoutMs = 12000): Promise<string> {
   while (Date.now() - start < timeoutMs) {
     const initData = getTgInitDataSync();
     if (initData) return initData;
-    await sleep(100);
+    await sleep(120);
   }
   return "";
 }
 
-/**
- * ВАЖНО: оборачиваем fetch ОДИН РАЗ и на КАЖДЫЙ запрос /api/*
- * подставляем актуальный initData (даже если при первом рендере оно ещё пустое).
- * Это убирает 401 на Desktop/телефонах из-за гонок useEffect.
- */
 function installApiFetchDynamic() {
   const g: any = globalThis as any;
   if (g.__tgFetchWrapped) return;
@@ -110,26 +89,12 @@ function installApiFetchDynamic() {
       if (!isApi) return origFetch(input, init);
 
       const initData = getTgInitDataSync();
-      const setHeaders = (h: Headers) => {
-        if (initData) {
-          if (!h.has("x-tg-init-data")) h.set("x-tg-init-data", initData);
-          if (!h.has("x-telegram-init-data")) h.set("x-telegram-init-data", initData);
-        }
-      };
-
-      if (typeof Request !== "undefined" && input instanceof Request) {
-        const h = new Headers(input.headers);
-        setHeaders(h);
-        const req2 = new Request(input, {
-          headers: h,
-          credentials: input.credentials || "include",
-          cache: "no-store",
-        });
-        return origFetch(req2);
-      }
 
       const headers = new Headers(init?.headers || {});
-      setHeaders(headers);
+      if (initData) {
+        if (!headers.has("x-tg-init-data")) headers.set("x-tg-init-data", initData);
+        if (!headers.has("x-telegram-init-data")) headers.set("x-telegram-init-data", initData);
+      }
 
       return origFetch(input, {
         ...init,
@@ -145,13 +110,12 @@ function installApiFetchDynamic() {
   g.__tgFetchWrapped = true;
 }
 
-// ставим обёртку сразу при загрузке модуля (убирает гонки)
 if (typeof window !== "undefined") {
   installApiFetchDynamic();
 }
 
-async function ensureSession(initData: string): Promise<boolean> {
-  if (!initData) return false;
+async function ensureSession(initData: string): Promise<{ ok: boolean; status: number }> {
+  if (!initData) return { ok: false, status: 0 };
   try {
     const r = await fetch("/api/auth/telegram", {
       method: "POST",
@@ -160,44 +124,10 @@ async function ensureSession(initData: string): Promise<boolean> {
       cache: "no-store",
       body: JSON.stringify({ initData }),
     });
-    const d = await r.json().catch(() => ({}));
-    return !!(r.ok && d?.ok);
-  } catch {
-    return false;
-  }
-}
-
-async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: false; status: number }> {
-  try {
-    const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
-    if (!r.ok) return { ok: false, status: r.status };
-    const d = await r.json().catch(() => ({}));
-    const b = d?.balance ?? d?.user?.balance ?? null;
-    const nb = Number(b);
-    if (Number.isFinite(nb)) return { ok: true, balance: nb };
-    return { ok: false, status: 500 };
+    return { ok: r.ok, status: r.status };
   } catch {
     return { ok: false, status: 0 };
   }
-}
-
-async function claimReferralIfAnyStartParam() {
-  // Доп. вариант: если когда-то будешь открывать miniapp через startapp
-  const tg = (globalThis as any)?.Telegram?.WebApp;
-  const sp = String(tg?.initDataUnsafe?.start_param || "");
-  if (!sp.startsWith("ref_")) return;
-  const referrerId = sp.slice(4).trim();
-  if (!referrerId) return;
-
-  try {
-    await fetch("/api/referral/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      cache: "no-store",
-      body: JSON.stringify({ referrerId }),
-    }).catch(() => null);
-  } catch {}
 }
 
 export function AppShell({ children }: Props) {
@@ -215,37 +145,44 @@ export function AppShell({ children }: Props) {
   );
 
   const [balance, setBalance] = useState<number | null>(null);
-  const [shopOpen, setShopOpen] = useState(false);
 
-  const [buying, setBuying] = useState<PackId | null>(null);
-  const [shopMsg, setShopMsg] = useState<string | null>(null);
-  const [shopErr, setShopErr] = useState<string | null>(null);
+  // DEBUG
+  const [dbgInitLen, setDbgInitLen] = useState<number>(0);
+  const [dbgAuth, setDbgAuth] = useState<string>("—");
+  const [dbgMe, setDbgMe] = useState<string>("—");
+  const [dbgMeExtra, setDbgMeExtra] = useState<string>("");
 
   async function refreshBalance() {
-    // если initData ещё не успело появиться — подождём чуть-чуть и только потом покажем "—"
-    const initData = await waitForInitData(4000);
-    if (initData) {
-      // создаём cookie-сессию (если получится) — но даже без неё /api/me будет жить на headers
-      await ensureSession(initData);
-    }
+    const initData = await waitForInitData(7000);
+    setDbgInitLen(initData.length);
 
-    const r1 = await fetchMeBalance();
-    if (r1.ok) {
-      setBalance(r1.balance);
-      return;
-    }
+    const auth = await ensureSession(initData);
+    setDbgAuth(`${auth.ok ? "ok" : "fail"} (${auth.status})`);
 
-    // если 401 — ещё один короткий ретрай (Desktop иногда отдаёт initData чуть позже)
-    if (r1.status === 401) {
-      await sleep(350);
-      const r2 = await fetchMeBalance();
-      if (r2.ok) {
-        setBalance(r2.balance);
-        return;
+    try {
+      const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+      const txt = `${r.ok ? "ok" : "fail"} (${r.status})`;
+      setDbgMe(txt);
+
+      const d = await r.json().catch(() => ({}));
+      const b = d?.balance ?? d?.user?.balance ?? null;
+      const nb = Number(b);
+
+      if (Number.isFinite(nb)) setBalance(nb);
+      else setBalance(null);
+
+      if (d?.debug) {
+        setDbgMeExtra(
+          `hdr=${d.debug.hasInitDataHeader ? "1" : "0"} len=${d.debug.initDataHeaderLen} cookie=${d.debug.hasCookie ? "1" : "0"}`
+        );
+      } else {
+        setDbgMeExtra("");
       }
+    } catch {
+      setBalance(null);
+      setDbgMe("fail (0)");
+      setDbgMeExtra("");
     }
-
-    setBalance(null);
   }
 
   useEffect(() => {
@@ -256,10 +193,6 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      // initData ждём, но UI не блокируем
-      await waitForInitData(12000);
-
-      await claimReferralIfAnyStartParam();
       await refreshBalance();
     };
 
@@ -268,108 +201,15 @@ export function AppShell({ children }: Props) {
     const on = () => refreshBalance();
     window.addEventListener("balance:refresh", on);
     return () => window.removeEventListener("balance:refresh", on);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function buyPack(packId: PackId) {
-    if (buying) return;
-
-    setBuying(packId);
-    setShopErr(null);
-    setShopMsg("Открываю оплату…");
-
-    const before = typeof balance === "number" ? balance : null;
-    const expected = PACK_COINS[packId];
-
-    async function pollBalance(timeoutMs = 9000) {
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
-        const r = await fetchMeBalance();
-        if (r.ok) {
-          setBalance(r.balance);
-          if (before !== null && r.balance >= before + expected) return { ok: true as const, delta: r.balance - before };
-          if (before === null) return { ok: true as const, delta: expected };
-        }
-        await sleep(700);
-      }
-      return { ok: false as const };
-    }
-
-    try {
-      const r = await fetch("/api/shop/invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        cache: "no-store",
-        body: JSON.stringify({ packId }),
-      });
-
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data?.ok || !data?.invoiceLink) {
-        setShopMsg(null);
-        setShopErr(data?.error ? `Сервер: ${data.error}` : "Не удалось создать счёт. Попробуй ещё раз.");
-        setBuying(null);
-        return;
-      }
-
-      const tg = (globalThis as any)?.Telegram?.WebApp;
-      if (!tg?.openInvoice) {
-        setShopMsg(null);
-        setShopErr("Оплата доступна только внутри Telegram.");
-        setBuying(null);
-        return;
-      }
-
-      tg.openInvoice(String(data.invoiceLink), async (status: string) => {
-        if (status === "paid") {
-          setShopErr(null);
-          setShopMsg("Оплата принята ✨ Обновляю баланс…");
-
-          window.dispatchEvent(new Event("balance:refresh"));
-
-          const res = await pollBalance();
-          if (res.ok) {
-            setShopMsg(`Готово! +${res.delta} валюты ✨`);
-            (globalThis as any)?.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
-            setTimeout(() => {
-              setShopMsg(null);
-              setShopOpen(false);
-            }, 900);
-          } else {
-            setShopMsg("Оплата принята ✨ Баланс может обновиться с небольшой задержкой.");
-            setTimeout(() => setShopMsg(null), 1400);
-          }
-
-          setBuying(null);
-          return;
-        }
-
-        if (status === "cancelled") {
-          setShopMsg(null);
-          setShopErr("Платёж отменён.");
-          setBuying(null);
-          return;
-        }
-
-        if (status === "failed") {
-          setShopMsg(null);
-          setShopErr("Платёж не прошёл.");
-          setBuying(null);
-          return;
-        }
-
-        setShopMsg(null);
-        setBuying(null);
-      });
-    } catch {
-      setShopMsg(null);
-      setShopErr("Ошибка сети. Попробуй ещё раз.");
-      setBuying(null);
-    }
-  }
 
   return (
     <>
+      {/* DEBUG BAR */}
+      <div style={{ padding: 8, fontSize: 12, opacity: 0.9 }}>
+        <b>DEBUG:</b> initDataLen={dbgInitLen} | auth={dbgAuth} | me={dbgMe} {dbgMeExtra ? `| ${dbgMeExtra}` : ""}
+      </div>
+
       <div className="topbar">
         <div className="topbarInner">
           <div className="brandTitle">Карта Дня | Daily Tarot</div>
@@ -384,14 +224,10 @@ export function AppShell({ children }: Props) {
               type="button"
               className="btn btnGhost"
               style={{ padding: "8px 12px", borderRadius: 999 }}
-              onClick={() => {
-                setShopErr(null);
-                setShopMsg(null);
-                setShopOpen(true);
-              }}
-              aria-label="Открыть магазин"
+              onClick={() => router.push("/free")}
+              aria-label="Бесплатно"
             >
-              +
+              Free
             </button>
           </div>
         </div>
@@ -421,41 +257,6 @@ export function AppShell({ children }: Props) {
           </div>
         </div>
       </div>
-
-      <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
-        <button
-          className="btn btnPrimary"
-          style={{ width: "100%", borderRadius: 999 }}
-          onClick={() => {
-            setShopOpen(false);
-            router.push("/free");
-          }}
-        >
-          Бесплатно
-        </button>
-
-        <div style={{ height: 12 }} />
-        <div className="small">Пополнение внутренней валюты через Telegram Stars.</div>
-        <div style={{ height: 12 }} />
-
-        {PACKS.map((p) => (
-          <div key={p.id} style={{ marginBottom: 10 }}>
-            <button className="btn btnPrimary" style={{ width: "100%" }} disabled={!!buying} onClick={() => buyPack(p.id)}>
-              {buying === p.id ? "Ожидаю оплату…" : p.label}
-            </button>
-            <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
-              {p.hint}
-            </div>
-          </div>
-        ))}
-
-        {shopMsg ? <div className="small" style={{ marginTop: 10 }}>{shopMsg}</div> : null}
-        {shopErr ? (
-          <div className="small" style={{ marginTop: 10 }}>
-            <b>Не получилось:</b> {shopErr}
-          </div>
-        ) : null}
-      </Modal>
     </>
   );
 }
