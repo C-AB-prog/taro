@@ -20,5 +20,8 @@ export async function GET(req: Request) {
 
   if (!user) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  return NextResponse.json({ ok: true, balance: user.balance, user }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { ok: true, balance: user.balance, user },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
