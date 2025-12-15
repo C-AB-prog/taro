@@ -56,24 +56,20 @@ const PACK_COINS: Record<PackId, number> = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForInitData(timeoutMs = 12000): Promise<string> {
+async function waitForInitData(timeoutMs = 6000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const tg = (globalThis as any)?.Telegram?.WebApp;
     const initData = tg?.initData;
     if (typeof initData === "string" && initData.length > 0) return initData;
-    await sleep(120);
+    await sleep(80);
   }
   return "";
 }
 
 async function ensureSession(): Promise<boolean> {
   try {
-    const tg = (globalThis as any)?.Telegram?.WebApp;
-    if (!tg) return false;
-
-    // иногда Desktop даёт initData позже
-    const initData = await waitForInitData(12000);
+    const initData = await waitForInitData();
     if (!initData) return false;
 
     const r = await fetch("/api/auth/telegram", {
@@ -95,15 +91,33 @@ async function fetchMeBalance(): Promise<{ ok: true; balance: number } | { ok: f
   try {
     const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
     if (!r.ok) return { ok: false, status: r.status };
-
     const d = await r.json().catch(() => ({}));
-    const b = d?.balance ?? d?.user?.balance ?? d?.me?.balance ?? d?.data?.balance ?? null;
+    const b = d?.balance ?? d?.user?.balance ?? null;
     const nb = Number(b);
     if (Number.isFinite(nb)) return { ok: true, balance: nb };
     return { ok: false, status: 500 };
   } catch {
     return { ok: false, status: 0 };
   }
+}
+
+async function claimReferralIfAny() {
+  const tg = (globalThis as any)?.Telegram?.WebApp;
+  const sp = String(tg?.initDataUnsafe?.start_param || "");
+  if (!sp.startsWith("ref_")) return;
+
+  const referrerId = sp.slice(4).trim();
+  if (!referrerId) return;
+
+  try {
+    await fetch("/api/referral/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      cache: "no-store",
+      body: JSON.stringify({ referrerId }),
+    }).catch(() => null);
+  } catch {}
 }
 
 export function AppShell({ children }: Props) {
@@ -121,9 +135,8 @@ export function AppShell({ children }: Props) {
   );
 
   const [balance, setBalance] = useState<number | null>(null);
-  const [booting, setBooting] = useState(true);
-
   const [shopOpen, setShopOpen] = useState(false);
+
   const [buying, setBuying] = useState<PackId | null>(null);
   const [shopMsg, setShopMsg] = useState<string | null>(null);
   const [shopErr, setShopErr] = useState<string | null>(null);
@@ -132,26 +145,22 @@ export function AppShell({ children }: Props) {
     const r1 = await fetchMeBalance();
     if (r1.ok) {
       setBalance(r1.balance);
-      return true;
+      return;
     }
 
     if (r1.status === 401) {
-      // ретрай авторизации (Desktop любит задержку)
       await ensureSession();
       const r2 = await fetchMeBalance();
       if (r2.ok) {
         setBalance(r2.balance);
-        return true;
+        return;
       }
     }
 
     setBalance(null);
-    return false;
   }
 
   useEffect(() => {
-    let alive = true;
-
     const run = async () => {
       const tg = (globalThis as any)?.Telegram?.WebApp;
       try {
@@ -159,31 +168,16 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      // 2 попытки: иногда на Desktop initData приходит поздно
       await ensureSession();
-      await sleep(300);
-      await ensureSession();
-
+      await claimReferralIfAny();
       await refreshBalance();
-
-      if (alive) setBooting(false);
     };
 
     run();
 
     const on = () => refreshBalance();
     window.addEventListener("balance:refresh", on);
-
-    const onVis = () => {
-      if (document.visibilityState === "visible") refreshBalance();
-    };
-    document.addEventListener("visibilitychange", onVis);
-
-    return () => {
-      alive = false;
-      window.removeEventListener("balance:refresh", on);
-      document.removeEventListener("visibilitychange", onVis);
-    };
+    return () => window.removeEventListener("balance:refresh", on);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -246,7 +240,7 @@ export function AppShell({ children }: Props) {
       tg.openInvoice(String(data.invoiceLink), async (status: string) => {
         if (status === "paid") {
           setShopErr(null);
-          setShopMsg("Оплата принята. Обновляю баланс…");
+          setShopMsg("Оплата принята ✨ Обновляю баланс…");
 
           window.dispatchEvent(new Event("balance:refresh"));
 
@@ -300,7 +294,7 @@ export function AppShell({ children }: Props) {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div className="badge" aria-label="Баланс">
               <span className="badgeDot" aria-hidden="true" />
-              Баланс&nbsp;<b>{booting ? "…" : balance === null ? "—" : balance}</b>
+              Баланс&nbsp;<b>{balance === null ? "—" : balance}</b>
             </div>
 
             <button
@@ -361,7 +355,9 @@ export function AppShell({ children }: Props) {
             <button className="btn btnPrimary" style={{ width: "100%" }} disabled={!!buying} onClick={() => buyPack(p.id)}>
               {buying === p.id ? "Ожидаю оплату…" : p.label}
             </button>
-            <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>{p.hint}</div>
+            <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
+              {p.hint}
+            </div>
           </div>
         ))}
 
