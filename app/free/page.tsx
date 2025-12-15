@@ -37,6 +37,17 @@ function shareLink(url: string) {
   openTgLink(shareUrl);
 }
 
+async function waitForInitData(timeoutMs = 8000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    const initData = tg?.initData;
+    if (typeof initData === "string" && initData) return initData;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return "";
+}
+
 export default function FreePage() {
   const [userId, setUserId] = useState<string>("");
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -55,6 +66,9 @@ export default function FreePage() {
     setNeedTg(false);
 
     try {
+      // ждём initData немного — чтобы /api/me не улетал 401 из-за гонки
+      await waitForInitData(5000);
+
       // 1) userId (для реф-ссылки)
       const me = await fetch("/api/me", { cache: "no-store", credentials: "include" });
       if (me.status === 401) {
@@ -92,13 +106,9 @@ export default function FreePage() {
       setToast("Ссылка скопирована ✅");
       setTimeout(() => setToast(null), 1200);
     } catch {
-      // универсальный fallback
       const ok = window.prompt("Скопируй ссылку:", text);
-      if (ok !== null) {
-        setToast("Скопируй и отправь другу ✅");
-      } else {
-        setToast("Не получилось скопировать. Нажми «Поделиться».");
-      }
+      if (ok !== null) setToast("Скопируй и отправь другу ✅");
+      else setToast("Не получилось скопировать. Нажми «Поделиться».");
       setTimeout(() => setToast(null), 1600);
     }
   }
@@ -141,7 +151,6 @@ export default function FreePage() {
     <AppShell>
       <RitualHeader label="Бесплатно" />
 
-      {/* Пригласить друга */}
       <div className="card">
         <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
         <div className="small" style={{ marginTop: 6 }}>
@@ -191,7 +200,6 @@ export default function FreePage() {
 
       <div style={{ height: 12 }} />
 
-      {/* Офферы */}
       <div className="card">
         <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
         <div className="small" style={{ marginTop: 6 }}>
@@ -237,10 +245,9 @@ export default function FreePage() {
 
                     <button
                       className="btn btnPrimary"
-                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}
-                      disabled={needTg || claimed || claimingId === o.id}
-                      onClick={() => claimOffer(o.id)}
-                      title={needTg ? "Открой через Telegram, чтобы забрать бонус" : ""}
+                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap", opacity: claimed ? 0.6 : 1 }}
+                      onClick={() => !claimed && claimOffer(o.id)}
+                      disabled={claimed || claimingId === o.id}
                     >
                       {claimed ? "Получено" : claimingId === o.id ? "Проверяю…" : `Забрать +${o.reward}`}
                     </button>
@@ -251,8 +258,6 @@ export default function FreePage() {
           })}
         </div>
       )}
-
-      <div style={{ height: 6 }} />
     </AppShell>
   );
 }
