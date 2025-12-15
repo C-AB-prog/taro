@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { SignJWT } from "jose";
+import { signSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,14 +29,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
-  // secret_key = SHA256(bot_token)
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
-  const computedHash = crypto
-    .createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  // timing-safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -45,20 +40,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   return { ok: true as const, params };
 }
 
-async function makeSessionToken(userId: string) {
-  const secret = getEnv("AUTH_SECRET");
-  const key = new TextEncoder().encode(secret);
-
-  return await new SignJWT({ userId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("30d")
-    .sign(key);
-}
-
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const initData = body?.initData;
+  const initData = (body?.initData || req.headers.get("x-tg-init-data") || "") as string;
 
   if (!initData || typeof initData !== "string") {
     return NextResponse.json({ ok: false, error: "NO_INIT_DATA" }, { status: 400 });
@@ -87,7 +71,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
   }
 
-  // создаём/обновляем пользователя (без lastSeenAt, чтобы не ломаться из-за Prisma schema)
   const user = await prisma.user.upsert({
     where: { tgId: String(tgId) },
     update: {
@@ -103,7 +86,6 @@ export async function POST(req: Request) {
     select: { id: true, tgId: true, username: true, firstName: true, balance: true },
   });
 
-  // если колонка lastSeenAt есть — обновим тихо (не зависит от Prisma-типа)
   try {
     await prisma.$executeRaw`
       UPDATE "User"
@@ -112,16 +94,11 @@ export async function POST(req: Request) {
     `;
   } catch {}
 
-  const token = await makeSessionToken(user.id);
+  const token = await signSession({ userId: user.id });
 
   const isProd = process.env.NODE_ENV === "production";
+  const res = NextResponse.json({ ok: true, user }, { headers: { "Cache-Control": "no-store" } });
 
-  const res = NextResponse.json(
-    { ok: true, user },
-    { headers: { "Cache-Control": "no-store" } }
-  );
-
-  // КЛЮЧЕВО: SameSite=None в проде для Telegram Desktop/встроенных контекстов
   res.cookies.set("session", token, {
     httpOnly: true,
     secure: isProd,
