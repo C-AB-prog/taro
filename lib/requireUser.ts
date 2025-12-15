@@ -22,44 +22,26 @@ function parseCookie(cookieHeader: string | null, key: string) {
 }
 
 function normalizeInitData(raw: string) {
-  const s = String(raw || "").trim();
-  if (!s) return "";
-  if (/%[0-9A-Fa-f]{2}/.test(s)) {
-    try {
-      const dec = decodeURIComponent(s);
-      if (dec.includes("hash=") && dec.includes("&")) return dec;
-    } catch {}
-  }
-  return s;
+  // ВАЖНО: НЕ decodeURIComponent для всей строки
+  return String(raw || "").trim();
 }
 
-function parseInitDataPairs(initData: string): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  const parts = initData.split("&").filter(Boolean);
-  for (const part of parts) {
-    const eq = part.indexOf("=");
-    const kRaw = eq >= 0 ? part.slice(0, eq) : part;
-    const vRaw = eq >= 0 ? part.slice(eq + 1) : "";
-    const k = decodeURIComponent(kRaw.replace(/\+/g, "%2B"));
-    const v = decodeURIComponent(vRaw.replace(/\+/g, "%2B"));
-    out.push([k, v]);
-  }
-  return out;
+function buildDataCheckString(params: URLSearchParams) {
+  const pairs: string[] = [];
+  params.forEach((value, key) => {
+    if (key === "hash") return;
+    pairs.push(`${key}=${value}`);
+  });
+  pairs.sort();
+  return pairs.join("\n");
 }
 
 function verifyTelegramWebAppInitData(initData: string, botToken: string) {
-  const pairs = parseInitDataPairs(initData);
-
-  let hash = "";
-  const dataPairs: Array<[string, string]> = [];
-  for (const [k, v] of pairs) {
-    if (k === "hash") hash = v;
-    else dataPairs.push([k, v]);
-  }
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
   if (!hash) return { ok: false as const };
 
-  dataPairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-  const dataCheckString = dataPairs.map(([k, v]) => `${k}=${v}`).join("\n");
+  const dataCheckString = buildDataCheckString(params);
 
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
@@ -69,10 +51,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
   if (!equal) return { ok: false as const };
 
-  const map = new Map<string, string>();
-  for (const [k, v] of pairs) map.set(k, v);
-
-  return { ok: true as const, get: (key: string) => map.get(key) || "" };
+  return { ok: true as const, params };
 }
 
 export async function requireUserId(req: Request): Promise<string> {
@@ -96,7 +75,7 @@ export async function requireUserId(req: Request): Promise<string> {
   const ver = verifyTelegramWebAppInitData(initData, botToken);
   if (!ver.ok) throw new Error("UNAUTHORIZED");
 
-  const userRaw = ver.get("user");
+  const userRaw = ver.params.get("user");
   if (!userRaw) throw new Error("UNAUTHORIZED");
 
   let tgUser: any = null;
@@ -125,9 +104,7 @@ export async function requireUserId(req: Request): Promise<string> {
   });
 
   try {
-    await prisma.$executeRaw`
-      UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}
-    `;
+    await prisma.$executeRaw`UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}`;
   } catch {}
 
   return user.id;
