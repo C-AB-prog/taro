@@ -49,19 +49,15 @@ export async function POST(req: Request) {
   const offerId = String(body?.offerId || "").trim();
   if (!offerId) return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
 
-  const rows = await prisma.$queryRaw<
-    Array<{ reward: number }>
-  >`
+  const rows = await prisma.$queryRaw<Array<{ reward: number }>>`
     SELECT "reward"
     FROM "AdOffer"
     WHERE "id" = ${offerId} AND "active" = true
     LIMIT 1
   `;
-
   const offer = rows[0];
   if (!offer) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  // 1 раз на оффер (идемпотентно)
   const inserted = await prisma.$executeRaw`
     INSERT INTO "AdClaim" ("userId","offerId")
     VALUES (${userId}, ${offerId})
@@ -69,11 +65,7 @@ export async function POST(req: Request) {
   `;
 
   if (Number(inserted) <= 0) {
-    // уже забирал
-    return NextResponse.json(
-      { ok: false, error: "ALREADY" },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json({ ok: false, error: "ALREADY" }, { status: 200, headers: { "Cache-Control": "no-store" } });
   }
 
   await prisma.user.update({
@@ -81,8 +73,5 @@ export async function POST(req: Request) {
     data: { balance: { increment: Number(offer.reward) } },
   });
 
-  return NextResponse.json(
-    { ok: true, reward: Number(offer.reward) },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  return NextResponse.json({ ok: true, reward: Number(offer.reward) }, { headers: { "Cache-Control": "no-store" } });
 }
