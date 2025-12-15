@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireUserId } from "@/lib/requireUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,26 +29,33 @@ async function ensureOffersTables() {
       PRIMARY KEY ("userId","offerId")
     );
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "AdClaim_userId_idx" ON "AdClaim" ("userId");
+  `);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   await ensureOffersTables();
 
-  // если есть сессия — подсветим claimed
+  // если нет авторизации (например открылось вне TG) — просто claimed=false
   let userId = "__none__";
-  const token = cookies().get("session")?.value;
-  if (token) {
-    try {
-      const s = await verifySession(token);
-      userId = s.userId;
-    } catch {}
-  }
+  try {
+    userId = await requireUserId(req);
+  } catch {}
 
   const offers = await prisma.$queryRaw<
     Array<{ id: string; title: string; url: string; reward: number; claimed: boolean }>
   >`
     SELECT
-      o."id", o."title", o."url", o."reward",
+      o."id",
+      o."title",
+      o."url",
+      o."reward",
       (c."userId" IS NOT NULL) AS claimed
     FROM "AdOffer" o
     LEFT JOIN "AdClaim" c
