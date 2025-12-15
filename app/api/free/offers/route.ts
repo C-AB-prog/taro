@@ -42,7 +42,6 @@ async function ensureOffersTables() {
 export async function GET(req: Request) {
   await ensureOffersTables();
 
-  // если нет авторизации (например открылось вне TG) — просто claimed=false
   let userId = "__none__";
   try {
     userId = await requireUserId(req);
