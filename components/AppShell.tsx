@@ -56,22 +56,93 @@ const PACK_COINS: Record<PackId, number> = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForInitData(timeoutMs = 6000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+function getTgInitDataSync(): string {
+  try {
     const tg = (globalThis as any)?.Telegram?.WebApp;
     const initData = tg?.initData;
-    if (typeof initData === "string" && initData.length > 0) return initData;
-    await sleep(80);
+    return typeof initData === "string" ? initData : "";
+  } catch {
+    return "";
+  }
+}
+
+async function waitForInitData(timeoutMs = 12000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const initData = getTgInitDataSync();
+    if (initData) return initData;
+    await sleep(100);
   }
   return "";
 }
 
-async function ensureSession(): Promise<boolean> {
-  try {
-    const initData = await waitForInitData();
-    if (!initData) return false;
+function installApiFetch(initData: string) {
+  if (!initData) return;
 
+  const g: any = globalThis as any;
+  if (g.__tgFetchWrapped) return;
+
+  const origFetch = g.fetch.bind(globalThis);
+  g.__tgOrigFetch = origFetch;
+
+  g.fetch = (input: any, init?: any) => {
+    try {
+      // определяем url
+      let urlStr = "";
+      if (typeof input === "string") urlStr = input;
+      else if (input instanceof URL) urlStr = input.toString();
+      else if (input && typeof input.url === "string") urlStr = input.url;
+
+      // Только наши API
+      const isApi =
+        typeof urlStr === "string" &&
+        (urlStr.startsWith("/api/") ||
+          (() => {
+            try {
+              const u = new URL(urlStr, window.location.origin);
+              return u.origin === window.location.origin && u.pathname.startsWith("/api/");
+            } catch {
+              return false;
+            }
+          })());
+
+      if (!isApi) return origFetch(input, init);
+
+      // Request объект
+      if (typeof Request !== "undefined" && input instanceof Request) {
+        const h = new Headers(input.headers);
+        if (!h.has("x-tg-init-data")) h.set("x-tg-init-data", initData);
+
+        const req2 = new Request(input, {
+          headers: h,
+          credentials: input.credentials || "include",
+          cache: "no-store",
+        });
+
+        return origFetch(req2);
+      }
+
+      // строка/URL + init
+      const headers = new Headers(init?.headers || {});
+      if (!headers.has("x-tg-init-data")) headers.set("x-tg-init-data", initData);
+
+      return origFetch(input, {
+        ...init,
+        headers,
+        credentials: init?.credentials ?? "include",
+        cache: init?.cache ?? "no-store",
+      });
+    } catch {
+      return origFetch(input, init);
+    }
+  };
+
+  g.__tgFetchWrapped = true;
+}
+
+async function ensureSession(initData: string): Promise<boolean> {
+  if (!initData) return false;
+  try {
     const r = await fetch("/api/auth/telegram", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -79,7 +150,6 @@ async function ensureSession(): Promise<boolean> {
       cache: "no-store",
       body: JSON.stringify({ initData }),
     });
-
     const d = await r.json().catch(() => ({}));
     return !!(r.ok && d?.ok);
   } catch {
@@ -105,7 +175,6 @@ async function claimReferralIfAny() {
   const tg = (globalThis as any)?.Telegram?.WebApp;
   const sp = String(tg?.initDataUnsafe?.start_param || "");
   if (!sp.startsWith("ref_")) return;
-
   const referrerId = sp.slice(4).trim();
   if (!referrerId) return;
 
@@ -141,6 +210,13 @@ export function AppShell({ children }: Props) {
   const [shopMsg, setShopMsg] = useState<string | null>(null);
   const [shopErr, setShopErr] = useState<string | null>(null);
 
+  // пробуем сразу (если Telegram уже дал initData)
+  useMemo(() => {
+    const initData = getTgInitDataSync();
+    if (initData) installApiFetch(initData);
+    return null;
+  }, []);
+
   async function refreshBalance() {
     const r1 = await fetchMeBalance();
     if (r1.ok) {
@@ -148,8 +224,9 @@ export function AppShell({ children }: Props) {
       return;
     }
 
+    // если 401 — попробуем ещё раз (инициализация может занять время)
     if (r1.status === 401) {
-      await ensureSession();
+      await sleep(250);
       const r2 = await fetchMeBalance();
       if (r2.ok) {
         setBalance(r2.balance);
@@ -168,7 +245,13 @@ export function AppShell({ children }: Props) {
         tg?.expand?.();
       } catch {}
 
-      await ensureSession();
+      const initData = await waitForInitData();
+      if (initData) {
+        installApiFetch(initData);
+        // cookie-сессия как бонус (если cookie не сохраняется — всё равно будем жить на x-tg-init-data)
+        await ensureSession(initData);
+      }
+
       await claimReferralIfAny();
       await refreshBalance();
     };
@@ -206,20 +289,13 @@ export function AppShell({ children }: Props) {
     }
 
     try {
-      const makeInvoice = async () =>
-        fetch("/api/shop/invoice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          cache: "no-store",
-          body: JSON.stringify({ packId }),
-        });
-
-      let r = await makeInvoice();
-      if (r.status === 401) {
-        await ensureSession();
-        r = await makeInvoice();
-      }
+      const r = await fetch("/api/shop/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify({ packId }),
+      });
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok || !data?.invoiceLink) {
