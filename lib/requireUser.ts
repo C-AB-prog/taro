@@ -1,6 +1,5 @@
 import "server-only";
 import crypto from "crypto";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
 
@@ -20,6 +19,18 @@ function parseCookie(cookieHeader: string | null, key: string) {
     if (k === key) return decodeURIComponent(p.slice(idx + 1));
   }
   return "";
+}
+
+function normalizeInitData(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/%[0-9A-Fa-f]{2}/.test(s)) {
+    try {
+      const dec = decodeURIComponent(s);
+      if (dec.includes("hash=") && dec.includes("&")) return dec;
+    } catch {}
+  }
+  return s;
 }
 
 function buildDataCheckString(params: URLSearchParams) {
@@ -48,27 +59,26 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
-  // (опционально) можно проверить auth_date, но лучше не жёстко, чтобы не ломать Desktop
   return { ok: true as const, params };
 }
 
 export async function requireUserId(req: Request): Promise<string> {
-  // 1) cookie session (основной путь)
-  const token =
-    cookies().get("session")?.value ||
-    parseCookie(req.headers.get("cookie"), "session");
-
+  // 1) cookie session (если cookie сохранились)
+  const token = parseCookie(req.headers.get("cookie"), "session");
   if (token) {
     try {
       const s = await verifySession(token);
       return s.userId;
     } catch {
-      // если cookie битая — попробуем initData fallback
+      // fallback ниже
     }
   }
 
-  // 2) fallback: Telegram initData из заголовка
-  const initData = req.headers.get("x-tg-init-data") || "";
+  // 2) Telegram initData из заголовков (главный путь для Desktop/ограничений cookie)
+  const initData =
+    normalizeInitData(req.headers.get("x-tg-init-data") || "") ||
+    normalizeInitData(req.headers.get("x-telegram-init-data") || "");
+
   if (!initData) throw new Error("UNAUTHORIZED");
 
   const botToken = getEnv("TELEGRAM_BOT_TOKEN");
@@ -88,8 +98,6 @@ export async function requireUserId(req: Request): Promise<string> {
   const tgId = tgUser?.id;
   if (!tgId) throw new Error("UNAUTHORIZED");
 
-  const now = new Date();
-
   const user = await prisma.user.upsert({
     where: { tgId: String(tgId) },
     update: {
@@ -105,7 +113,6 @@ export async function requireUserId(req: Request): Promise<string> {
     select: { id: true },
   });
 
-  // lastSeenAt если есть — не ломаемся
   try {
     await prisma.$executeRaw`
       UPDATE "User"
