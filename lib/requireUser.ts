@@ -1,87 +1,118 @@
+import "server-only";
 import crypto from "crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
 
-function verifyTelegramInitData(initData: string, botToken: string) {
-  if (!initData || !botToken) return { ok: false as const };
+function getEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
 
-  const sp = new URLSearchParams(initData);
-  const hash = sp.get("hash") || "";
-  if (!hash) return { ok: false as const };
+function parseCookie(cookieHeader: string | null, key: string) {
+  if (!cookieHeader) return "";
+  const parts = cookieHeader.split(";").map((s) => s.trim());
+  for (const p of parts) {
+    const idx = p.indexOf("=");
+    if (idx < 0) continue;
+    const k = p.slice(0, idx).trim();
+    if (k === key) return decodeURIComponent(p.slice(idx + 1));
+  }
+  return "";
+}
 
+function buildDataCheckString(params: URLSearchParams) {
   const pairs: string[] = [];
-  sp.forEach((value, key) => {
+  params.forEach((value, key) => {
     if (key === "hash") return;
     pairs.push(`${key}=${value}`);
   });
   pairs.sort();
-  const dataCheckString = pairs.join("\n");
+  return pairs.join("\n");
+}
 
-  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+function verifyTelegramWebAppInitData(initData: string, botToken: string) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
+  if (!hash) return { ok: false as const, error: "NO_HASH" };
+
+  const dataCheckString = buildDataCheckString(params);
+
+  // secret_key = SHA256(bot_token)
+  const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  if (computedHash !== hash) return { ok: false as const };
+  const a = Buffer.from(computedHash, "utf8");
+  const b = Buffer.from(hash, "utf8");
+  const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
-  let user: any = null;
-  const userRaw = sp.get("user");
-  if (userRaw) {
-    try {
-      user = JSON.parse(userRaw);
-    } catch {
-      user = null;
-    }
-  }
-
-  return { ok: true as const, user };
+  // (опционально) можно проверить auth_date, но лучше не жёстко, чтобы не ломать Desktop
+  return { ok: true as const, params };
 }
 
 export async function requireUserId(req: Request): Promise<string> {
-  // 1) cookie session
-  const token = cookies().get("session")?.value;
+  // 1) cookie session (основной путь)
+  const token =
+    cookies().get("session")?.value ||
+    parseCookie(req.headers.get("cookie"), "session");
+
   if (token) {
     try {
       const s = await verifySession(token);
-
-      try {
-        await prisma.$executeRaw`
-          UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${s.userId}
-        `;
-      } catch {}
-
       return s.userId;
     } catch {
-      // fallback ниже
+      // если cookie битая — попробуем initData fallback
     }
   }
 
-  // 2) header initData
-  const initData = req.headers.get("x-telegram-init-data") || "";
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
-  const v = verifyTelegramInitData(initData, botToken);
-  if (!v.ok || !v.user?.id) throw new Error("UNAUTHORIZED");
+  // 2) fallback: Telegram initData из заголовка
+  const initData = req.headers.get("x-tg-init-data") || "";
+  if (!initData) throw new Error("UNAUTHORIZED");
 
-  const tgId = String(v.user.id);
+  const botToken = getEnv("TELEGRAM_BOT_TOKEN");
+  const ver = verifyTelegramWebAppInitData(initData, botToken);
+  if (!ver.ok) throw new Error("UNAUTHORIZED");
 
-  const u = await prisma.user.upsert({
-    where: { tgId },
+  const userRaw = ver.params.get("user");
+  if (!userRaw) throw new Error("UNAUTHORIZED");
+
+  let tgUser: any = null;
+  try {
+    tgUser = JSON.parse(userRaw);
+  } catch {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  const tgId = tgUser?.id;
+  if (!tgId) throw new Error("UNAUTHORIZED");
+
+  const now = new Date();
+
+  const user = await prisma.user.upsert({
+    where: { tgId: String(tgId) },
     update: {
-      username: v.user?.username ?? null,
-      firstName: v.user?.first_name ?? null,
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
     },
     create: {
-      tgId,
-      username: v.user?.username ?? null,
-      firstName: v.user?.first_name ?? null,
+      tgId: String(tgId),
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
+      balance: 250,
     },
     select: { id: true },
   });
 
+  // lastSeenAt если есть — не ломаемся
   try {
     await prisma.$executeRaw`
-      UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${u.id}
+      UPDATE "User"
+      SET "lastSeenAt" = now()
+      WHERE "id" = ${user.id}
     `;
   } catch {}
 
-  return u.id;
+  return user.id;
 }
