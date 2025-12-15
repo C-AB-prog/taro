@@ -17,7 +17,7 @@ function getEnv(name: string) {
 function normalizeInitData(raw: string) {
   const s = String(raw || "").trim();
   if (!s) return "";
-  // иногда прилетает url-encoded
+  // Иногда прилетает url-encoded целиком
   if (/%[0-9A-Fa-f]{2}/.test(s)) {
     try {
       const dec = decodeURIComponent(s);
@@ -27,43 +27,62 @@ function normalizeInitData(raw: string) {
   return s;
 }
 
-function buildDataCheckString(params: URLSearchParams) {
-  const pairs: string[] = [];
-  params.forEach((value, key) => {
-    if (key === "hash") return;
-    pairs.push(`${key}=${value}`);
-  });
-  pairs.sort();
-  return pairs.join("\n");
+/**
+ * ВАЖНО:
+ * URLSearchParams по стандарту трактует '+' как пробел.
+ * В Telegram initData '+' может быть частью значения => ломает hash.
+ * Поэтому парсим вручную и декодим так, чтобы '+' оставался '+'.
+ */
+function parseInitDataPairs(initData: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const parts = initData.split("&").filter(Boolean);
+
+  for (const part of parts) {
+    const eq = part.indexOf("=");
+    const kRaw = eq >= 0 ? part.slice(0, eq) : part;
+    const vRaw = eq >= 0 ? part.slice(eq + 1) : "";
+
+    // сохраняем '+' как '+'
+    const k = decodeURIComponent(kRaw.replace(/\+/g, "%2B"));
+    const v = decodeURIComponent(vRaw.replace(/\+/g, "%2B"));
+
+    out.push([k, v]);
+  }
+  return out;
 }
 
 function verifyTelegramWebAppInitData(initData: string, botToken: string) {
-  const params = new URLSearchParams(initData);
-  const hash = params.get("hash");
+  const pairs = parseInitDataPairs(initData);
+
+  let hash = "";
+  const dataPairs: Array<[string, string]> = [];
+  for (const [k, v] of pairs) {
+    if (k === "hash") hash = v;
+    else dataPairs.push([k, v]);
+  }
   if (!hash) return { ok: false as const, error: "NO_HASH" };
 
-  const dataCheckString = buildDataCheckString(params);
+  dataPairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const dataCheckString = dataPairs.map(([k, v]) => `${k}=${v}`).join("\n");
 
   // secret_key = SHA256(bot_token)
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  // timing-safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
-  return { ok: true as const, params };
+  const map = new Map<string, string>();
+  for (const [k, v] of pairs) map.set(k, v);
+
+  return { ok: true as const, get: (key: string) => map.get(key) || "" };
 }
 
 /* ================== Referral tables + grant ================== */
 
 async function ensureReferralTables() {
-  try {
-    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
-  } catch {}
-
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ReferralPending" (
       "inviteeTgId" TEXT PRIMARY KEY,
@@ -102,22 +121,17 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
   const pending = pendingRows[0];
   if (!pending) return { granted: false as const, reason: "NO_PENDING" };
 
-  // чистим pending в любом случае (чтобы не висело)
+  // чистим pending всегда
   try {
     await prisma.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId}`;
   } catch {}
 
-  // бонус даём только за реально нового
   if (!opts.isNewUser) return { granted: false as const, reason: "NOT_NEW" };
-
-  // сам себе — нельзя
   if (pending.referrerUserId === opts.inviteeUserId) return { granted: false as const, reason: "SELF" };
 
-  // реферер должен существовать
   const ref = await prisma.user.findUnique({ where: { id: pending.referrerUserId }, select: { id: true } });
   if (!ref) return { granted: false as const, reason: "REFERRER_NOT_FOUND" };
 
-  // идемпотентность: один inviteeUserId может дать бонус только 1 раз
   const inserted = await prisma.$executeRaw`
     INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
     VALUES (${opts.inviteeUserId}, ${pending.referrerUserId}, ${opts.inviteeTgId})
@@ -130,7 +144,6 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
     data: { balance: { increment: REF_REWARD } },
   });
 
-  // лог транзакции (если модель есть — у тебя есть)
   try {
     await prisma.transaction.create({
       data: {
@@ -151,7 +164,6 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
 
-  // берём initData либо из body, либо из заголовка (на Desktop иногда надёжнее заголовком)
   const initData =
     normalizeInitData(body?.initData) ||
     normalizeInitData(req.headers.get("x-tg-init-data") || "") ||
@@ -163,7 +175,7 @@ export async function POST(req: Request) {
   const ver = verifyTelegramWebAppInitData(initData, botToken);
   if (!ver.ok) return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
 
-  const userRaw = ver.params.get("user");
+  const userRaw = ver.get("user");
   if (!userRaw) return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
 
   let tgUser: any = null;
@@ -176,7 +188,6 @@ export async function POST(req: Request) {
   const tgId = tgUser?.id;
   if (!tgId) return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
 
-  // новый ли пользователь
   const existing = await prisma.user.findUnique({ where: { tgId: String(tgId) }, select: { id: true } });
   const isNewUser = !existing;
 
@@ -197,13 +208,10 @@ export async function POST(req: Request) {
 
   try {
     await prisma.$executeRaw`
-      UPDATE "User"
-      SET "lastSeenAt" = now()
-      WHERE "id" = ${user.id}
+      UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}
     `;
   } catch {}
 
-  // рефералка из Pending (приход по /start ref_<userId>)
   try {
     await tryGrantReferralFromPending({
       inviteeTgId: String(tgId),
@@ -217,7 +225,6 @@ export async function POST(req: Request) {
   const isProd = process.env.NODE_ENV === "production";
   const res = NextResponse.json({ ok: true, user }, { headers: { "Cache-Control": "no-store" } });
 
-  // cookie для тех случаев, когда cookie сохраняются (плюс, удобно для SSR/повторов)
   res.cookies.set("session", token, {
     httpOnly: true,
     secure: isProd,
