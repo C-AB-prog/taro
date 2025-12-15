@@ -5,27 +5,26 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 
-type Props = { children: React.ReactNode };
+/* ================= icons ================= */
 
 function IconHome(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
 function IconSpark(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M19 12l.6 2.6L22 15.5l-2.4.9L19 19l-.6-2.6L16 15.5l2.4-.9L19 12Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M12 2l1.2 5.2L18 9l-4.8 1.8L12 16l-1.2-5.2L6 9l4.8-1.8L12 2Z" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
 function IconGrid(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
@@ -33,104 +32,100 @@ function IconClock(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" stroke="currentColor" strokeWidth="2" />
-      <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
 
+/* ================= shop packs (Stars) ================= */
+
+type PackId = "pack_99" | "pack_199" | "pack_399" | "pack_799";
+
+const PACKS: Array<{ id: PackId; label: string; hint: string }> = [
+  { id: "pack_99", label: "99 ⭐ → 150 валюты", hint: "Быстро" },
+  { id: "pack_199", label: "199 ⭐ → 350 валюты", hint: "Популярно" },
+  { id: "pack_399", label: "399 ⭐ → 800 валюты", hint: "Выгодно" },
+  { id: "pack_799", label: "799 ⭐ → 1800 валюты", hint: "Максимум" },
+];
+
+const PACK_COINS: Record<PackId, number> = {
+  pack_99: 150,
+  pack_199: 350,
+  pack_399: 800,
+  pack_799: 1800,
+};
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function getTgInitDataSync(): string {
+/* ================= Telegram helpers ================= */
+
+function getInitData(): string {
   try {
-    const tg = (globalThis as any)?.Telegram?.WebApp;
-    const initData = tg?.initData;
-    return typeof initData === "string" ? initData : "";
+    return (globalThis as any)?.Telegram?.WebApp?.initData || "";
   } catch {
     return "";
   }
 }
 
-async function waitForInitData(timeoutMs = 12000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const initData = getTgInitDataSync();
-    if (initData) return initData;
+async function waitInitData(timeout = 8000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    const d = getInitData();
+    if (d) return d;
     await sleep(120);
   }
   return "";
 }
 
-function installApiFetchDynamic() {
+/**
+ * ВАЖНО:
+ * Любой fetch к /api/* всегда получает initData в headers
+ */
+function wrapFetch() {
   const g: any = globalThis as any;
   if (g.__tgFetchWrapped) return;
 
-  const origFetch = g.fetch?.bind(globalThis);
-  if (!origFetch) return;
-
+  const orig = g.fetch.bind(globalThis);
   g.fetch = (input: any, init?: any) => {
-    try {
-      let urlStr = "";
-      if (typeof input === "string") urlStr = input;
-      else if (input instanceof URL) urlStr = input.toString();
-      else if (input && typeof input.url === "string") urlStr = input.url;
+    let url = "";
+    if (typeof input === "string") url = input;
+    else if (input?.url) url = input.url;
 
-      const isApi =
-        typeof urlStr === "string" &&
-        (urlStr.startsWith("/api/") ||
-          (() => {
-            try {
-              const u = new URL(urlStr, window.location.origin);
-              return u.origin === window.location.origin && u.pathname.startsWith("/api/");
-            } catch {
-              return false;
-            }
-          })());
-
-      if (!isApi) return origFetch(input, init);
-
-      const initData = getTgInitDataSync();
-
+    if (url.startsWith("/api/")) {
       const headers = new Headers(init?.headers || {});
+      const initData = getInitData();
       if (initData) {
-        if (!headers.has("x-tg-init-data")) headers.set("x-tg-init-data", initData);
-        if (!headers.has("x-telegram-init-data")) headers.set("x-telegram-init-data", initData);
+        headers.set("x-tg-init-data", initData);
+        headers.set("x-telegram-init-data", initData);
       }
-
-      return origFetch(input, {
+      return orig(input, {
         ...init,
         headers,
-        credentials: init?.credentials ?? "include",
-        cache: init?.cache ?? "no-store",
+        credentials: "include",
+        cache: "no-store",
       });
-    } catch {
-      return origFetch(input, init);
     }
+    return orig(input, init);
   };
 
   g.__tgFetchWrapped = true;
 }
 
-if (typeof window !== "undefined") {
-  installApiFetchDynamic();
+async function ensureSession() {
+  const initData = await waitInitData();
+  if (!initData) return;
+
+  await fetch("/api/auth/telegram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ initData }),
+    credentials: "include",
+  }).catch(() => null);
 }
 
-async function ensureSession(initData: string): Promise<{ ok: boolean; status: number }> {
-  if (!initData) return { ok: false, status: 0 };
-  try {
-    const r = await fetch("/api/auth/telegram", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      cache: "no-store",
-      body: JSON.stringify({ initData }),
-    });
-    return { ok: r.ok, status: r.status };
-  } catch {
-    return { ok: false, status: 0 };
-  }
-}
+/* ================= component ================= */
 
-export function AppShell({ children }: Props) {
+export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -145,89 +140,78 @@ export function AppShell({ children }: Props) {
   );
 
   const [balance, setBalance] = useState<number | null>(null);
-
-  // DEBUG
-  const [dbgInitLen, setDbgInitLen] = useState<number>(0);
-  const [dbgAuth, setDbgAuth] = useState<string>("—");
-  const [dbgMe, setDbgMe] = useState<string>("—");
-  const [dbgMeExtra, setDbgMeExtra] = useState<string>("");
+  const [shopOpen, setShopOpen] = useState(false);
+  const [buying, setBuying] = useState<PackId | null>(null);
 
   async function refreshBalance() {
-    const initData = await waitForInitData(7000);
-    setDbgInitLen(initData.length);
-
-    const auth = await ensureSession(initData);
-    setDbgAuth(`${auth.ok ? "ok" : "fail"} (${auth.status})`);
-
     try {
-      const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
-      const txt = `${r.ok ? "ok" : "fail"} (${r.status})`;
-      setDbgMe(txt);
-
-      const d = await r.json().catch(() => ({}));
-      const b = d?.balance ?? d?.user?.balance ?? null;
-      const nb = Number(b);
-
-      if (Number.isFinite(nb)) setBalance(nb);
-      else setBalance(null);
-
-      if (d?.debug) {
-        setDbgMeExtra(
-          `hdr=${d.debug.hasInitDataHeader ? "1" : "0"} len=${d.debug.initDataHeaderLen} cookie=${d.debug.hasCookie ? "1" : "0"}`
-        );
-      } else {
-        setDbgMeExtra("");
+      const r = await fetch("/api/me");
+      if (!r.ok) {
+        setBalance(null);
+        return;
       }
+      const d = await r.json();
+      const b = d?.balance ?? d?.user?.balance;
+      setBalance(Number.isFinite(b) ? Number(b) : null);
     } catch {
       setBalance(null);
-      setDbgMe("fail (0)");
-      setDbgMeExtra("");
+    }
+  }
+
+  async function buyPack(packId: PackId) {
+    if (buying) return;
+    setBuying(packId);
+
+    try {
+      const r = await fetch("/api/shop/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packId }),
+      });
+
+      const d = await r.json();
+      if (!d?.invoiceLink) throw new Error("NO_INVOICE");
+
+      const tg = (globalThis as any)?.Telegram?.WebApp;
+      tg.openInvoice(d.invoiceLink, async (status: string) => {
+        if (status === "paid") {
+          await sleep(800);
+          await refreshBalance();
+        }
+        setBuying(null);
+      });
+    } catch {
+      setBuying(null);
     }
   }
 
   useEffect(() => {
-    const run = async () => {
-      const tg = (globalThis as any)?.Telegram?.WebApp;
-      try {
-        tg?.ready?.();
-        tg?.expand?.();
-      } catch {}
+    wrapFetch();
+    const tg = (globalThis as any)?.Telegram?.WebApp;
+    try {
+      tg?.ready?.();
+      tg?.expand?.();
+    } catch {}
 
-      await refreshBalance();
-    };
+    ensureSession().then(refreshBalance);
 
-    run();
-
-    const on = () => refreshBalance();
-    window.addEventListener("balance:refresh", on);
-    return () => window.removeEventListener("balance:refresh", on);
+    window.addEventListener("balance:refresh", refreshBalance);
+    return () => window.removeEventListener("balance:refresh", refreshBalance);
   }, []);
 
   return (
     <>
-      {/* DEBUG BAR */}
-      <div style={{ padding: 8, fontSize: 12, opacity: 0.9 }}>
-        <b>DEBUG:</b> initDataLen={dbgInitLen} | auth={dbgAuth} | me={dbgMe} {dbgMeExtra ? `| ${dbgMeExtra}` : ""}
-      </div>
-
+      {/* TOP BAR */}
       <div className="topbar">
         <div className="topbarInner">
-          <div className="brandTitle">Карта Дня | Daily Tarot</div>
+          <div className="brandTitle">Daily Tarot</div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div className="badge" aria-label="Баланс">
-              <span className="badgeDot" aria-hidden="true" />
+            <div className="badge">
               Баланс&nbsp;<b>{balance === null ? "—" : balance}</b>
             </div>
-
-            <button
-              type="button"
-              className="btn btnGhost"
-              style={{ padding: "8px 12px", borderRadius: 999 }}
-              onClick={() => router.push("/free")}
-              aria-label="Бесплатно"
-            >
-              Free
+            <button className="btn btnGhost" onClick={() => setShopOpen(true)}>
+              +
             </button>
           </div>
         </div>
@@ -235,28 +219,35 @@ export function AppShell({ children }: Props) {
 
       <main className="container">{children}</main>
 
+      {/* NAV */}
       <div className="nav navFloat">
         <div className="navPill">
           <div className="navInner">
             {nav.map((item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
+              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
               const Icon = item.icon;
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`navItem ${active ? "navItemActive" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                >
+                <Link key={item.href} href={item.href} className={`navItem ${active ? "navItemActive" : ""}`}>
                   <Icon className="icon" />
                   <div className="navLabel">{item.label}</div>
-                  <div className="navDot" />
                 </Link>
               );
             })}
           </div>
         </div>
       </div>
+
+      {/* SHOP */}
+      <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
+        {PACKS.map((p) => (
+          <div key={p.id} style={{ marginBottom: 10 }}>
+            <button className="btn btnPrimary" disabled={!!buying} onClick={() => buyPack(p.id)}>
+              {buying === p.id ? "Ожидаю оплату…" : p.label}
+            </button>
+            <div className="small">{p.hint}</div>
+          </div>
+        ))}
+      </Modal>
     </>
   );
 }
