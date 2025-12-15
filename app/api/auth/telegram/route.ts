@@ -36,11 +36,12 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
     .update(dataCheckString)
     .digest("hex");
 
+  // timing-safe compare
   const a = Buffer.from(computedHash, "utf8");
   const b = Buffer.from(hash, "utf8");
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
-
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
+
   return { ok: true as const, params };
 }
 
@@ -55,70 +56,6 @@ async function makeSessionToken(userId: string) {
     .sign(key);
 }
 
-// --- Referral tables (raw, без Prisma схемы) ---
-async function ensureReferralTables() {
-  try {
-    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
-  } catch {}
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ReferralPending" (
-      "inviteeTgId" TEXT PRIMARY KEY,
-      "referrerUserId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ReferralGrant" (
-      "inviteeUserId" TEXT PRIMARY KEY,
-      "referrerUserId" TEXT NOT NULL,
-      "inviteeTgId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-}
-
-async function tryApplyReferralOnFirstLogin(inviteeUserId: string, inviteeTgId: string) {
-  const REWARD = 500;
-
-  await ensureReferralTables();
-
-  const rows = await prisma.$queryRaw<Array<{ referrerUserId: string }>>`
-    SELECT "referrerUserId"
-    FROM "ReferralPending"
-    WHERE "inviteeTgId" = ${inviteeTgId}
-    LIMIT 1
-  `;
-  const referrerUserId = rows?.[0]?.referrerUserId;
-  if (!referrerUserId) return;
-
-  if (referrerUserId === inviteeUserId) {
-    await prisma.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${inviteeTgId}`;
-    return;
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const inserted = await tx.$executeRaw`
-      INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
-      VALUES (${inviteeUserId}, ${referrerUserId}, ${inviteeTgId})
-      ON CONFLICT ("inviteeUserId") DO NOTHING
-    `;
-    if (Number(inserted) <= 0) return;
-
-    try {
-      await tx.user.update({
-        where: { id: referrerUserId },
-        data: { balance: { increment: REWARD } },
-      });
-    } catch {
-      return;
-    }
-
-    await tx.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${inviteeTgId}`;
-  });
-}
-
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const initData = body?.initData;
@@ -128,16 +65,15 @@ export async function POST(req: Request) {
   }
 
   const botToken = getEnv("TELEGRAM_BOT_TOKEN");
-
   const ver = verifyTelegramWebAppInitData(initData, botToken);
   if (!ver.ok) {
     return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
   }
 
-  const params = ver.params;
-
-  const userRaw = params.get("user");
-  if (!userRaw) return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
+  const userRaw = ver.params.get("user");
+  if (!userRaw) {
+    return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
+  }
 
   let tgUser: any = null;
   try {
@@ -147,54 +83,49 @@ export async function POST(req: Request) {
   }
 
   const tgId = tgUser?.id;
-  if (!tgId) return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
-
-  const tgIdStr = String(tgId);
-
-  // определяем "новый юзер" до create/update
-  const existed = await prisma.user.findUnique({ where: { tgId: tgIdStr }, select: { id: true } });
-
-  const user = existed
-    ? await prisma.user.update({
-        where: { tgId: tgIdStr },
-        data: {
-          username: tgUser?.username ?? null,
-          firstName: tgUser?.first_name ?? null,
-        },
-      })
-    : await prisma.user.create({
-        data: {
-          tgId: tgIdStr,
-          username: tgUser?.username ?? null,
-          firstName: tgUser?.first_name ?? null,
-          balance: 250,
-        },
-      });
-
-  // lastSeenAt если есть — raw, чтобы Prisma не ругался
-  try {
-    await prisma.$executeRaw`UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}`;
-  } catch {}
-
-  if (!existed) {
-    await tryApplyReferralOnFirstLogin(user.id, tgIdStr);
+  if (!tgId) {
+    return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
   }
+
+  // создаём/обновляем пользователя (без lastSeenAt, чтобы не ломаться из-за Prisma schema)
+  const user = await prisma.user.upsert({
+    where: { tgId: String(tgId) },
+    update: {
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
+    },
+    create: {
+      tgId: String(tgId),
+      username: tgUser?.username ?? null,
+      firstName: tgUser?.first_name ?? null,
+      balance: 250,
+    },
+    select: { id: true, tgId: true, username: true, firstName: true, balance: true },
+  });
+
+  // если колонка lastSeenAt есть — обновим тихо (не зависит от Prisma-типа)
+  try {
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET "lastSeenAt" = now()
+      WHERE "id" = ${user.id}
+    `;
+  } catch {}
 
   const token = await makeSessionToken(user.id);
 
+  const isProd = process.env.NODE_ENV === "production";
+
   const res = NextResponse.json(
-    {
-      ok: true,
-      user: { id: user.id, tgId: user.tgId, username: user.username, firstName: user.firstName, balance: user.balance },
-    },
+    { ok: true, user },
     { headers: { "Cache-Control": "no-store" } }
   );
 
-  // ✅ Telegram Desktop: часто нужен sameSite="none"
+  // КЛЮЧЕВО: SameSite=None в проде для Telegram Desktop/встроенных контекстов
   res.cookies.set("session", token, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
