@@ -15,55 +15,27 @@ function getEnv(name: string) {
 }
 
 function normalizeInitData(raw: string) {
-  const s = String(raw || "").trim();
-  if (!s) return "";
-  // Иногда прилетает url-encoded целиком
-  if (/%[0-9A-Fa-f]{2}/.test(s)) {
-    try {
-      const dec = decodeURIComponent(s);
-      if (dec.includes("hash=") && dec.includes("&")) return dec;
-    } catch {}
-  }
-  return s;
+  // ВАЖНО: НЕ decodeURIComponent для всей строки.
+  // Telegram WebApp initData уже querystring; общий decode может сломать hash.
+  return String(raw || "").trim();
 }
 
-/**
- * ВАЖНО:
- * URLSearchParams по стандарту трактует '+' как пробел.
- * В Telegram initData '+' может быть частью значения => ломает hash.
- * Поэтому парсим вручную и декодим так, чтобы '+' оставался '+'.
- */
-function parseInitDataPairs(initData: string): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  const parts = initData.split("&").filter(Boolean);
-
-  for (const part of parts) {
-    const eq = part.indexOf("=");
-    const kRaw = eq >= 0 ? part.slice(0, eq) : part;
-    const vRaw = eq >= 0 ? part.slice(eq + 1) : "";
-
-    // сохраняем '+' как '+'
-    const k = decodeURIComponent(kRaw.replace(/\+/g, "%2B"));
-    const v = decodeURIComponent(vRaw.replace(/\+/g, "%2B"));
-
-    out.push([k, v]);
-  }
-  return out;
+function buildDataCheckString(params: URLSearchParams) {
+  const pairs: string[] = [];
+  params.forEach((value, key) => {
+    if (key === "hash") return;
+    pairs.push(`${key}=${value}`);
+  });
+  pairs.sort();
+  return pairs.join("\n");
 }
 
 function verifyTelegramWebAppInitData(initData: string, botToken: string) {
-  const pairs = parseInitDataPairs(initData);
-
-  let hash = "";
-  const dataPairs: Array<[string, string]> = [];
-  for (const [k, v] of pairs) {
-    if (k === "hash") hash = v;
-    else dataPairs.push([k, v]);
-  }
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
   if (!hash) return { ok: false as const, error: "NO_HASH" };
 
-  dataPairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-  const dataCheckString = dataPairs.map(([k, v]) => `${k}=${v}`).join("\n");
+  const dataCheckString = buildDataCheckString(params);
 
   // secret_key = SHA256(bot_token)
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
@@ -74,10 +46,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   const equal = a.length === b.length && crypto.timingSafeEqual(a, b);
   if (!equal) return { ok: false as const, error: "BAD_HASH" };
 
-  const map = new Map<string, string>();
-  for (const [k, v] of pairs) map.set(k, v);
-
-  return { ok: true as const, get: (key: string) => map.get(key) || "" };
+  return { ok: true as const, params };
 }
 
 /* ================== Referral tables + grant ================== */
@@ -175,7 +144,7 @@ export async function POST(req: Request) {
   const ver = verifyTelegramWebAppInitData(initData, botToken);
   if (!ver.ok) return NextResponse.json({ ok: false, error: ver.error }, { status: 401 });
 
-  const userRaw = ver.get("user");
+  const userRaw = ver.params.get("user");
   if (!userRaw) return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 400 });
 
   let tgUser: any = null;
@@ -207,9 +176,7 @@ export async function POST(req: Request) {
   });
 
   try {
-    await prisma.$executeRaw`
-      UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}
-    `;
+    await prisma.$executeRaw`UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}`;
   } catch {}
 
   try {
