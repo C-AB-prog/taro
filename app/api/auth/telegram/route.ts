@@ -15,8 +15,7 @@ function getEnv(name: string) {
 }
 
 function normalizeInitData(raw: string) {
-  // ВАЖНО: НЕ decodeURIComponent для всей строки.
-  // Telegram WebApp initData уже querystring; общий decode может сломать hash.
+  // НЕ делаем decodeURIComponent всей строки — это может ломать hash
   return String(raw || "").trim();
 }
 
@@ -37,8 +36,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
-  // secret_key = SHA256(bot_token)
-  const secretKey = crypto.createHash("sha256").update(botToken).digest();
+  // ✅ ВАЖНО: для WebApp secret_key = HMAC_SHA256("WebAppData", bot_token)
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
   const a = Buffer.from(computedHash, "utf8");
@@ -113,18 +113,6 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
     data: { balance: { increment: REF_REWARD } },
   });
 
-  try {
-    await prisma.transaction.create({
-      data: {
-        userId: pending.referrerUserId,
-        type: "grant",
-        amount: REF_REWARD,
-        provider: "system",
-        providerPayload: { kind: "referral", inviteeUserId: opts.inviteeUserId, inviteeTgId: opts.inviteeTgId },
-      } as any,
-    });
-  } catch {}
-
   return { granted: true as const, referrerUserId: pending.referrerUserId };
 }
 
@@ -172,7 +160,7 @@ export async function POST(req: Request) {
       firstName: tgUser?.first_name ?? null,
       balance: 250,
     },
-    select: { id: true, tgId: true, username: true, firstName: true, balance: true },
+    select: { id: true, tgId: true, balance: true },
   });
 
   try {
