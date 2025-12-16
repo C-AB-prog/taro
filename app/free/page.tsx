@@ -1,122 +1,126 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/AppShell";
-import { RitualHeader } from "@/components/RitualHeader";
+import React, { useEffect, useMemo, useState } from "react";
 
 type Offer = {
   id: string;
   title: string;
   url: string;
   reward: number;
+  active?: boolean;
+  // если твой /api/free/offers уже возвращает:
   claimed?: boolean;
 };
 
-function getBotUsername() {
-  return (process.env.NEXT_PUBLIC_BOT_USERNAME || "").replace(/^@/, "").trim();
-}
-
-function buildReferralBotLink(userId: string) {
-  const bot = getBotUsername();
-  if (!bot || !userId) return "";
-  return `https://t.me/${bot}?start=ref_${encodeURIComponent(userId)}`;
-}
-
 function openTgLink(url: string) {
+  const u = String(url || "").trim();
+  if (!u) return;
+
   const tg = (globalThis as any)?.Telegram?.WebApp;
+
+  // Лучшие варианты внутри Telegram
   try {
-    if (tg?.openTelegramLink) return tg.openTelegramLink(url);
-    if (tg?.openLink) return tg.openLink(url);
+    if (tg?.openTelegramLink && u.includes("t.me/")) {
+      tg.openTelegramLink(u);
+      return;
+    }
+    if (tg?.openLink) {
+      tg.openLink(u, { try_instant_view: false });
+      return;
+    }
   } catch {}
-  window.open(url, "_blank");
-}
 
-function shareLink(url: string) {
-  const text = "✨ Забирай бонус и смотри «Карту дня» в Daily Tarot!";
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
-  openTgLink(shareUrl);
-}
-
-async function waitForInitData(timeoutMs = 8000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const tg = (globalThis as any)?.Telegram?.WebApp;
-    const initData = tg?.initData;
-    if (typeof initData === "string" && initData) return initData;
-    await new Promise((r) => setTimeout(r, 120));
-  }
-  return "";
+  // запасной вариант
+  try {
+    window.open(u, "_blank", "noopener,noreferrer");
+  } catch {}
 }
 
 export default function FreePage() {
-  const [userId, setUserId] = useState<string>("");
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [needTg, setNeedTg] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  // какие офферы пользователь уже нажал "Открыть" в этой сессии
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
-  const refLink = useMemo(() => buildReferralBotLink(userId), [userId]);
+  // какие офферы уже забраны (локально)
+  const [claimedLocal, setClaimedLocal] = useState<Record<string, boolean>>({});
 
-  async function load() {
+  const [busyOpen, setBusyOpen] = useState<string | null>(null);
+  const [busyClaim, setBusyClaim] = useState<string | null>(null);
+
+  const [msg, setMsg] = useState<string>("");
+
+  const sortedOffers = useMemo(() => {
+    // сначала не забранные, потом забранные
+    const arr = [...offers];
+    arr.sort((a, b) => {
+      const ac = !!(a.claimed || claimedLocal[a.id]);
+      const bc = !!(b.claimed || claimedLocal[b.id]);
+      if (ac === bc) return 0;
+      return ac ? 1 : -1;
+    });
+    return arr;
+  }, [offers, claimedLocal]);
+
+  async function loadOffers() {
     setLoading(true);
-    setErr(null);
-    setNeedTg(false);
+    setMsg("");
 
     try {
-      // ждём initData немного — чтобы /api/me не улетал 401 из-за гонки
-      await waitForInitData(5000);
+      const r = await fetch("/api/free/offers", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
 
-      // 1) userId (для реф-ссылки)
-      const me = await fetch("/api/me", { cache: "no-store", credentials: "include" });
-      if (me.status === 401) {
-        setNeedTg(true);
-      } else {
-        const meJson = await me.json().catch(() => ({}));
-        const id = String(meJson?.user?.id || "");
-        if (id) setUserId(id);
-      }
-
-      // 2) офферы
-      const r = await fetch("/api/free/offers", { cache: "no-store", credentials: "include" });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok || !d?.ok) {
-        setErr("Не удалось загрузить предложения. Попробуй позже.");
-        setOffers([]);
-      } else {
-        setOffers(Array.isArray(d.offers) ? d.offers : []);
+      const list: Offer[] = Array.isArray(d?.offers) ? d.offers : Array.isArray(d) ? d : [];
+
+      setOffers(list);
+
+      // если backend уже отдаёт claimed — синхронизируем локально
+      const m: Record<string, boolean> = {};
+      for (const o of list) {
+        if (o?.id && o?.claimed) m[o.id] = true;
       }
+      setClaimedLocal((prev) => ({ ...m, ...prev }));
     } catch {
-      setErr("Ошибка сети. Попробуй позже.");
-      setOffers([]);
+      setMsg("Не удалось загрузить задания. Проверь интернет и попробуй ещё раз.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  async function openOffer(offerId: string, url: string) {
+    if (busyOpen) return;
+    setBusyOpen(offerId);
+    setMsg("");
 
-  async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
-      setToast("Ссылка скопирована ✅");
-      setTimeout(() => setToast(null), 1200);
-    } catch {
-      const ok = window.prompt("Скопируй ссылку:", text);
-      if (ok !== null) setToast("Скопируй и отправь другу ✅");
-      else setToast("Не получилось скопировать. Нажми «Поделиться».");
-      setTimeout(() => setToast(null), 1600);
+      // ✅ фиксируем факт "Открыть"
+      await fetch("/api/free/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify({ offerId }),
+      }).catch(() => null);
+
+      // включаем "Забрать"
+      setOpened((p) => ({ ...p, [offerId]: true }));
+
+      // и открываем ссылку
+      openTgLink(url);
+    } finally {
+      setBusyOpen(null);
     }
   }
 
   async function claimOffer(offerId: string) {
-    if (claimingId) return;
-    setClaimingId(offerId);
-    setToast(null);
+    if (busyClaim) return;
+    setBusyClaim(offerId);
+    setMsg("");
 
     try {
       const r = await fetch("/api/free/claim", {
@@ -128,136 +132,125 @@ export default function FreePage() {
       });
 
       const d = await r.json().catch(() => ({}));
-      if (!r.ok || !d?.ok) {
-        setToast(d?.error === "ALREADY" ? "Ты уже забирал бонус за этот канал." : "Не получилось получить бонус. Попробуй ещё раз.");
-        setTimeout(() => setToast(null), 1600);
-        return;
+
+      if (d?.ok) {
+        setClaimedLocal((p) => ({ ...p, [offerId]: true }));
+        window.dispatchEvent(new Event("balance:refresh"));
+        setMsg(`✅ Начислено +${Number(d.reward || 0)}!`);
+      } else {
+        const e = String(d?.error || "UNKNOWN");
+
+        if (e === "OPEN_REQUIRED") setMsg("Сначала нажми «Открыть», потом можно «Забрать».");
+        else if (e === "ALREADY") setMsg("Ты уже забрал награду за это задание.");
+        else if (e === "NOT_FOUND") setMsg("Задание не найдено или отключено.");
+        else setMsg("Не получилось забрать награду. Попробуй ещё раз.");
       }
-
-      setToast(`Готово! +${d.reward} валюты ✨`);
-      setTimeout(() => setToast(null), 1400);
-
-      window.dispatchEvent(new Event("balance:refresh"));
-      await load();
     } catch {
-      setToast("Ошибка сети. Попробуй ещё раз.");
-      setTimeout(() => setToast(null), 1600);
+      setMsg("Ошибка сети. Попробуй ещё раз.");
     } finally {
-      setClaimingId(null);
+      setBusyClaim(null);
     }
   }
 
+  useEffect(() => {
+    loadOffers();
+  }, []);
+
   return (
-    <AppShell>
-      <RitualHeader label="Бесплатно" />
-
-      <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Пригласи друга</div>
-        <div className="small" style={{ marginTop: 6 }}>
-          За каждого нового друга (который зайдёт в приложение впервые) ты получишь <b>+500</b> валюты.
-        </div>
-
-        {needTg ? (
-          <>
-            <div style={{ height: 10 }} />
-            <div className="small">
-              Чтобы работали приглашения и начисления — открой мини-приложение через Telegram (кнопкой в боте).
-            </div>
-          </>
-        ) : null}
-
-        <div style={{ height: 12 }} />
-
-        <button
-          className="btn btnPrimary"
-          style={{ width: "100%", borderRadius: 999 }}
-          onClick={() => {
-            if (!refLink) {
-              setToast("Не удалось создать ссылку. Открой мини-приложение через Telegram и попробуй снова.");
-              setTimeout(() => setToast(null), 1600);
-              return;
-            }
-            shareLink(refLink);
-          }}
-          disabled={!refLink}
-        >
-          Поделиться ссылкой (+500)
-        </button>
-
-        <div style={{ height: 8 }} />
-
+    <div style={{ paddingBottom: 90 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>Бесплатно</h2>
         <button
           className="btn btnGhost"
-          style={{ width: "100%", borderRadius: 999 }}
-          disabled={!refLink}
-          onClick={() => refLink && copy(refLink)}
+          style={{ borderRadius: 999, padding: "10px 14px" }}
+          onClick={loadOffers}
+          disabled={loading}
         >
-          Скопировать ссылку
+          Обновить
         </button>
-
-        {toast ? <div className="small" style={{ marginTop: 10 }}><b>{toast}</b></div> : null}
       </div>
 
-      <div style={{ height: 12 }} />
+      <div className="small" style={{ marginTop: 8 }}>
+        Нажми <b>«Открыть»</b> → потом станет доступно <b>«Забрать»</b>.
+      </div>
 
-      <div className="card">
-        <div className="title" style={{ fontSize: 16 }}>Каналы рекламодателей</div>
-        <div className="small" style={{ marginTop: 6 }}>
-          Подпишись на канал и забери бонус.
+      {msg ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="small">{msg}</div>
         </div>
-      </div>
-
-      <div style={{ height: 12 }} />
+      ) : null}
 
       {loading ? (
-        <div className="card"><div className="small">Загружаю…</div></div>
-      ) : err ? (
-        <div className="card"><div className="small"><b>Ошибка:</b> {err}</div></div>
-      ) : offers.length === 0 ? (
-        <div className="card"><div className="small">Пока нет активных предложений.</div></div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {offers.map((o) => {
-            const claimed = !!o.claimed;
-            return (
-              <div key={o.id} className="card" style={{ padding: 14 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="title" style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {o.title}
-                    </div>
-                    <div className="small" style={{ marginTop: 4, opacity: 0.85, wordBreak: "break-word" }}>
-                      {o.url}
-                    </div>
-                    <div className="small" style={{ marginTop: 8 }}>
-                      Бонус: <b>+{o.reward}</b> валюты
-                    </div>
-                  </div>
+        <div style={{ marginTop: 16 }} className="small">
+          Загрузка…
+        </div>
+      ) : null}
 
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <button
-                      className="btn btnGhost"
-                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}
-                      onClick={() => openTgLink(o.url)}
-                    >
-                      Открыть
-                    </button>
+      {!loading && sortedOffers.length === 0 ? (
+        <div style={{ marginTop: 16 }} className="small">
+          Пока нет доступных заданий.
+        </div>
+      ) : null}
 
-                    <button
-                      className="btn btnPrimary"
-                      style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap", opacity: claimed ? 0.6 : 1 }}
-                      onClick={() => !claimed && claimOffer(o.id)}
-                      disabled={claimed || claimingId === o.id}
-                    >
-                      {claimed ? "Получено" : claimingId === o.id ? "Проверяю…" : `Забрать +${o.reward}`}
-                    </button>
+      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        {sortedOffers.map((o) => {
+          const alreadyClaimed = !!(o.claimed || claimedLocal[o.id]);
+          const canClaim = !!opened[o.id] && !alreadyClaimed;
+
+          return (
+            <div
+              key={o.id}
+              style={{
+                padding: 14,
+                borderRadius: 16,
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{o.title}</div>
+                  <div className="small" style={{ marginTop: 6, opacity: 0.9 }}>
+                    Награда: <b>+{o.reward}</b>
                   </div>
                 </div>
+
+                {alreadyClaimed ? (
+                  <div className="small" style={{ opacity: 0.85 }}>
+                    ✅ Забрано
+                  </div>
+                ) : null}
               </div>
-            );
-          })}
-        </div>
-      )}
-    </AppShell>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <button
+                  className="btn btnPrimary"
+                  style={{ borderRadius: 999, padding: "10px 14px" }}
+                  onClick={() => openOffer(o.id, o.url)}
+                  disabled={busyOpen !== null || alreadyClaimed}
+                >
+                  {busyOpen === o.id ? "Открываю…" : "Открыть"}
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  style={{ borderRadius: 999, padding: "10px 14px" }}
+                  onClick={() => claimOffer(o.id)}
+                  disabled={!canClaim || busyClaim !== null}
+                  title={!opened[o.id] ? "Сначала нажми «Открыть»" : ""}
+                >
+                  {busyClaim === o.id ? "Проверяю…" : "Забрать"}
+                </button>
+              </div>
+
+              {!alreadyClaimed && !opened[o.id] ? (
+                <div className="small" style={{ marginTop: 10, opacity: 0.8 }}>
+                  Сначала нажми <b>«Открыть»</b>, чтобы активировать <b>«Забрать»</b>.
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
