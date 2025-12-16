@@ -15,7 +15,6 @@ function getEnv(name: string) {
 }
 
 function normalizeInitData(raw: string) {
-  // НЕ делаем decodeURIComponent всей строки — это может ломать hash
   return String(raw || "").trim();
 }
 
@@ -36,9 +35,8 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
-  // ✅ ВАЖНО: для WebApp secret_key = HMAC_SHA256("WebAppData", bot_token)
+  // ✅ правильный ключ для WebApp
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
-
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
   const a = Buffer.from(computedHash, "utf8");
@@ -49,7 +47,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   return { ok: true as const, params };
 }
 
-/* ================== Referral tables + grant ================== */
+/* ================== Referral tables ================== */
 
 async function ensureReferralTables() {
   await prisma.$executeRawUnsafe(`
@@ -78,7 +76,57 @@ async function ensureReferralTables() {
   `);
 }
 
-async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeUserId: string; isNewUser: boolean }) {
+async function grantReferralOnce(params: {
+  inviteeUserId: string;
+  inviteeTgId: string;
+  referrerUserId: string;
+}) {
+  await ensureReferralTables();
+
+  // защита от саморефа
+  if (params.referrerUserId === params.inviteeUserId) return { ok: false as const, reason: "SELF" };
+
+  // реферер должен существовать
+  const ref = await prisma.user.findUnique({ where: { id: params.referrerUserId }, select: { id: true } });
+  if (!ref) return { ok: false as const, reason: "REFERRER_NOT_FOUND" };
+
+  // выдаём только 1 раз на inviteeUserId
+  const inserted = await prisma.$executeRaw`
+    INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
+    VALUES (${params.inviteeUserId}, ${params.referrerUserId}, ${params.inviteeTgId})
+    ON CONFLICT ("inviteeUserId") DO NOTHING
+  `;
+  if (Number(inserted) <= 0) return { ok: false as const, reason: "ALREADY" };
+
+  await prisma.user.update({
+    where: { id: params.referrerUserId },
+    data: { balance: { increment: REF_REWARD } },
+  });
+
+  try {
+    await prisma.transaction.create({
+      data: {
+        userId: params.referrerUserId,
+        type: "grant",
+        amount: REF_REWARD,
+        provider: "system",
+        providerPayload: {
+          kind: "referral",
+          inviteeUserId: params.inviteeUserId,
+          inviteeTgId: params.inviteeTgId,
+        },
+      } as any,
+    });
+  } catch {}
+
+  return { ok: true as const };
+}
+
+async function tryGrantReferralFromPending(opts: {
+  inviteeTgId: string;
+  inviteeUserId: string;
+  isNewUser: boolean;
+}) {
   await ensureReferralTables();
 
   const pendingRows = await prisma.$queryRaw<Array<{ referrerUserId: string }>>`
@@ -88,32 +136,20 @@ async function tryGrantReferralFromPending(opts: { inviteeTgId: string; inviteeU
     LIMIT 1
   `;
   const pending = pendingRows[0];
-  if (!pending) return { granted: false as const, reason: "NO_PENDING" };
+  if (!pending) return { ok: false as const, reason: "NO_PENDING" };
 
   // чистим pending всегда
   try {
     await prisma.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId}`;
   } catch {}
 
-  if (!opts.isNewUser) return { granted: false as const, reason: "NOT_NEW" };
-  if (pending.referrerUserId === opts.inviteeUserId) return { granted: false as const, reason: "SELF" };
+  if (!opts.isNewUser) return { ok: false as const, reason: "NOT_NEW" };
 
-  const ref = await prisma.user.findUnique({ where: { id: pending.referrerUserId }, select: { id: true } });
-  if (!ref) return { granted: false as const, reason: "REFERRER_NOT_FOUND" };
-
-  const inserted = await prisma.$executeRaw`
-    INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
-    VALUES (${opts.inviteeUserId}, ${pending.referrerUserId}, ${opts.inviteeTgId})
-    ON CONFLICT ("inviteeUserId") DO NOTHING
-  `;
-  if (Number(inserted) <= 0) return { granted: false as const, reason: "ALREADY" };
-
-  await prisma.user.update({
-    where: { id: pending.referrerUserId },
-    data: { balance: { increment: REF_REWARD } },
+  return grantReferralOnce({
+    inviteeUserId: opts.inviteeUserId,
+    inviteeTgId: opts.inviteeTgId,
+    referrerUserId: pending.referrerUserId,
   });
-
-  return { granted: true as const, referrerUserId: pending.referrerUserId };
 }
 
 /* ================== Route ================== */
@@ -160,20 +196,37 @@ export async function POST(req: Request) {
       firstName: tgUser?.first_name ?? null,
       balance: 250,
     },
-    select: { id: true, tgId: true, balance: true },
+    select: { id: true, tgId: true, username: true, firstName: true, balance: true },
   });
 
   try {
     await prisma.$executeRaw`UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}`;
   } catch {}
 
-  try {
-    await tryGrantReferralFromPending({
-      inviteeTgId: String(tgId),
-      inviteeUserId: user.id,
-      isNewUser,
-    });
-  } catch {}
+  // ✅ 1) СНАЧАЛА: рефералка напрямую через start_param (самый надёжный путь)
+  // Telegram передаёт start_param в initData если запускали из deep link start=...
+  const startParam = String(ver.params.get("start_param") || "").trim();
+  if (isNewUser && startParam.startsWith("ref_")) {
+    const referrerUserId = startParam.slice(4).trim();
+    if (referrerUserId) {
+      try {
+        await grantReferralOnce({
+          inviteeUserId: user.id,
+          inviteeTgId: String(tgId),
+          referrerUserId,
+        });
+      } catch {}
+    }
+  } else {
+    // ✅ 2) fallback: старый механизм через /start → ReferralPending
+    try {
+      await tryGrantReferralFromPending({
+        inviteeTgId: String(tgId),
+        inviteeUserId: user.id,
+        isNewUser,
+      });
+    } catch {}
+  }
 
   const token = await signSession({ userId: user.id });
 
