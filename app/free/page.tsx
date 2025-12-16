@@ -69,10 +69,10 @@ export default function FreePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // пользователь нажал "Открыть" (в текущей сессии страницы)
+  // нажал "Открыть" (в рамках текущей страницы)
   const [opened, setOpened] = useState<Record<string, boolean>>({});
 
-  // локально помечаем "забрано" (поверх API)
+  // локально помечаем забранные
   const [claimedLocal, setClaimedLocal] = useState<Record<string, boolean>>({});
 
   const [busyOpen, setBusyOpen] = useState<string | null>(null);
@@ -107,7 +107,6 @@ export default function FreePage() {
 
       setOffers(list);
 
-      // синхронизируем claimed в локальное состояние (на всякий)
       const m: Record<string, boolean> = {};
       for (const o of list) {
         if (o?.id && o?.claimed) m[o.id] = true;
@@ -126,6 +125,7 @@ export default function FreePage() {
     setToast(null);
 
     try {
+      // ✅ фиксируем факт нажатия "Открыть"
       await fetch("/api/free/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,7 +134,10 @@ export default function FreePage() {
         body: JSON.stringify({ offerId }),
       }).catch(() => null);
 
+      // разблокируем "Забрать"
       setOpened((p) => ({ ...p, [offerId]: true }));
+
+      // реально открываем ссылку
       openTgLink(url);
     } finally {
       setBusyOpen(null);
@@ -209,7 +212,6 @@ export default function FreePage() {
           </button>
         </div>
 
-        {/* Toast */}
         {toast ? (
           <div
             style={{
@@ -245,6 +247,8 @@ export default function FreePage() {
           const alreadyClaimed = !!(o.claimed || claimedLocal[o.id]);
           const canClaim = !!opened[o.id] && !alreadyClaimed;
 
+          const urlShown = String(o.url || "").replace(/^https?:\/\//, "");
+
           return (
             <div
               key={o.id}
@@ -258,6 +262,19 @@ export default function FreePage() {
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.15 }}>{o.title}</div>
+
+                  {/* ✅ ССЫЛКА ВИДНА (НО НЕ КЛИКАБЕЛЬНА) */}
+                  <div
+                    className="small"
+                    style={{
+                      marginTop: 6,
+                      opacity: 0.75,
+                      wordBreak: "break-all",
+                      userSelect: "text",
+                    }}
+                  >
+                    {urlShown}
+                  </div>
 
                   <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
                     <Chip>
