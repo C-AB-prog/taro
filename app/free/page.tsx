@@ -7,9 +7,7 @@ type Offer = {
   title: string;
   url: string;
   reward: number;
-  active?: boolean;
-  // если твой /api/free/offers уже возвращает:
-  claimed?: boolean;
+  claimed: boolean;
 };
 
 function openTgLink(url: string) {
@@ -18,7 +16,6 @@ function openTgLink(url: string) {
 
   const tg = (globalThis as any)?.Telegram?.WebApp;
 
-  // Лучшие варианты внутри Telegram
   try {
     if (tg?.openTelegramLink && u.includes("t.me/")) {
       tg.openTelegramLink(u);
@@ -30,29 +27,60 @@ function openTgLink(url: string) {
     }
   } catch {}
 
-  // запасной вариант
   try {
     window.open(u, "_blank", "noopener,noreferrer");
   } catch {}
+}
+
+function Chip({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  const style: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    lineHeight: 1,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+    opacity: 0.95,
+    userSelect: "none",
+  };
+
+  if (tone === "good") {
+    style.border = "1px solid rgba(255,255,255,0.14)";
+    style.background = "rgba(255,255,255,0.10)";
+  }
+  if (tone === "warn") {
+    style.border = "1px solid rgba(255,255,255,0.14)";
+    style.background = "rgba(255,255,255,0.08)";
+  }
+
+  return <span style={style}>{children}</span>;
 }
 
 export default function FreePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // какие офферы пользователь уже нажал "Открыть" в этой сессии
+  // пользователь нажал "Открыть" (в текущей сессии страницы)
   const [opened, setOpened] = useState<Record<string, boolean>>({});
 
-  // какие офферы уже забраны (локально)
+  // локально помечаем "забрано" (поверх API)
   const [claimedLocal, setClaimedLocal] = useState<Record<string, boolean>>({});
 
   const [busyOpen, setBusyOpen] = useState<string | null>(null);
   const [busyClaim, setBusyClaim] = useState<string | null>(null);
 
-  const [msg, setMsg] = useState<string>("");
+  const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const sortedOffers = useMemo(() => {
-    // сначала не забранные, потом забранные
     const arr = [...offers];
     arr.sort((a, b) => {
       const ac = !!(a.claimed || claimedLocal[a.id]);
@@ -65,7 +93,7 @@ export default function FreePage() {
 
   async function loadOffers() {
     setLoading(true);
-    setMsg("");
+    setToast(null);
 
     try {
       const r = await fetch("/api/free/offers", {
@@ -75,18 +103,18 @@ export default function FreePage() {
       });
 
       const d = await r.json().catch(() => ({}));
-      const list: Offer[] = Array.isArray(d?.offers) ? d.offers : Array.isArray(d) ? d : [];
+      const list: Offer[] = Array.isArray(d?.offers) ? d.offers : [];
 
       setOffers(list);
 
-      // если backend уже отдаёт claimed — синхронизируем локально
+      // синхронизируем claimed в локальное состояние (на всякий)
       const m: Record<string, boolean> = {};
       for (const o of list) {
         if (o?.id && o?.claimed) m[o.id] = true;
       }
-      setClaimedLocal((prev) => ({ ...m, ...prev }));
+      setClaimedLocal((prev) => ({ ...prev, ...m }));
     } catch {
-      setMsg("Не удалось загрузить задания. Проверь интернет и попробуй ещё раз.");
+      setToast({ type: "err", text: "Не удалось загрузить задания. Проверь интернет и попробуй ещё раз." });
     } finally {
       setLoading(false);
     }
@@ -95,10 +123,9 @@ export default function FreePage() {
   async function openOffer(offerId: string, url: string) {
     if (busyOpen) return;
     setBusyOpen(offerId);
-    setMsg("");
+    setToast(null);
 
     try {
-      // ✅ фиксируем факт "Открыть"
       await fetch("/api/free/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,10 +134,7 @@ export default function FreePage() {
         body: JSON.stringify({ offerId }),
       }).catch(() => null);
 
-      // включаем "Забрать"
       setOpened((p) => ({ ...p, [offerId]: true }));
-
-      // и открываем ссылку
       openTgLink(url);
     } finally {
       setBusyOpen(null);
@@ -120,7 +144,7 @@ export default function FreePage() {
   async function claimOffer(offerId: string) {
     if (busyClaim) return;
     setBusyClaim(offerId);
-    setMsg("");
+    setToast(null);
 
     try {
       const r = await fetch("/api/free/claim", {
@@ -136,17 +160,16 @@ export default function FreePage() {
       if (d?.ok) {
         setClaimedLocal((p) => ({ ...p, [offerId]: true }));
         window.dispatchEvent(new Event("balance:refresh"));
-        setMsg(`✅ Начислено +${Number(d.reward || 0)}!`);
+        setToast({ type: "ok", text: `Начислено +${Number(d.reward || 0)} ✨` });
       } else {
         const e = String(d?.error || "UNKNOWN");
-
-        if (e === "OPEN_REQUIRED") setMsg("Сначала нажми «Открыть», потом можно «Забрать».");
-        else if (e === "ALREADY") setMsg("Ты уже забрал награду за это задание.");
-        else if (e === "NOT_FOUND") setMsg("Задание не найдено или отключено.");
-        else setMsg("Не получилось забрать награду. Попробуй ещё раз.");
+        if (e === "OPEN_REQUIRED") setToast({ type: "err", text: "Сначала нажми «Открыть», потом можно «Забрать»." });
+        else if (e === "ALREADY") setToast({ type: "err", text: "Ты уже забрал награду за это задание." });
+        else if (e === "NOT_FOUND") setToast({ type: "err", text: "Задание не найдено или отключено." });
+        else setToast({ type: "err", text: "Не получилось забрать награду. Попробуй ещё раз." });
       }
     } catch {
-      setMsg("Ошибка сети. Попробуй ещё раз.");
+      setToast({ type: "err", text: "Ошибка сети. Попробуй ещё раз." });
     } finally {
       setBusyClaim(null);
     }
@@ -157,42 +180,67 @@ export default function FreePage() {
   }, []);
 
   return (
-    <div style={{ paddingBottom: 90 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Бесплатно</h2>
-        <button
-          className="btn btnGhost"
-          style={{ borderRadius: 999, padding: "10px 14px" }}
-          onClick={loadOffers}
-          disabled={loading}
-        >
-          Обновить
-        </button>
+    <div style={{ paddingBottom: 100 }}>
+      {/* Header */}
+      <div
+        style={{
+          borderRadius: 18,
+          padding: 16,
+          border: "1px solid rgba(255,255,255,0.10)",
+          background:
+            "radial-gradient(1200px 400px at 10% -20%, rgba(255,255,255,0.10), transparent 60%), rgba(255,255,255,0.03)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Бесплатно</div>
+            <div className="small" style={{ marginTop: 6, opacity: 0.9 }}>
+              Нажми <b>«Открыть»</b> → затем станет доступно <b>«Забрать»</b>.
+            </div>
+          </div>
+
+          <button
+            className="btn btnGhost"
+            style={{ borderRadius: 999, padding: "10px 14px", whiteSpace: "nowrap" }}
+            onClick={loadOffers}
+            disabled={loading}
+          >
+            {loading ? "…" : "Обновить"}
+          </button>
+        </div>
+
+        {/* Toast */}
+        {toast ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: toast.type === "ok" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+            }}
+            className="small"
+          >
+            {toast.type === "ok" ? "✅ " : "⚠️ "}
+            {toast.text}
+          </div>
+        ) : null}
       </div>
 
-      <div className="small" style={{ marginTop: 8 }}>
-        Нажми <b>«Открыть»</b> → потом станет доступно <b>«Забрать»</b>.
-      </div>
-
-      {msg ? (
-        <div style={{ marginTop: 12 }}>
-          <div className="small">{msg}</div>
-        </div>
-      ) : null}
-
-      {loading ? (
-        <div style={{ marginTop: 16 }} className="small">
-          Загрузка…
-        </div>
-      ) : null}
-
-      {!loading && sortedOffers.length === 0 ? (
-        <div style={{ marginTop: 16 }} className="small">
-          Пока нет доступных заданий.
-        </div>
-      ) : null}
-
+      {/* List */}
       <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        {loading ? (
+          <div className="small" style={{ marginTop: 4, opacity: 0.9 }}>
+            Загрузка…
+          </div>
+        ) : null}
+
+        {!loading && sortedOffers.length === 0 ? (
+          <div className="small" style={{ marginTop: 4, opacity: 0.9 }}>
+            Пока нет доступных заданий.
+          </div>
+        ) : null}
+
         {sortedOffers.map((o) => {
           const alreadyClaimed = !!(o.claimed || claimedLocal[o.id]);
           const canClaim = !!opened[o.id] && !alreadyClaimed;
@@ -201,24 +249,30 @@ export default function FreePage() {
             <div
               key={o.id}
               style={{
+                borderRadius: 18,
                 padding: 14,
-                borderRadius: 16,
-                border: "1px solid rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: "rgba(255,255,255,0.03)",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{o.title}</div>
-                  <div className="small" style={{ marginTop: 6, opacity: 0.9 }}>
-                    Награда: <b>+{o.reward}</b>
+                  <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.15 }}>{o.title}</div>
+
+                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <Chip>
+                      🎁 +<b>{o.reward}</b>
+                    </Chip>
+
+                    {alreadyClaimed ? (
+                      <Chip tone="good">✅ Забрано</Chip>
+                    ) : opened[o.id] ? (
+                      <Chip tone="good">🟢 Можно забрать</Chip>
+                    ) : (
+                      <Chip tone="warn">🔒 Сначала «Открыть»</Chip>
+                    )}
                   </div>
                 </div>
-
-                {alreadyClaimed ? (
-                  <div className="small" style={{ opacity: 0.85 }}>
-                    ✅ Забрано
-                  </div>
-                ) : null}
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
@@ -233,7 +287,7 @@ export default function FreePage() {
 
                 <button
                   className="btn btnGhost"
-                  style={{ borderRadius: 999, padding: "10px 14px" }}
+                  style={{ borderRadius: 999, padding: "10px 14px", opacity: canClaim ? 1 : 0.75 }}
                   onClick={() => claimOffer(o.id)}
                   disabled={!canClaim || busyClaim !== null}
                   title={!opened[o.id] ? "Сначала нажми «Открыть»" : ""}
@@ -243,8 +297,8 @@ export default function FreePage() {
               </div>
 
               {!alreadyClaimed && !opened[o.id] ? (
-                <div className="small" style={{ marginTop: 10, opacity: 0.8 }}>
-                  Сначала нажми <b>«Открыть»</b>, чтобы активировать <b>«Забрать»</b>.
+                <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Нажми <b>«Открыть»</b> — это разблокирует <b>«Забрать»</b>.
                 </div>
               ) : null}
             </div>
