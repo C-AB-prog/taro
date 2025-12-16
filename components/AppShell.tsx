@@ -48,13 +48,6 @@ const PACKS: Array<{ id: PackId; label: string; hint: string }> = [
   { id: "pack_799", label: "799 ⭐ → 1800 валюты", hint: "Максимум" },
 ];
 
-const PACK_COINS: Record<PackId, number> = {
-  pack_99: 150,
-  pack_199: 350,
-  pack_399: 800,
-  pack_799: 1800,
-};
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /* ================= Telegram helpers ================= */
@@ -77,10 +70,6 @@ async function waitInitData(timeout = 8000) {
   return "";
 }
 
-/**
- * ВАЖНО:
- * Любой fetch к /api/* всегда получает initData в headers
- */
 function wrapFetch() {
   const g: any = globalThis as any;
   if (g.__tgFetchWrapped) return;
@@ -91,7 +80,8 @@ function wrapFetch() {
     if (typeof input === "string") url = input;
     else if (input?.url) url = input.url;
 
-    if (url.startsWith("/api/")) {
+    const isApi = typeof url === "string" && url.startsWith("/api/");
+    if (isApi) {
       const headers = new Headers(init?.headers || {});
       const initData = getInitData();
       if (initData) {
@@ -105,6 +95,7 @@ function wrapFetch() {
         cache: "no-store",
       });
     }
+
     return orig(input, init);
   };
 
@@ -120,6 +111,7 @@ async function ensureSession() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ initData }),
     credentials: "include",
+    cache: "no-store",
   }).catch(() => null);
 }
 
@@ -142,17 +134,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [balance, setBalance] = useState<number | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
   const [buying, setBuying] = useState<PackId | null>(null);
+  const [shopErr, setShopErr] = useState<string | null>(null);
 
   async function refreshBalance() {
     try {
-      const r = await fetch("/api/me");
+      const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
       if (!r.ok) {
         setBalance(null);
         return;
       }
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
       const b = d?.balance ?? d?.user?.balance;
-      setBalance(Number.isFinite(b) ? Number(b) : null);
+      const nb = Number(b);
+      setBalance(Number.isFinite(nb) ? nb : null);
     } catch {
       setBalance(null);
     }
@@ -161,32 +155,48 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   async function buyPack(packId: PackId) {
     if (buying) return;
     setBuying(packId);
+    setShopErr(null);
 
     try {
       const r = await fetch("/api/shop/invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ packId }),
+        credentials: "include",
+        cache: "no-store",
       });
 
-      const d = await r.json();
-      if (!d?.invoiceLink) throw new Error("NO_INVOICE");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.invoiceLink) {
+        setShopErr(d?.error ? String(d.error) : "Не удалось создать счёт");
+        setBuying(null);
+        return;
+      }
 
       const tg = (globalThis as any)?.Telegram?.WebApp;
-      tg.openInvoice(d.invoiceLink, async (status: string) => {
+      if (!tg?.openInvoice) {
+        setShopErr("Открой мини-приложение внутри Telegram");
+        setBuying(null);
+        return;
+      }
+
+      tg.openInvoice(String(d.invoiceLink), async (status: string) => {
         if (status === "paid") {
-          await sleep(800);
+          await sleep(900);
           await refreshBalance();
+          window.dispatchEvent(new Event("balance:refresh"));
         }
         setBuying(null);
       });
     } catch {
+      setShopErr("Ошибка сети");
       setBuying(null);
     }
   }
 
   useEffect(() => {
     wrapFetch();
+
     const tg = (globalThis as any)?.Telegram?.WebApp;
     try {
       tg?.ready?.();
@@ -210,7 +220,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="badge">
               Баланс&nbsp;<b>{balance === null ? "—" : balance}</b>
             </div>
-            <button className="btn btnGhost" onClick={() => setShopOpen(true)}>
+
+            <button
+              type="button"
+              className="btn btnGhost"
+              style={{ padding: "8px 12px", borderRadius: 999 }}
+              onClick={() => {
+                setShopErr(null);
+                setShopOpen(true);
+              }}
+              aria-label="Открыть магазин"
+            >
               +
             </button>
           </div>
@@ -237,16 +257,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* SHOP */}
+      {/* SHOP MODAL */}
       <Modal open={shopOpen} title="Магазин" onClose={() => setShopOpen(false)}>
+        {/* ✅ КНОПКА "БЕСПЛАТНО" */}
+        <button
+          className="btn btnPrimary"
+          style={{ width: "100%", borderRadius: 999 }}
+          onClick={() => {
+            setShopOpen(false);
+            router.push("/free");
+          }}
+        >
+          Бесплатно
+        </button>
+
+        <div style={{ height: 12 }} />
+
         {PACKS.map((p) => (
           <div key={p.id} style={{ marginBottom: 10 }}>
-            <button className="btn btnPrimary" disabled={!!buying} onClick={() => buyPack(p.id)}>
+            <button className="btn btnPrimary" disabled={!!buying} onClick={() => buyPack(p.id)} style={{ width: "100%" }}>
               {buying === p.id ? "Ожидаю оплату…" : p.label}
             </button>
             <div className="small">{p.hint}</div>
           </div>
         ))}
+
+        {shopErr ? (
+          <div className="small" style={{ marginTop: 10 }}>
+            <b>Ошибка:</b> {shopErr}
+          </div>
+        ) : null}
       </Modal>
     </>
   );
