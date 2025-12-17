@@ -12,7 +12,7 @@ type Offer = {
 };
 
 type MeResp =
-  | { ok: true; user?: { id: string }; balance?: number }
+  | { ok: true; user: { id: string }; balance: number }
   | { ok: false; error?: string };
 
 function tg() {
@@ -35,9 +35,7 @@ function openTgLink(url: string) {
     }
   } catch {}
 
-  try {
-    window.open(u, "_blank", "noopener,noreferrer");
-  } catch {}
+  window.open(u, "_blank", "noopener,noreferrer");
 }
 
 function prettyUrl(u: string) {
@@ -56,8 +54,9 @@ function Card({
       style={{
         borderRadius: 18,
         padding: 14,
-        border: "1px solid rgba(255,255,255,0.10)",
-        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(0,0,0,0.06)",
+        background: "rgba(255,255,255,0.9)",
+        boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
         ...style,
       }}
     >
@@ -66,7 +65,7 @@ function Card({
   );
 }
 
-function Chip({
+function Pill({
   children,
   tone = "neutral",
 }: {
@@ -81,21 +80,18 @@ function Chip({
     borderRadius: 999,
     fontSize: 12,
     lineHeight: 1,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.06)",
-    opacity: 0.95,
+    border: "1px solid rgba(0,0,0,0.06)",
+    background: "rgba(0,0,0,0.03)",
     userSelect: "none",
   };
-
   if (tone === "good") {
-    base.border = "1px solid rgba(255,255,255,0.14)";
-    base.background = "rgba(255,255,255,0.10)";
+    base.background = "rgba(46, 204, 113, 0.10)";
+    base.border = "1px solid rgba(46, 204, 113, 0.25)";
   }
   if (tone === "warn") {
-    base.border = "1px solid rgba(255,255,255,0.14)";
-    base.background = "rgba(255,255,255,0.08)";
+    base.background = "rgba(241, 196, 15, 0.14)";
+    base.border = "1px solid rgba(241, 196, 15, 0.35)";
   }
-
   return <span style={base}>{children}</span>;
 }
 
@@ -105,9 +101,7 @@ export default function FreePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // открыл "Открыть" (в рамках текущей страницы)
   const [opened, setOpened] = useState<Record<string, boolean>>({});
-  // забрано локально
   const [claimedLocal, setClaimedLocal] = useState<Record<string, boolean>>({});
 
   const [busyOpen, setBusyOpen] = useState<string | null>(null);
@@ -115,7 +109,6 @@ export default function FreePage() {
 
   const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // referral
   const [myUserId, setMyUserId] = useState<string>("");
   const botUsername = (process.env.NEXT_PUBLIC_BOT_USERNAME || "tarotday1_bot").replace(/^@/, "");
   const refLink = myUserId ? `https://t.me/${botUsername}?start=ref_${myUserId}` : "";
@@ -144,24 +137,17 @@ export default function FreePage() {
     setToast(null);
 
     try {
-      const r = await fetch("/api/free/offers", {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
-
+      const r = await fetch("/api/free/offers", { credentials: "include", cache: "no-store" });
       const d = await r.json().catch(() => ({}));
       const list: Offer[] = Array.isArray(d?.offers) ? d.offers : [];
 
       setOffers(list);
 
       const m: Record<string, boolean> = {};
-      for (const o of list) {
-        if (o?.id && o?.claimed) m[o.id] = true;
-      }
+      for (const o of list) if (o?.id && o?.claimed) m[o.id] = true;
       setClaimedLocal((prev) => ({ ...prev, ...m }));
     } catch {
-      setToast({ type: "err", text: "Не удалось загрузить задания. Проверь интернет и попробуй ещё раз." });
+      setToast({ type: "err", text: "Не удалось загрузить задания. Попробуй ещё раз." });
     } finally {
       setLoading(false);
     }
@@ -201,7 +187,6 @@ export default function FreePage() {
         cache: "no-store",
         body: JSON.stringify({ offerId }),
       });
-
       const d = await r.json().catch(() => ({}));
 
       if (d?.ok) {
@@ -212,8 +197,7 @@ export default function FreePage() {
         const e = String(d?.error || "UNKNOWN");
         if (e === "OPEN_REQUIRED") setToast({ type: "err", text: "Сначала нажми «Открыть», потом можно «Забрать»." });
         else if (e === "ALREADY") setToast({ type: "err", text: "Ты уже забрал награду за это задание." });
-        else if (e === "NOT_FOUND") setToast({ type: "err", text: "Задание не найдено или отключено." });
-        else setToast({ type: "err", text: "Не получилось забрать награду. Попробуй ещё раз." });
+        else setToast({ type: "err", text: "Не получилось забрать. Попробуй ещё раз." });
       }
     } catch {
       setToast({ type: "err", text: "Ошибка сети. Попробуй ещё раз." });
@@ -224,8 +208,21 @@ export default function FreePage() {
 
   async function copyText(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
-      setToast({ type: "ok", text: "Скопировано ✅" });
+      // fallback для Telegram WebView: clipboard может быть запрещён
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setToast({ type: "ok", text: "Ссылка скопирована ✅" });
     } catch {
       setToast({ type: "err", text: "Не получилось скопировать 😕" });
     }
@@ -233,19 +230,7 @@ export default function FreePage() {
 
   function shareRef() {
     if (!refLink) return;
-    // telegram share
     openTgLink(`https://t.me/share/url?url=${encodeURIComponent(refLink)}`);
-  }
-
-  function closePage() {
-    try {
-      const t = tg();
-      if (t?.close) {
-        t.close();
-        return;
-      }
-    } catch {}
-    router.push("/");
   }
 
   useEffect(() => {
@@ -258,29 +243,29 @@ export default function FreePage() {
   }, []);
 
   return (
-    <div style={{ paddingBottom: 110 }}>
-      {/* Header */}
-      <div
-        style={{
-          borderRadius: 18,
-          padding: 16,
-          border: "1px solid rgba(255,255,255,0.10)",
-          background:
-            "radial-gradient(1200px 400px at 10% -20%, rgba(255,255,255,0.10), transparent 60%), rgba(255,255,255,0.03)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    <div
+      style={{
+        paddingBottom: 110,
+        paddingTop: 10,
+        background:
+          "radial-gradient(800px 300px at 15% 0%, rgba(255,255,255,0.9), rgba(245,242,235,1) 60%)",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Top */}
+      <div style={{ padding: "0 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Бесплатно</div>
-            <div className="small" style={{ marginTop: 6, opacity: 0.9 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.1 }}>Бесплатно</div>
+            <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
               Нажми <b>«Открыть»</b> → затем станет доступно <b>«Забрать»</b>.
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn btnGhost"
-              style={{ borderRadius: 999, padding: "10px 14px", whiteSpace: "nowrap" }}
+              style={{ borderRadius: 999, padding: "10px 14px", background: "rgba(255,255,255,0.9)" }}
               onClick={loadOffers}
               disabled={loading}
             >
@@ -288,93 +273,68 @@ export default function FreePage() {
             </button>
             <button
               className="btn btnGhost"
-              style={{ borderRadius: 999, padding: "10px 14px", whiteSpace: "nowrap" }}
-              onClick={closePage}
+              style={{ borderRadius: 999, padding: "10px 14px", background: "rgba(255,255,255,0.9)" }}
+              onClick={() => router.push("/")}
             >
-              Закрыть
+              На главную
             </button>
           </div>
         </div>
 
         {toast ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: toast.type === "ok" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-            }}
-            className="small"
-          >
-            {toast.type === "ok" ? "✅ " : "⚠️ "}
-            {toast.text}
+          <div style={{ marginTop: 10 }}>
+            <Card style={{ padding: 12, background: toast.type === "ok" ? "rgba(46,204,113,0.10)" : "rgba(241,196,15,0.16)" }}>
+              <div style={{ fontSize: 13 }}>
+                {toast.type === "ok" ? "✅ " : "⚠️ "}
+                {toast.text}
+              </div>
+            </Card>
           </div>
         ) : null}
       </div>
 
       {/* Referral */}
-      <div style={{ marginTop: 12 }}>
+      <div style={{ padding: "14px 14px 0" }}>
         <Card>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.15 }}>Рефералка</div>
-              <div className="small" style={{ marginTop: 6, opacity: 0.85 }}>
-                Отправь другу ссылку — если он новый пользователь, тебе начислится <b>+500</b>.
-              </div>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>Рефералка</div>
+          <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
+            Отправь другу ссылку — если он <b>новый</b> пользователь, тебе начислится <b>+500</b>.
+          </div>
 
-              <div
-                className="small"
-                style={{
-                  marginTop: 10,
-                  padding: "10px 12px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background: "rgba(255,255,255,0.06)",
-                  wordBreak: "break-all",
-                  userSelect: "text",
-                  opacity: refLink ? 0.95 : 0.6,
-                }}
-              >
-                {refLink || "Загрузка ссылки…"}
-              </div>
-            </div>
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 14,
+              border: "1px solid rgba(0,0,0,0.06)",
+              background: "rgba(0,0,0,0.03)",
+              wordBreak: "break-all",
+              fontSize: 12,
+              opacity: refLink ? 1 : 0.6,
+            }}
+          >
+            {refLink || "Загрузка ссылки…"}
+          </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 140 }}>
-              <button
-                className="btn btnPrimary"
-                style={{ borderRadius: 999, padding: "10px 14px" }}
-                onClick={() => refLink && copyText(refLink)}
-                disabled={!refLink}
-              >
-                Скопировать
-              </button>
-
-              <button
-                className="btn btnGhost"
-                style={{ borderRadius: 999, padding: "10px 14px" }}
-                onClick={shareRef}
-                disabled={!refLink}
-              >
-                Поделиться
-              </button>
-            </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <button className="btn btnPrimary" style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }} onClick={() => refLink && copyText(refLink)} disabled={!refLink}>
+              Скопировать
+            </button>
+            <button className="btn btnGhost" style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }} onClick={shareRef} disabled={!refLink}>
+              Поделиться
+            </button>
           </div>
         </Card>
       </div>
 
       {/* Offers */}
-      <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+      <div style={{ padding: "12px 14px 0", display: "grid", gap: 12 }}>
         {loading ? (
-          <div className="small" style={{ marginTop: 4, opacity: 0.9 }}>
-            Загрузка…
-          </div>
+          <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Загрузка…</div>
         ) : null}
 
         {!loading && sortedOffers.length === 0 ? (
-          <div className="small" style={{ marginTop: 4, opacity: 0.9 }}>
-            Пока нет доступных заданий.
-          </div>
+          <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Пока нет доступных заданий.</div>
         ) : null}
 
         {sortedOffers.map((o) => {
@@ -385,33 +345,12 @@ export default function FreePage() {
             <Card key={o.id}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.15 }}>{o.title}</div>
+                  <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{o.title}</div>
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, wordBreak: "break-all" }}>{prettyUrl(o.url)}</div>
 
-                  {/* URL visible but not clickable */}
-                  <div
-                    className="small"
-                    style={{
-                      marginTop: 6,
-                      opacity: 0.75,
-                      wordBreak: "break-all",
-                      userSelect: "text",
-                    }}
-                  >
-                    {prettyUrl(o.url)}
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <Chip>
-                      🎁 +<b>{o.reward}</b>
-                    </Chip>
-
-                    {alreadyClaimed ? (
-                      <Chip tone="good">✅ Забрано</Chip>
-                    ) : opened[o.id] ? (
-                      <Chip tone="good">🟢 Можно забрать</Chip>
-                    ) : (
-                      <Chip tone="warn">🔒 Сначала «Открыть»</Chip>
-                    )}
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Pill>🎁 +{o.reward}</Pill>
+                    {alreadyClaimed ? <Pill tone="good">✅ Забрано</Pill> : opened[o.id] ? <Pill tone="good">🟢 Можно забрать</Pill> : <Pill tone="warn">🔒 Сначала «Открыть»</Pill>}
                   </div>
                 </div>
               </div>
@@ -419,7 +358,7 @@ export default function FreePage() {
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                 <button
                   className="btn btnPrimary"
-                  style={{ borderRadius: 999, padding: "10px 14px" }}
+                  style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }}
                   onClick={() => openOffer(o.id, o.url)}
                   disabled={busyOpen !== null || alreadyClaimed}
                 >
@@ -428,18 +367,17 @@ export default function FreePage() {
 
                 <button
                   className="btn btnGhost"
-                  style={{ borderRadius: 999, padding: "10px 14px", opacity: canClaim ? 1 : 0.75 }}
+                  style={{ borderRadius: 999, padding: "10px 14px", flex: 1, opacity: canClaim ? 1 : 0.6 }}
                   onClick={() => claimOffer(o.id)}
                   disabled={!canClaim || busyClaim !== null}
-                  title={!opened[o.id] ? "Сначала нажми «Открыть»" : ""}
                 >
                   {busyClaim === o.id ? "Проверяю…" : "Забрать"}
                 </button>
               </div>
 
               {!alreadyClaimed && !opened[o.id] ? (
-                <div className="small" style={{ marginTop: 10, opacity: 0.85 }}>
-                  Нажми <b>«Открыть»</b> — это разблокирует <b>«Забрать»</b>.
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
+                  Нажми <b>«Открыть»</b>, чтобы разблокировать <b>«Забрать»</b>.
                 </div>
               ) : null}
             </Card>
