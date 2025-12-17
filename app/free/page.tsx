@@ -55,8 +55,8 @@ function Card({
         borderRadius: 18,
         padding: 14,
         border: "1px solid rgba(0,0,0,0.06)",
-        background: "rgba(255,255,255,0.9)",
-        boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
+        background: "rgba(255,255,255,0.92)",
+        boxShadow: "0 10px 26px rgba(0,0,0,0.06)",
         ...style,
       }}
     >
@@ -83,6 +83,7 @@ function Pill({
     border: "1px solid rgba(0,0,0,0.06)",
     background: "rgba(0,0,0,0.03)",
     userSelect: "none",
+    whiteSpace: "nowrap",
   };
   if (tone === "good") {
     base.background = "rgba(46, 204, 113, 0.10)";
@@ -93,6 +94,40 @@ function Pill({
     base.border = "1px solid rgba(241, 196, 15, 0.35)";
   }
   return <span style={base}>{children}</span>;
+}
+
+function IconButton({
+  title,
+  onClick,
+  disabled,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className="btn btnGhost"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 42,
+        height: 42,
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(0,0,0,0.06)",
+        boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
+      }}
+    >
+      <span style={{ fontSize: 18, lineHeight: 1 }}>{children}</span>
+    </button>
+  );
 }
 
 export default function FreePage() {
@@ -109,9 +144,16 @@ export default function FreePage() {
 
   const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  // referral
   const [myUserId, setMyUserId] = useState<string>("");
+
   const botUsername = (process.env.NEXT_PUBLIC_BOT_USERNAME || "tarotday1_bot").replace(/^@/, "");
-  const refLink = myUserId ? `https://t.me/${botUsername}?start=ref_${myUserId}` : "";
+  const shortName = (process.env.NEXT_PUBLIC_TMA_SHORT_NAME || "day").trim();
+
+  // ✅ startapp link
+  const refLink = myUserId
+    ? `https://t.me/${botUsername}/${shortName}?startapp=ref_${myUserId}`
+    : "";
 
   const sortedOffers = useMemo(() => {
     const arr = [...offers];
@@ -127,7 +169,7 @@ export default function FreePage() {
   async function loadMe() {
     try {
       const r = await fetch("/api/me", { credentials: "include", cache: "no-store" });
-      const d: MeResp = await r.json().catch(() => ({ ok: false }));
+      const d: MeResp = await r.json().catch(() => ({ ok: false } as any));
       if ((d as any)?.ok && (d as any)?.user?.id) setMyUserId((d as any).user.id);
     } catch {}
   }
@@ -208,7 +250,6 @@ export default function FreePage() {
 
   async function copyText(text: string) {
     try {
-      // fallback для Telegram WebView: clipboard может быть запрещён
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       } else {
@@ -247,43 +288,53 @@ export default function FreePage() {
       style={{
         paddingBottom: 110,
         paddingTop: 10,
-        background:
-          "radial-gradient(800px 300px at 15% 0%, rgba(255,255,255,0.9), rgba(245,242,235,1) 60%)",
         minHeight: "100vh",
+        background:
+          "radial-gradient(900px 340px at 15% 0%, rgba(255,255,255,0.95), rgba(246,242,234,1) 60%)",
       }}
     >
-      {/* Top */}
+      {/* Top bar */}
       <div style={{ padding: "0 14px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.1 }}>Бесплатно</div>
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.05 }}>Бесплатно</div>
             <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
-              Нажми <b>«Открыть»</b> → затем станет доступно <b>«Забрать»</b>.
+              Нажми <b>«Открыть»</b> → потом <b>«Забрать»</b>.
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <IconButton title="Обновить" onClick={loadOffers} disabled={loading}>
+              ↻
+            </IconButton>
+
             <button
               className="btn btnGhost"
-              style={{ borderRadius: 999, padding: "10px 14px", background: "rgba(255,255,255,0.9)" }}
-              onClick={loadOffers}
-              disabled={loading}
-            >
-              {loading ? "…" : "Обновить"}
-            </button>
-            <button
-              className="btn btnGhost"
-              style={{ borderRadius: 999, padding: "10px 14px", background: "rgba(255,255,255,0.9)" }}
               onClick={() => router.push("/")}
+              style={{
+                height: 42,
+                borderRadius: 999,
+                padding: "0 14px",
+                background: "rgba(255,255,255,0.92)",
+                border: "1px solid rgba(0,0,0,0.06)",
+                boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
+                fontWeight: 800,
+              }}
+              title="На главную"
             >
-              На главную
+              ← Назад
             </button>
           </div>
         </div>
 
         {toast ? (
           <div style={{ marginTop: 10 }}>
-            <Card style={{ padding: 12, background: toast.type === "ok" ? "rgba(46,204,113,0.10)" : "rgba(241,196,15,0.16)" }}>
+            <Card
+              style={{
+                padding: 12,
+                background: toast.type === "ok" ? "rgba(46,204,113,0.10)" : "rgba(241,196,15,0.16)",
+              }}
+            >
               <div style={{ fontSize: 13 }}>
                 {toast.type === "ok" ? "✅ " : "⚠️ "}
                 {toast.text}
@@ -298,7 +349,7 @@ export default function FreePage() {
         <Card>
           <div style={{ fontWeight: 900, fontSize: 16 }}>Рефералка</div>
           <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
-            Отправь другу ссылку — если он <b>новый</b> пользователь, тебе начислится <b>+500</b>.
+            Отправь другу ссылку — если он <b>новый</b>, тебе начислится <b>+500</b>.
           </div>
 
           <div
@@ -311,16 +362,27 @@ export default function FreePage() {
               wordBreak: "break-all",
               fontSize: 12,
               opacity: refLink ? 1 : 0.6,
+              userSelect: "text",
             }}
           >
             {refLink || "Загрузка ссылки…"}
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <button className="btn btnPrimary" style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }} onClick={() => refLink && copyText(refLink)} disabled={!refLink}>
+            <button
+              className="btn btnPrimary"
+              style={{ borderRadius: 999, padding: "10px 14px", flex: 1, fontWeight: 800 }}
+              onClick={() => refLink && copyText(refLink)}
+              disabled={!refLink}
+            >
               Скопировать
             </button>
-            <button className="btn btnGhost" style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }} onClick={shareRef} disabled={!refLink}>
+            <button
+              className="btn btnGhost"
+              style={{ borderRadius: 999, padding: "10px 14px", flex: 1, fontWeight: 800 }}
+              onClick={shareRef}
+              disabled={!refLink}
+            >
               Поделиться
             </button>
           </div>
@@ -329,9 +391,7 @@ export default function FreePage() {
 
       {/* Offers */}
       <div style={{ padding: "12px 14px 0", display: "grid", gap: 12 }}>
-        {loading ? (
-          <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Загрузка…</div>
-        ) : null}
+        {loading ? <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Загрузка…</div> : null}
 
         {!loading && sortedOffers.length === 0 ? (
           <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Пока нет доступных заданий.</div>
@@ -343,22 +403,26 @@ export default function FreePage() {
 
           return (
             <Card key={o.id}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{o.title}</div>
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, wordBreak: "break-all" }}>{prettyUrl(o.url)}</div>
+              <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{o.title}</div>
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, wordBreak: "break-all" }}>
+                {prettyUrl(o.url)}
+              </div>
 
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Pill>🎁 +{o.reward}</Pill>
-                    {alreadyClaimed ? <Pill tone="good">✅ Забрано</Pill> : opened[o.id] ? <Pill tone="good">🟢 Можно забрать</Pill> : <Pill tone="warn">🔒 Сначала «Открыть»</Pill>}
-                  </div>
-                </div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Pill>🎁 +{o.reward}</Pill>
+                {alreadyClaimed ? (
+                  <Pill tone="good">✅ Забрано</Pill>
+                ) : opened[o.id] ? (
+                  <Pill tone="good">🟢 Можно забрать</Pill>
+                ) : (
+                  <Pill tone="warn">🔒 Сначала «Открыть»</Pill>
+                )}
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                 <button
                   className="btn btnPrimary"
-                  style={{ borderRadius: 999, padding: "10px 14px", flex: 1 }}
+                  style={{ borderRadius: 999, padding: "10px 14px", flex: 1, fontWeight: 900 }}
                   onClick={() => openOffer(o.id, o.url)}
                   disabled={busyOpen !== null || alreadyClaimed}
                 >
@@ -367,7 +431,13 @@ export default function FreePage() {
 
                 <button
                   className="btn btnGhost"
-                  style={{ borderRadius: 999, padding: "10px 14px", flex: 1, opacity: canClaim ? 1 : 0.6 }}
+                  style={{
+                    borderRadius: 999,
+                    padding: "10px 14px",
+                    flex: 1,
+                    opacity: canClaim ? 1 : 0.6,
+                    fontWeight: 900,
+                  }}
                   onClick={() => claimOffer(o.id)}
                   disabled={!canClaim || busyClaim !== null}
                 >
