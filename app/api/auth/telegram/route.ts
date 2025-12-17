@@ -35,7 +35,6 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
 
   const dataCheckString = buildDataCheckString(params);
 
-  // ✅ правильный ключ для WebApp
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
   const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
@@ -47,112 +46,14 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string) {
   return { ok: true as const, params };
 }
 
-/* ================== Referral tables ================== */
-
-async function ensureReferralTables() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ReferralPending" (
-      "inviteeTgId" TEXT PRIMARY KEY,
-      "referrerUserId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ReferralGrant" (
-      "inviteeUserId" TEXT PRIMARY KEY,
-      "referrerUserId" TEXT NOT NULL,
-      "inviteeTgId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "ReferralPending_referrer_idx" ON "ReferralPending" ("referrerUserId");
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "ReferralGrant_referrer_idx" ON "ReferralGrant" ("referrerUserId");
-  `);
+function parseReferrerIdFromStartParam(startParam: string): string | null {
+  const s = String(startParam || "").trim();
+  if (!s.startsWith("ref_")) return null;
+  const id = s.slice(4).trim();
+  if (!id) return null;
+  if (id.length < 6 || id.length > 80) return null;
+  return id;
 }
-
-async function grantReferralOnce(params: {
-  inviteeUserId: string;
-  inviteeTgId: string;
-  referrerUserId: string;
-}) {
-  await ensureReferralTables();
-
-  // защита от саморефа
-  if (params.referrerUserId === params.inviteeUserId) return { ok: false as const, reason: "SELF" };
-
-  // реферер должен существовать
-  const ref = await prisma.user.findUnique({ where: { id: params.referrerUserId }, select: { id: true } });
-  if (!ref) return { ok: false as const, reason: "REFERRER_NOT_FOUND" };
-
-  // выдаём только 1 раз на inviteeUserId
-  const inserted = await prisma.$executeRaw`
-    INSERT INTO "ReferralGrant" ("inviteeUserId","referrerUserId","inviteeTgId")
-    VALUES (${params.inviteeUserId}, ${params.referrerUserId}, ${params.inviteeTgId})
-    ON CONFLICT ("inviteeUserId") DO NOTHING
-  `;
-  if (Number(inserted) <= 0) return { ok: false as const, reason: "ALREADY" };
-
-  await prisma.user.update({
-    where: { id: params.referrerUserId },
-    data: { balance: { increment: REF_REWARD } },
-  });
-
-  try {
-    await prisma.transaction.create({
-      data: {
-        userId: params.referrerUserId,
-        type: "grant",
-        amount: REF_REWARD,
-        provider: "system",
-        providerPayload: {
-          kind: "referral",
-          inviteeUserId: params.inviteeUserId,
-          inviteeTgId: params.inviteeTgId,
-        },
-      } as any,
-    });
-  } catch {}
-
-  return { ok: true as const };
-}
-
-async function tryGrantReferralFromPending(opts: {
-  inviteeTgId: string;
-  inviteeUserId: string;
-  isNewUser: boolean;
-}) {
-  await ensureReferralTables();
-
-  const pendingRows = await prisma.$queryRaw<Array<{ referrerUserId: string }>>`
-    SELECT "referrerUserId"
-    FROM "ReferralPending"
-    WHERE "inviteeTgId" = ${opts.inviteeTgId}
-    LIMIT 1
-  `;
-  const pending = pendingRows[0];
-  if (!pending) return { ok: false as const, reason: "NO_PENDING" };
-
-  // чистим pending всегда
-  try {
-    await prisma.$executeRaw`DELETE FROM "ReferralPending" WHERE "inviteeTgId" = ${opts.inviteeTgId}`;
-  } catch {}
-
-  if (!opts.isNewUser) return { ok: false as const, reason: "NOT_NEW" };
-
-  return grantReferralOnce({
-    inviteeUserId: opts.inviteeUserId,
-    inviteeTgId: opts.inviteeTgId,
-    referrerUserId: pending.referrerUserId,
-  });
-}
-
-/* ================== Route ================== */
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -181,7 +82,10 @@ export async function POST(req: Request) {
   const tgId = tgUser?.id;
   if (!tgId) return NextResponse.json({ ok: false, error: "NO_TG_ID" }, { status: 400 });
 
-  const existing = await prisma.user.findUnique({ where: { tgId: String(tgId) }, select: { id: true } });
+  const existing = await prisma.user.findUnique({
+    where: { tgId: String(tgId) },
+    select: { id: true },
+  });
   const isNewUser = !existing;
 
   const user = await prisma.user.upsert({
@@ -189,43 +93,60 @@ export async function POST(req: Request) {
     update: {
       username: tgUser?.username ?? null,
       firstName: tgUser?.first_name ?? null,
+      lastSeenAt: new Date(),
     },
     create: {
       tgId: String(tgId),
       username: tgUser?.username ?? null,
       firstName: tgUser?.first_name ?? null,
       balance: 250,
+      lastSeenAt: new Date(),
     },
     select: { id: true, tgId: true, username: true, firstName: true, balance: true },
   });
 
-  try {
-    await prisma.$executeRaw`UPDATE "User" SET "lastSeenAt" = now() WHERE "id" = ${user.id}`;
-  } catch {}
-
-  // ✅ 1) СНАЧАЛА: рефералка напрямую через start_param (самый надёжный путь)
-  // Telegram передаёт start_param в initData если запускали из deep link start=...
+  // ✅ Рефералка ТОЛЬКО под твою таблицу ReferralGrant(referrerId, newUserId UNIQUE)
   const startParam = String(ver.params.get("start_param") || "").trim();
-  if (isNewUser && startParam.startsWith("ref_")) {
-    const referrerUserId = startParam.slice(4).trim();
-    if (referrerUserId) {
-      try {
-        await grantReferralOnce({
-          inviteeUserId: user.id,
-          inviteeTgId: String(tgId),
-          referrerUserId,
-        });
-      } catch {}
-    }
-  } else {
-    // ✅ 2) fallback: старый механизм через /start → ReferralPending
+  const referrerId = parseReferrerIdFromStartParam(startParam);
+
+  if (isNewUser && referrerId && referrerId !== user.id) {
     try {
-      await tryGrantReferralFromPending({
-        inviteeTgId: String(tgId),
-        inviteeUserId: user.id,
-        isNewUser,
-      });
-    } catch {}
+      // referrer должен существовать
+      const ref = await prisma.user.findUnique({ where: { id: referrerId }, select: { id: true } });
+      if (ref) {
+        const inserted = await prisma.$executeRaw`
+          INSERT INTO "ReferralGrant" ("referrerId","newUserId")
+          VALUES (${referrerId}, ${user.id})
+          ON CONFLICT ("newUserId") DO NOTHING
+        `;
+
+        if (Number(inserted) > 0) {
+          await prisma.user.update({
+            where: { id: referrerId },
+            data: { balance: { increment: REF_REWARD } },
+          });
+
+          // транзакция (если модель есть)
+          try {
+            await prisma.transaction.create({
+              data: {
+                userId: referrerId,
+                type: "grant",
+                amount: REF_REWARD,
+                provider: "system",
+                providerPayload: {
+                  kind: "referral",
+                  newUserId: user.id,
+                  newUserTgId: String(tgId),
+                },
+              } as any,
+            });
+          } catch {}
+        }
+      }
+    } catch {
+      // не ломаем auth
+    }
   }
 
   const token = await signSession({ userId: user.id });
