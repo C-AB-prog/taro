@@ -11,10 +11,6 @@ type Offer = {
   claimed: boolean;
 };
 
-type MeResp =
-  | { ok: true; user: { id: string }; balance: number }
-  | { ok: false; error?: string };
-
 function tg() {
   return (globalThis as any)?.Telegram?.WebApp;
 }
@@ -65,7 +61,7 @@ function Card({
   );
 }
 
-function Pill({
+function Tag({
   children,
   tone = "neutral",
 }: {
@@ -85,6 +81,7 @@ function Pill({
     userSelect: "none",
     whiteSpace: "nowrap",
   };
+
   if (tone === "good") {
     base.background = "rgba(46, 204, 113, 0.10)";
     base.border = "1px solid rgba(46, 204, 113, 0.25)";
@@ -93,6 +90,7 @@ function Pill({
     base.background = "rgba(241, 196, 15, 0.14)";
     base.border = "1px solid rgba(241, 196, 15, 0.35)";
   }
+
   return <span style={base}>{children}</span>;
 }
 
@@ -136,24 +134,15 @@ export default function FreePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // открыл "Открыть" (в рамках текущей страницы)
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  // забрано локально
   const [claimedLocal, setClaimedLocal] = useState<Record<string, boolean>>({});
 
   const [busyOpen, setBusyOpen] = useState<string | null>(null);
   const [busyClaim, setBusyClaim] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-
-  // referral
-  const [myUserId, setMyUserId] = useState<string>("");
-
-  const botUsername = (process.env.NEXT_PUBLIC_BOT_USERNAME || "tarotday1_bot").replace(/^@/, "");
-  const shortName = (process.env.NEXT_PUBLIC_TMA_SHORT_NAME || "day").trim();
-
-  // ✅ startapp link
-  const refLink = myUserId
-    ? `https://t.me/${botUsername}/${shortName}?startapp=ref_${myUserId}`
-    : "";
 
   const sortedOffers = useMemo(() => {
     const arr = [...offers];
@@ -166,27 +155,26 @@ export default function FreePage() {
     return arr;
   }, [offers, claimedLocal]);
 
-  async function loadMe() {
-    try {
-      const r = await fetch("/api/me", { credentials: "include", cache: "no-store" });
-      const d: MeResp = await r.json().catch(() => ({ ok: false } as any));
-      if ((d as any)?.ok && (d as any)?.user?.id) setMyUserId((d as any).user.id);
-    } catch {}
-  }
-
   async function loadOffers() {
     setLoading(true);
     setToast(null);
 
     try {
-      const r = await fetch("/api/free/offers", { credentials: "include", cache: "no-store" });
+      const r = await fetch("/api/free/offers", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
       const d = await r.json().catch(() => ({}));
       const list: Offer[] = Array.isArray(d?.offers) ? d.offers : [];
 
       setOffers(list);
 
       const m: Record<string, boolean> = {};
-      for (const o of list) if (o?.id && o?.claimed) m[o.id] = true;
+      for (const o of list) {
+        if (o?.id && o?.claimed) m[o.id] = true;
+      }
       setClaimedLocal((prev) => ({ ...prev, ...m }));
     } catch {
       setToast({ type: "err", text: "Не удалось загрузить задания. Попробуй ещё раз." });
@@ -201,6 +189,7 @@ export default function FreePage() {
     setToast(null);
 
     try {
+      // фиксируем факт нажатия "Открыть"
       await fetch("/api/free/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -209,7 +198,10 @@ export default function FreePage() {
         body: JSON.stringify({ offerId }),
       }).catch(() => null);
 
+      // разблокируем "Забрать"
       setOpened((p) => ({ ...p, [offerId]: true }));
+
+      // реально открываем ссылку
       openTgLink(url);
     } finally {
       setBusyOpen(null);
@@ -229,6 +221,7 @@ export default function FreePage() {
         cache: "no-store",
         body: JSON.stringify({ offerId }),
       });
+
       const d = await r.json().catch(() => ({}));
 
       if (d?.ok) {
@@ -239,7 +232,8 @@ export default function FreePage() {
         const e = String(d?.error || "UNKNOWN");
         if (e === "OPEN_REQUIRED") setToast({ type: "err", text: "Сначала нажми «Открыть», потом можно «Забрать»." });
         else if (e === "ALREADY") setToast({ type: "err", text: "Ты уже забрал награду за это задание." });
-        else setToast({ type: "err", text: "Не получилось забрать. Попробуй ещё раз." });
+        else if (e === "NOT_FOUND") setToast({ type: "err", text: "Задание не найдено или отключено." });
+        else setToast({ type: "err", text: "Не получилось забрать награду. Попробуй ещё раз." });
       }
     } catch {
       setToast({ type: "err", text: "Ошибка сети. Попробуй ещё раз." });
@@ -248,49 +242,22 @@ export default function FreePage() {
     }
   }
 
-  async function copyText(text: string) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      setToast({ type: "ok", text: "Ссылка скопирована ✅" });
-    } catch {
-      setToast({ type: "err", text: "Не получилось скопировать 😕" });
-    }
-  }
-
-  function shareRef() {
-    if (!refLink) return;
-    openTgLink(`https://t.me/share/url?url=${encodeURIComponent(refLink)}`);
-  }
-
   useEffect(() => {
     try {
       tg()?.ready?.();
       tg()?.expand?.();
     } catch {}
-    loadMe();
     loadOffers();
   }, []);
 
   return (
     <div
       style={{
+        minHeight: "100vh",
         paddingBottom: 110,
         paddingTop: 10,
-        minHeight: "100vh",
         background:
-          "radial-gradient(900px 340px at 15% 0%, rgba(255,255,255,0.95), rgba(246,242,234,1) 60%)",
+          "radial-gradient(900px 340px at 15% 0%, rgba(255,255,255,0.96), rgba(246,242,234,1) 60%)",
       }}
     >
       {/* Top bar */}
@@ -318,7 +285,7 @@ export default function FreePage() {
                 background: "rgba(255,255,255,0.92)",
                 border: "1px solid rgba(0,0,0,0.06)",
                 boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
-                fontWeight: 800,
+                fontWeight: 900,
               }}
               title="На главную"
             >
@@ -327,6 +294,7 @@ export default function FreePage() {
           </div>
         </div>
 
+        {/* Toast */}
         {toast ? (
           <div style={{ marginTop: 10 }}>
             <Card
@@ -344,54 +312,11 @@ export default function FreePage() {
         ) : null}
       </div>
 
-      {/* Referral */}
-      <div style={{ padding: "14px 14px 0" }}>
-        <Card>
-          <div style={{ fontWeight: 900, fontSize: 16 }}>Рефералка</div>
-          <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
-            Отправь другу ссылку — если он <b>новый</b>, тебе начислится <b>+500</b>.
-          </div>
-
-          <div
-            style={{
-              marginTop: 10,
-              padding: "10px 12px",
-              borderRadius: 14,
-              border: "1px solid rgba(0,0,0,0.06)",
-              background: "rgba(0,0,0,0.03)",
-              wordBreak: "break-all",
-              fontSize: 12,
-              opacity: refLink ? 1 : 0.6,
-              userSelect: "text",
-            }}
-          >
-            {refLink || "Загрузка ссылки…"}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <button
-              className="btn btnPrimary"
-              style={{ borderRadius: 999, padding: "10px 14px", flex: 1, fontWeight: 800 }}
-              onClick={() => refLink && copyText(refLink)}
-              disabled={!refLink}
-            >
-              Скопировать
-            </button>
-            <button
-              className="btn btnGhost"
-              style={{ borderRadius: 999, padding: "10px 14px", flex: 1, fontWeight: 800 }}
-              onClick={shareRef}
-              disabled={!refLink}
-            >
-              Поделиться
-            </button>
-          </div>
-        </Card>
-      </div>
-
-      {/* Offers */}
-      <div style={{ padding: "12px 14px 0", display: "grid", gap: 12 }}>
-        {loading ? <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Загрузка…</div> : null}
+      {/* List */}
+      <div style={{ padding: "14px 14px 0", display: "grid", gap: 12 }}>
+        {loading ? (
+          <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Загрузка…</div>
+        ) : null}
 
         {!loading && sortedOffers.length === 0 ? (
           <div style={{ fontSize: 13, opacity: 0.75, padding: "0 2px" }}>Пока нет доступных заданий.</div>
@@ -403,20 +328,24 @@ export default function FreePage() {
 
           return (
             <Card key={o.id}>
-              <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{o.title}</div>
-              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, wordBreak: "break-all" }}>
-                {prettyUrl(o.url)}
-              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{o.title}</div>
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, wordBreak: "break-all" }}>
+                    {prettyUrl(o.url)}
+                  </div>
 
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Pill>🎁 +{o.reward}</Pill>
-                {alreadyClaimed ? (
-                  <Pill tone="good">✅ Забрано</Pill>
-                ) : opened[o.id] ? (
-                  <Pill tone="good">🟢 Можно забрать</Pill>
-                ) : (
-                  <Pill tone="warn">🔒 Сначала «Открыть»</Pill>
-                )}
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Tag>🎁 +{o.reward}</Tag>
+                    {alreadyClaimed ? (
+                      <Tag tone="good">✅ Забрано</Tag>
+                    ) : opened[o.id] ? (
+                      <Tag tone="good">🟢 Можно забрать</Tag>
+                    ) : (
+                      <Tag tone="warn">🔒 Сначала «Открыть»</Tag>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
@@ -440,6 +369,7 @@ export default function FreePage() {
                   }}
                   onClick={() => claimOffer(o.id)}
                   disabled={!canClaim || busyClaim !== null}
+                  title={!opened[o.id] ? "Сначала нажми «Открыть»" : ""}
                 >
                   {busyClaim === o.id ? "Проверяю…" : "Забрать"}
                 </button>
