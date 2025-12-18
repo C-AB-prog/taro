@@ -32,8 +32,6 @@ async function tgCall(method: string, payload: any) {
 function getCommandText(msg: any): { cmd: string; args: string } | null {
   const text = String(msg?.text || "").trim();
   if (!text.startsWith("/")) return null;
-
-  // command may include "@botname"
   const first = text.split(/\s+/)[0] || "";
   const cmd = first.split("@")[0] || "";
   const args = text.slice(first.length).trim();
@@ -41,7 +39,6 @@ function getCommandText(msg: any): { cmd: string; args: string } | null {
 }
 
 function buildMainWebAppKeyboard() {
-  // Button name required: "Карта дня"
   return {
     inline_keyboard: [
       [
@@ -55,31 +52,36 @@ function buildMainWebAppKeyboard() {
 }
 
 function welcomeText() {
-  // Bright & long welcome
   return (
     `✨ Добро пожаловать в Daily Tarot ✨\n\n` +
     `Здесь ты можешь:\n` +
     `• Получать «Карту дня» и короткий смысл\n` +
-    `• Делать расклады \n` +
-    `• Крутить колесо и получать бонусы\n` +
-    `• Выполнять задания и зарабатывать 💰\n\n` +
-    `🃏 Нажми кнопку «Карта дня» ниже — и приложение откроется прямо в Telegram.\n\n`
+    `• Делать расклады для себя и друзей\n` +
+    `• Крутить колесо\n` +
+    `🃏 Нажми кнопку «Карта дня» ниже — приложение откроется прямо в Telegram.\n\n`
   );
 }
 
 async function handleStart(chatId: number) {
-  // Send photo + long message + button "Карта дня"
   const photoUrl = APP_URL ? `${APP_URL}/logo.png` : undefined;
 
-  if (photoUrl) {
-    await tgCall("sendPhoto", {
-      chat_id: chatId,
-      photo: photoUrl,
-      caption: welcomeText(),
-      parse_mode: "HTML",
-      reply_markup: buildMainWebAppKeyboard(),
-    });
-  } else {
+  try {
+    if (photoUrl) {
+      await tgCall("sendPhoto", {
+        chat_id: chatId,
+        photo: photoUrl,
+        caption: welcomeText(),
+        reply_markup: buildMainWebAppKeyboard(),
+      });
+    } else {
+      await tgCall("sendMessage", {
+        chat_id: chatId,
+        text: welcomeText(),
+        reply_markup: buildMainWebAppKeyboard(),
+      });
+    }
+  } catch {
+    // fallback
     await tgCall("sendMessage", {
       chat_id: chatId,
       text: welcomeText(),
@@ -119,34 +121,40 @@ async function handleStat(chatId: number) {
 }
 
 async function handleListAd(chatId: number) {
-  const rows = await prisma.$queryRaw<
-    Array<{ id: string; title: string; url: string; reward: number; active: boolean; createdAt: Date }>
-  >`
-    SELECT "id","title","url","reward","active","createdAt"
-    FROM "AdOffer"
-    WHERE "active" = true
-    ORDER BY "sort" DESC, "createdAt" DESC
-    LIMIT 30
-  `;
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{ id: string; title: string; url: string; reward: number; active: boolean; createdAt: Date }>
+    >`
+      SELECT "id","title","url","reward","active","createdAt"
+      FROM "AdOffer"
+      WHERE "active" = true
+      ORDER BY "sort" DESC, "createdAt" DESC
+      LIMIT 30
+    `;
 
-  if (!rows.length) {
-    await tgCall("sendMessage", { chat_id: chatId, text: "Пока нет активных рекламных кампаний." });
-    return;
+    if (!rows.length) {
+      await tgCall("sendMessage", { chat_id: chatId, text: "Пока нет активных рекламных кампаний." });
+      return;
+    }
+
+    const lines = rows.map((r, i) => {
+      const dt = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 19).replace("T", " ") : "";
+      return `${i + 1}) id: ${r.id}\n   +${r.reward} | ${r.title}\n   ${r.url}\n   ${dt}`;
+    });
+
+    await tgCall("sendMessage", {
+      chat_id: chatId,
+      text: `📣 Активные кампании:\n\n${lines.join("\n\n")}`,
+      disable_web_page_preview: true,
+    });
+  } catch (e: any) {
+    await tgCall("sendMessage", {
+      chat_id: chatId,
+      text: `⚠️ Ошибка /listad: ${String(e?.message || e)}`,
+    });
   }
-
-  const lines = rows.map((r, i) => {
-    const dt = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 19).replace("T", " ") : "";
-    return `${i + 1}) id: ${r.id}\n   +${r.reward} | ${r.title}\n   ${r.url}\n   ${dt}`;
-  });
-
-  await tgCall("sendMessage", {
-    chat_id: chatId,
-    text: `📣 Активные кампании:\n\n${lines.join("\n\n")}`,
-    disable_web_page_preview: true,
-  });
 }
 
-// Campaign model: /addad always creates a new AdOffer (new id), even if url same.
 async function handleAddAd(chatId: number, args: string) {
   // /addad <reward> <url> <title...>
   const parts = String(args || "").trim().split(/\s+/).filter(Boolean);
@@ -167,24 +175,31 @@ async function handleAddAd(chatId: number, args: string) {
     return;
   }
 
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    INSERT INTO "AdOffer" ("title","url","reward","active")
-    VALUES (${title}, ${url}, ${Math.floor(reward)}, true)
-    RETURNING "id"
-  `;
-  const id = rows[0]?.id;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO "AdOffer" ("title","url","reward","active","sort")
+      VALUES (${title}, ${url}, ${Math.floor(reward)}, true, 0)
+      RETURNING "id"
+    `;
+    const id = rows[0]?.id;
 
-  await tgCall("sendMessage", {
-    chat_id: chatId,
-    text:
-      `✅ Добавлена новая кампания\n\n` +
-      `id: ${id}\n` +
-      `reward: +${Math.floor(reward)}\n` +
-      `title: ${title}\n` +
-      `url: ${url}\n\n` +
-      `Чтобы отключить:\n/delad ${id}`,
-    disable_web_page_preview: true,
-  });
+    await tgCall("sendMessage", {
+      chat_id: chatId,
+      text:
+        `✅ Добавлена новая кампания\n\n` +
+        `id: ${id}\n` +
+        `reward: +${Math.floor(reward)}\n` +
+        `title: ${title}\n` +
+        `url: ${url}\n\n` +
+        `Отключить:\n/delad ${id}`,
+      disable_web_page_preview: true,
+    });
+  } catch (e: any) {
+    await tgCall("sendMessage", {
+      chat_id: chatId,
+      text: `⚠️ Ошибка /addad: ${String(e?.message || e)}\n\nПроверь, что в БД есть таблица AdOffer и колонка sort.`,
+    });
+  }
 }
 
 async function handleDelAd(chatId: number, args: string) {
@@ -195,42 +210,45 @@ async function handleDelAd(chatId: number, args: string) {
     return;
   }
 
-  // if looks like URL -> disable latest active by url
-  if (/^https?:\/\//i.test(key)) {
-    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT "id"
-      FROM "AdOffer"
-      WHERE "url" = ${key} AND "active" = true
-      ORDER BY "createdAt" DESC
-      LIMIT 1
-    `;
-    const id = rows[0]?.id;
-    if (!id) {
-      await tgCall("sendMessage", { chat_id: chatId, text: "⚠️ Активная кампания по этой ссылке не найдена." });
+  try {
+    if (/^https?:\/\//i.test(key)) {
+      const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "AdOffer"
+        WHERE "url" = ${key} AND "active" = true
+        ORDER BY "createdAt" DESC
+        LIMIT 1
+      `;
+      const id = rows[0]?.id;
+      if (!id) {
+        await tgCall("sendMessage", { chat_id: chatId, text: "⚠️ Активная кампания по этой ссылке не найдена." });
+        return;
+      }
+
+      const updated = await prisma.$executeRaw`
+        UPDATE "AdOffer" SET "active" = false WHERE "id" = ${id}
+      `;
+      await tgCall("sendMessage", {
+        chat_id: chatId,
+        text: Number(updated) > 0 ? `✅ Отключена кампания: ${id}` : `⚠️ Не получилось отключить: ${id}`,
+      });
       return;
     }
+
     const updated = await prisma.$executeRaw`
-      UPDATE "AdOffer" SET "active" = false WHERE "id" = ${id}
+      UPDATE "AdOffer" SET "active" = false WHERE "id" = ${key}
     `;
     await tgCall("sendMessage", {
       chat_id: chatId,
-      text: Number(updated) > 0 ? `✅ Отключена кампания: ${id}` : `⚠️ Не получилось отключить: ${id}`,
+      text: Number(updated) > 0 ? `✅ Кампания отключена: ${key}` : `⚠️ Не найдено: ${key}`,
     });
-    return;
+  } catch (e: any) {
+    await tgCall("sendMessage", { chat_id: chatId, text: `⚠️ Ошибка /delad: ${String(e?.message || e)}` });
   }
-
-  // otherwise treat as id
-  const updated = await prisma.$executeRaw`
-    UPDATE "AdOffer" SET "active" = false WHERE "id" = ${key}
-  `;
-  await tgCall("sendMessage", {
-    chat_id: chatId,
-    text: Number(updated) > 0 ? `✅ Кампания отключена: ${key}` : `⚠️ Не найдено: ${key}`,
-  });
 }
 
 export async function POST(req: Request) {
-  // Webhook secret verification
+  // secret check
   if (WEBHOOK_SECRET) {
     const got = req.headers.get("x-telegram-bot-api-secret-token") || "";
     if (got !== WEBHOOK_SECRET) {
@@ -294,7 +312,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // help for admins (optional)
     if (cmd === "/help" || cmd === "/admin") {
       const t =
         `Команды:\n` +
@@ -307,7 +324,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
   } catch {
-    // don't fail webhook
+    // не ломаем webhook
     return NextResponse.json({ ok: true });
   }
 
