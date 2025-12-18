@@ -5,64 +5,36 @@ import { requireUserId } from "@/lib/requireUser";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function ensureOffersTables() {
-  try {
-    await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
-  } catch {}
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdOffer" (
-      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "title" TEXT NOT NULL,
-      "url" TEXT NOT NULL UNIQUE,
-      "reward" INTEGER NOT NULL DEFAULT 100,
-      "active" BOOLEAN NOT NULL DEFAULT true,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AdClaim" (
-      "userId" TEXT NOT NULL,
-      "offerId" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY ("userId","offerId")
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdOffer_active_idx" ON "AdOffer" ("active");
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AdClaim_userId_idx" ON "AdClaim" ("userId");
-  `);
-}
-
 export async function GET(req: Request) {
-  await ensureOffersTables();
-
-  let userId = "__none__";
-  try {
-    userId = await requireUserId(req);
-  } catch {}
+  const userId = await requireUserId(req);
 
   const offers = await prisma.$queryRaw<
-    Array<{ id: string; title: string; url: string; reward: number; claimed: boolean }>
+    Array<{ id: string; title: string; url: string; reward: number }>
   >`
-    SELECT
-      o."id",
-      o."title",
-      o."url",
-      o."reward",
-      (c."userId" IS NOT NULL) AS claimed
-    FROM "AdOffer" o
-    LEFT JOIN "AdClaim" c
-      ON c."offerId" = o."id" AND c."userId" = ${userId}
-    WHERE o."active" = true
-    ORDER BY o."createdAt" DESC
-    LIMIT 50
+    SELECT "id","title","url","reward"
+    FROM "AdOffer"
+    WHERE "active" = true
+    ORDER BY "sort" DESC, "createdAt" DESC
   `;
 
-  return NextResponse.json({ ok: true, offers }, { headers: { "Cache-Control": "no-store" } });
+  const claimedRows = await prisma.$queryRaw<Array<{ offerId: string }>>`
+    SELECT "offerId"
+    FROM "AdClaim"
+    WHERE "userId" = ${userId}
+  `;
+  const claimedSet = new Set(claimedRows.map((r) => r.offerid ?? (r as any).offerId));
+
+  return NextResponse.json(
+    {
+      ok: true,
+      offers: offers.map((o) => ({
+        id: o.id,
+        title: o.title,
+        url: o.url,
+        reward: Number(o.reward) || 0,
+        claimed: claimedSet.has(o.id),
+      })),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
