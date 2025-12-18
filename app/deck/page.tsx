@@ -2,20 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { Modal } from "@/components/Modal";
 import { RitualHeader } from "@/components/RitualHeader";
 import { ruTitleFromSlug } from "@/lib/ruTitles";
-import { CARD_SLUGS, cardImage } from "@/lib/deck";
+import { CARD_SLUGS, cardImage, type CardSlug } from "@/lib/deck";
 
 type DeckCard = {
-  slug: string;
+  slug: CardSlug;
   image: string;
 };
 
 type DeckFilter = "all" | "major" | "cups" | "pentacles" | "swords" | "wands";
 
 function isMajor(slug: string) {
-  // старшие арканы у тебя идут как "0-..." "21-..."
   return /^\d+-/.test(slug);
 }
 
@@ -41,45 +39,61 @@ export default function DeckPage() {
     return allCards.filter((c) => suitOf(c.slug) === filter);
   }, [allCards, filter]);
 
-  const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState<DeckCard | null>(null);
-
-  function openCard(c: DeckCard) {
-    setPicked(c);
-    setOpen(true);
-    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
-  }
-
   return (
     <AppShell>
       <RitualHeader label="Колода" />
 
       <div className="card">
-        <div className="small">Тап по карте — откроется название и значение.</div>
+        <div className="small">Колода для просмотра. Карты не открываются.</div>
 
         <div style={{ height: 10 }} />
 
-        {/* фильтры одинакового размера */}
         <div className="segRow segRowEqual">
-          <button className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`} onClick={() => setFilter("all")}>
+          <button
+            className={`segBtn ${filter === "all" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("all")}
+            type="button"
+          >
             Все
           </button>
-          <button className={`segBtn ${filter === "major" ? "segBtnActive" : ""}`} onClick={() => setFilter("major")}>
+
+          <button
+            className={`segBtn ${filter === "major" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("major")}
+            type="button"
+          >
             Арканы
           </button>
-          <button className={`segBtn ${filter === "cups" ? "segBtnActive" : ""}`} onClick={() => setFilter("cups")}>
+
+          <button
+            className={`segBtn ${filter === "cups" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("cups")}
+            type="button"
+          >
             Кубки
           </button>
+
           <button
             className={`segBtn ${filter === "pentacles" ? "segBtnActive" : ""}`}
             onClick={() => setFilter("pentacles")}
+            type="button"
           >
             Пентакли
           </button>
-          <button className={`segBtn ${filter === "swords" ? "segBtnActive" : ""}`} onClick={() => setFilter("swords")}>
+
+          <button
+            className={`segBtn ${filter === "swords" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("swords")}
+            type="button"
+          >
             Мечи
           </button>
-          <button className={`segBtn ${filter === "wands" ? "segBtnActive" : ""}`} onClick={() => setFilter("wands")}>
+
+          <button
+            className={`segBtn ${filter === "wands" ? "segBtnActive" : ""}`}
+            onClick={() => setFilter("wands")}
+            type="button"
+          >
             Жезлы
           </button>
         </div>
@@ -96,17 +110,13 @@ export default function DeckPage() {
         }}
       >
         {cards.map((c) => (
-          <button
+          <div
             key={c.slug}
-            className="pressable"
-            onClick={() => openCard(c)}
-            type="button"
             style={{
               border: "1px solid rgba(20,16,10,.10)",
               background: "rgba(255,255,255,.70)",
               borderRadius: 16,
               padding: 8,
-              cursor: "pointer",
             }}
             aria-label={ruTitleFromSlug(c.slug)}
           >
@@ -121,32 +131,20 @@ export default function DeckPage() {
                 objectFit: "cover",
                 borderRadius: 14,
                 display: "block",
+                pointerEvents: "none", // чтобы вообще не ощущалось как кликабельное
+                userSelect: "none",
               }}
+              draggable={false}
             />
-            <div className="small" style={{ marginTop: 8, fontWeight: 900, color: "var(--text)" }}>
+            <div
+              className="small"
+              style={{ marginTop: 8, fontWeight: 900, color: "var(--text)" }}
+            >
               {ruTitleFromSlug(c.slug)}
             </div>
-          </button>
+          </div>
         ))}
       </div>
-
-      <Modal open={open} title={picked ? ruTitleFromSlug(picked.slug) : "Карта"} onClose={() => setOpen(false)}>
-        {!picked ? (
-          <p className="text">…</p>
-        ) : (
-          <div className="row">
-            <img className="img" src={picked.image} alt={ruTitleFromSlug(picked.slug)} loading="lazy" decoding="async" />
-            <div className="col">
-              <div className="title" style={{ fontSize: 16 }}>
-                {ruTitleFromSlug(picked.slug)}
-              </div>
-              <p className="text" style={{ marginTop: 8 }}>
-                Эта карта говорит через образы. Если хочешь — добавим короткое “значение” для каждой карты в отдельном словаре.
-              </p>
-            </div>
-          </div>
-        )}
-      </Modal>
     </AppShell>
   );
 }
