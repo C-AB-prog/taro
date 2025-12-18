@@ -18,11 +18,12 @@ export async function GET(req: Request) {
   `;
 
   const claimedRows = await prisma.$queryRaw<Array<{ offerId: string }>>`
-    SELECT "offerId"
+    SELECT "offerId" AS "offerId"
     FROM "AdClaim"
     WHERE "userId" = ${userId}
   `;
-  const claimedSet = new Set(claimedRows.map((r) => r.offerid ?? (r as any).offerId));
+
+  const claimedSet = new Set(claimedRows.map((r) => r.offerId));
 
   return NextResponse.json(
     {
