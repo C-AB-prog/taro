@@ -16,7 +16,6 @@ export async function POST(req: Request) {
   `;
   if (!offer[0]) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  // фиксируем факт "Открыть" один раз на кампанию
   try {
     await prisma.$executeRaw`
       INSERT INTO "AdOpen" ("userId","offerId")
