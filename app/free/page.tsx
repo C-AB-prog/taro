@@ -8,7 +8,6 @@ type Offer = {
   title: string;
   url: string;
   reward: number;
-  opened: boolean;
   claimed: boolean;
 };
 
@@ -58,7 +57,7 @@ export default function FreePage() {
       setOffers(Array.isArray(j.offers) ? j.offers : []);
     } catch {
       setOffers([]);
-      setToast("Не получилось загрузить задания. Попробуй обновить.");
+      setToast("Не получилось загрузить задания. Обнови.");
     } finally {
       setLoading(false);
     }
@@ -74,33 +73,8 @@ export default function FreePage() {
     setToast("");
 
     try {
-      // Важно: сначала фиксируем open на сервере
-      await fetch("/api/free/open", {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: JSON.stringify({ offerId: o.id }),
-      });
-
-      // оптимистично отмечаем opened
-      setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, opened: true } : x)));
-
-      // открываем ссылку
-      tgOpenLink(o.url);
-    } catch {
-      setToast("Не получилось открыть задание. Попробуй ещё раз.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const onClaim = async (o: Offer) => {
-    if (busyId) return;
-    setBusyId(o.id);
-    setToast("");
-
-    try {
-      const r = await fetch("/api/free/claim", {
+      // 1) начисляем (один раз) и фиксируем open на сервере
+      const r = await fetch("/api/free/open", {
         method: "POST",
         headers,
         credentials: "include",
@@ -109,22 +83,20 @@ export default function FreePage() {
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok || !j?.ok) {
-        const err = String(j?.error || "");
-        if (err === "OPEN_REQUIRED") setToast("Сначала нажми «Открыть», затем вернись и нажми «Забрать».");
-        else if (err === "ALREADY") {
-          setToast("Награда уже была получена.");
-          setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, claimed: true } : x)));
-        } else {
-          setToast("Не получилось забрать награду. Попробуй ещё раз.");
-        }
+        setToast(j?.message ? `Ошибка: ${j.message}` : "Не получилось получить награду. Попробуй ещё раз.");
         return;
       }
 
-      const reward = Number(j.reward || 0);
+      // 2) обновим список, чтобы стало "Получено"
       setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, claimed: true } : x)));
-      setToast(`✅ Получено +${reward}`);
+
+      // 3) откроем ссылку
+      tgOpenLink(o.url);
+
+      const reward = Number(j.reward || 0);
+      if (reward > 0) setToast(`✅ Получено +${reward}`);
     } catch {
-      setToast("Не получилось забрать награду. Попробуй ещё раз.");
+      setToast("Не получилось открыть/получить награду. Попробуй ещё раз.");
     } finally {
       setBusyId(null);
     }
@@ -137,7 +109,7 @@ export default function FreePage() {
           <div>
             <div className="text-2xl font-extrabold tracking-tight">Бесплатно</div>
             <div className="mt-1 text-sm text-neutral-600">
-              Нажми <b>«Открыть»</b> → затем станет доступно <b>«Забрать»</b>.
+              Нажми <b>«Открыть»</b> — награда начислится автоматически.
             </div>
           </div>
 
@@ -149,7 +121,7 @@ export default function FreePage() {
               aria-label="Обновить"
               title="Обновить"
             >
-              <span className="text-lg">↻</span>
+              ↻
             </button>
 
             <button
@@ -178,56 +150,38 @@ export default function FreePage() {
               <div className="text-sm text-neutral-700">Пока нет доступных заданий.</div>
             </div>
           ) : (
-            offers.map((o) => {
-              const canClaim = o.opened && !o.claimed;
+            offers.map((o) => (
+              <div key={o.id} className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+                <div className="text-lg font-bold">{o.title}</div>
+                <div className="mt-1 text-sm text-neutral-500">{o.url.replace(/^https?:\/\//i, "")}</div>
 
-              return (
-                <div key={o.id} className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-                  <div className="text-lg font-bold">{o.title}</div>
-                  <div className="mt-1 text-sm text-neutral-500">
-                    {o.url.replace(/^https?:\/\//i, "")}
-                  </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-700 ring-1 ring-rose-100">
+                    🎁 +{o.reward}
+                  </span>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-700 ring-1 ring-rose-100">
-                      🎁 +{o.reward}
+                  {o.claimed ? (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                      ✅ Получено
                     </span>
-
-                    {o.claimed ? (
-                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                        ✅ Получено
-                      </span>
-                    ) : canClaim ? (
-                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                        🟢 Можно забрать
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-2 rounded-full bg-neutral-50 px-3 py-1 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-100">
-                        ⏳ Нажми «Открыть»
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => onOpen(o)}
-                      disabled={!!busyId || o.claimed}
-                      className="h-12 rounded-full bg-amber-50 font-semibold text-amber-900 ring-1 ring-amber-200 active:scale-[0.99] disabled:opacity-60"
-                    >
-                      Открыть
-                    </button>
-
-                    <button
-                      onClick={() => onClaim(o)}
-                      disabled={!!busyId || o.claimed || !o.opened}
-                      className="h-12 rounded-full bg-white font-semibold text-neutral-900 ring-1 ring-black/10 active:scale-[0.99] disabled:opacity-50"
-                    >
-                      Забрать
-                    </button>
-                  </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-neutral-50 px-3 py-1 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-100">
+                      ⏳ Нажми «Открыть»
+                    </span>
+                  )}
                 </div>
-              );
-            })
+
+                <div className="mt-4">
+                  <button
+                    onClick={() => onOpen(o)}
+                    disabled={!!busyId || o.claimed}
+                    className="h-12 w-full rounded-full bg-amber-50 font-semibold text-amber-900 ring-1 ring-amber-200 active:scale-[0.99] disabled:opacity-60"
+                  >
+                    Открыть
+                  </button>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
