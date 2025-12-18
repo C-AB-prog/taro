@@ -124,7 +124,7 @@ export default function FreePage() {
               onClick={() => router.push("/")}
               title="На главную"
             >
-              ← Назад
+              Назад              
             </button>
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function FreePage() {
       <div className="container">
         <div className="h1" style={{ marginTop: 10 }}>Бесплатно</div>
         <div className="small" style={{ marginBottom: 12 }}>
-          Нажми <b>«Открыть»</b> — награда начислится автоматически (1 раз), затем откроется ссылка.
+          <b>Подпишись на каналы</b> — награда начислится автоматически.
         </div>
 
         {msg ? (
@@ -154,7 +154,7 @@ export default function FreePage() {
           <div className="card">
             <div className="title">Пока нет доступных заданий.</div>
             <div className="small" style={{ marginTop: 6 }}>
-              Нажми «↻», чтобы обновить.
+              Нажми «⟳», чтобы обновить.
             </div>
           </div>
         ) : (
