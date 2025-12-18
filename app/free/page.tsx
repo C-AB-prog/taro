@@ -30,19 +30,18 @@ function tgOpenLink(url: string) {
 
 export default function FreePage() {
   const router = useRouter();
-
   const initData = useMemo(() => getTgInitData(), []);
-
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string>("");
 
   const headers = useMemo(() => {
     const h: Record<string, string> = { "Content-Type": "application/json" };
     if (initData) h["x-tg-init-data"] = initData;
     return h;
   }, [initData]);
+
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string>("");
 
   const fetchOffers = useCallback(async () => {
     setLoading(true);
@@ -59,7 +58,7 @@ export default function FreePage() {
       setOffers(Array.isArray(j.offers) ? j.offers : []);
     } catch {
       setOffers([]);
-      setToast("Не получилось загрузить задания. Обнови страницу.");
+      setToast("Не получилось загрузить задания. Попробуй обновить.");
     } finally {
       setLoading(false);
     }
@@ -75,19 +74,21 @@ export default function FreePage() {
     setToast("");
 
     try {
-      // 1) фиксируем open на сервере
+      // Важно: сначала фиксируем open на сервере
       await fetch("/api/free/open", {
         method: "POST",
         headers,
         credentials: "include",
         body: JSON.stringify({ offerId: o.id }),
-      }).catch(() => {});
+      });
 
-      // 2) локально сразу помечаем opened, чтобы UI стал “Можно забрать”
+      // оптимистично отмечаем opened
       setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, opened: true } : x)));
 
-      // 3) открываем ссылку
+      // открываем ссылку
       tgOpenLink(o.url);
+    } catch {
+      setToast("Не получилось открыть задание. Попробуй ещё раз.");
     } finally {
       setBusyId(null);
     }
@@ -108,10 +109,10 @@ export default function FreePage() {
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok || !j?.ok) {
-        if (j?.error === "OPEN_REQUIRED") {
-          setToast("Сначала нажми «Открыть», затем вернись и нажми «Забрать».");
-        } else if (j?.error === "ALREADY") {
-          setToast("Награда уже получена.");
+        const err = String(j?.error || "");
+        if (err === "OPEN_REQUIRED") setToast("Сначала нажми «Открыть», затем вернись и нажми «Забрать».");
+        else if (err === "ALREADY") {
+          setToast("Награда уже была получена.");
           setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, claimed: true } : x)));
         } else {
           setToast("Не получилось забрать награду. Попробуй ещё раз.");
@@ -119,8 +120,9 @@ export default function FreePage() {
         return;
       }
 
+      const reward = Number(j.reward || 0);
       setOffers((prev) => prev.map((x) => (x.id === o.id ? { ...x, claimed: true } : x)));
-      setToast(`✅ Получено +${Number(j.reward || 0)}`);
+      setToast(`✅ Получено +${reward}`);
     } catch {
       setToast("Не получилось забрать награду. Попробуй ещё раз.");
     } finally {
@@ -129,9 +131,8 @@ export default function FreePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf6ea,rgba(251,246,234,0.55),#ffffff)]">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf6ea,rgba(251,246,234,0.6),#ffffff)]">
       <div className="mx-auto max-w-[520px] px-4 pb-10 pt-4">
-        {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-2xl font-extrabold tracking-tight">Бесплатно</div>
@@ -161,14 +162,12 @@ export default function FreePage() {
           </div>
         </div>
 
-        {/* Toast */}
         {toast ? (
           <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
             ⚠️ {toast}
           </div>
         ) : null}
 
-        {/* Content */}
         <div className="mt-5 space-y-3">
           {loading ? (
             <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
@@ -181,41 +180,38 @@ export default function FreePage() {
           ) : (
             offers.map((o) => {
               const canClaim = o.opened && !o.claimed;
+
               return (
                 <div key={o.id} className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-bold">{o.title}</div>
-                      <div className="mt-1 text-sm text-neutral-500">
-                        {o.url.replace(/^https?:\/\//i, "")}
-                      </div>
+                  <div className="text-lg font-bold">{o.title}</div>
+                  <div className="mt-1 text-sm text-neutral-500">
+                    {o.url.replace(/^https?:\/\//i, "")}
+                  </div>
 
-                      <div className="mt-3 flex items-center gap-2">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-700 ring-1 ring-rose-100">
-                          🎁 +{o.reward}
-                        </span>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-700 ring-1 ring-rose-100">
+                      🎁 +{o.reward}
+                    </span>
 
-                        {o.claimed ? (
-                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                            ✅ Получено
-                          </span>
-                        ) : canClaim ? (
-                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                            🟢 Можно забрать
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-2 rounded-full bg-neutral-50 px-3 py-1 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-100">
-                            ⏳ Нажми «Открыть»
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    {o.claimed ? (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                        ✅ Получено
+                      </span>
+                    ) : canClaim ? (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                        🟢 Можно забрать
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-neutral-50 px-3 py-1 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-100">
+                        ⏳ Нажми «Открыть»
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <button
                       onClick={() => onOpen(o)}
-                      disabled={!!busyId}
+                      disabled={!!busyId || o.claimed}
                       className="h-12 rounded-full bg-amber-50 font-semibold text-amber-900 ring-1 ring-amber-200 active:scale-[0.99] disabled:opacity-60"
                     >
                       Открыть
